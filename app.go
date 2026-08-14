@@ -67,7 +67,6 @@ func pluginRegistration() any {
 				{"Name": "sample_interval_minutes", "Type": "integer", "Description": "额度未变化时的最小采样间隔"},
 				{"Name": "fast_pricing_mode", "Type": "enum", "EnumValues": []string{"multiplier", "source"}, "Description": "Fast 按倍率或价格源显式价格计费"},
 				{"Name": "fast_multiplier", "Type": "number", "Description": "Fast 倍率，默认 2.5"},
-				{"Name": "token_count_mode", "Type": "enum", "EnumValues": []string{tokenModeStandard, tokenModeIncludeCache}, "Description": "Token 曲线采用标准口径或额外计入缓存命中"},
 			},
 		},
 		"capabilities": map[string]any{"usage_plugin": true, "management_api": true},
@@ -82,8 +81,6 @@ func managementRegistration() any {
 			{"Method": "GET", "Path": base + "/series"},
 			{"Method": "GET", "Path": base + "/prices"},
 			{"Method": "POST", "Path": base + "/prices/sync"},
-			{"Method": "GET", "Path": base + "/settings"},
-			{"Method": "POST", "Path": base + "/settings"},
 		},
 		"resources": []map[string]any{{"Path": "/dashboard", "Menu": "额度容量预测", "Description": "按额度增长反推周 Token 与美元等效容量，并绘制趋势曲线。"}},
 	}
@@ -120,9 +117,6 @@ func parseConfig(raw []byte) (config, error) {
 	if cfg.HistoryDays < 7 {
 		cfg.HistoryDays = 180
 	}
-	if normalizeTokenMode(cfg.TokenCountMode) == "" {
-		cfg.TokenCountMode = tokenModeStandard
-	}
 	return cfg, nil
 }
 
@@ -156,10 +150,6 @@ func (a *app) configure(raw []byte) error {
 		return fmt.Errorf("open store: %w", err)
 	}
 	if err = seedPrices(context.Background(), s); err != nil {
-		_ = s.close()
-		return err
-	}
-	if err = ensureTokenMode(context.Background(), s, cfg.TokenCountMode); err != nil {
 		_ = s.close()
 		return err
 	}
@@ -268,25 +258,6 @@ func headerFloat(h map[string][]string, key string) (float64, bool) {
 func headerInt(h map[string][]string, key string) (int64, bool) {
 	v, err := strconv.ParseInt(header(h, key), 10, 64)
 	return v, err == nil
-}
-
-func normalizeTokenMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case tokenModeStandard:
-		return tokenModeStandard
-	case tokenModeIncludeCache:
-		return tokenModeIncludeCache
-	default:
-		return ""
-	}
-}
-
-func ensureTokenMode(ctx context.Context, s *store, fallback string) error {
-	_, err := s.metadata(ctx, "token_count_mode")
-	if err == sql.ErrNoRows {
-		return s.setMetadata(ctx, "token_count_mode", fallback)
-	}
-	return err
 }
 
 func jsonResponse(status int, v any) managementResponse {

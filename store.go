@@ -99,50 +99,6 @@ CREATE TABLE IF NOT EXISTS model_prices (
 );
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `)
-	if err != nil {
-		return err
-	}
-	hasCacheColumn := false
-	rows, err := s.db.Query(`PRAGMA table_info(quota_samples)`)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var cid int
-		var name, columnType string
-		var notNull, primaryKey int
-		var defaultValue any
-		if err = rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-			rows.Close()
-			return err
-		}
-		if name == "window_cache_read_tokens" {
-			hasCacheColumn = true
-		}
-	}
-	if err = rows.Close(); err != nil {
-		return err
-	}
-	if !hasCacheColumn {
-		if _, err = s.db.Exec(`ALTER TABLE quota_samples ADD COLUMN window_cache_read_tokens INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return err
-		}
-	}
-	var backfilled string
-	err = s.db.QueryRow(`SELECT value FROM metadata WHERE key='cache_read_sample_backfill_v1'`).Scan(&backfilled)
-	if err == sql.ErrNoRows {
-		_, err = s.db.Exec(`
-UPDATE quota_samples
-SET window_cache_read_tokens = COALESCE((
-  SELECT SUM(u.cache_read_tokens) FROM usage_events u
-  WHERE u.account=quota_samples.account
-    AND u.requested_at >= quota_samples.reset_at - quota_samples.window_minutes*60
-    AND u.requested_at <= quota_samples.sampled_at
-),0);
-INSERT INTO metadata(key,value) VALUES('cache_read_sample_backfill_v1','done')
-ON CONFLICT(key) DO UPDATE SET value=excluded.value;
-`)
-	}
 	return err
 }
 
@@ -177,12 +133,12 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		}
 		if due {
 			windowStart := e.ResetAt - e.WindowMinutes*60
-			var tokens, cacheReadTokens, requests int64
+			var tokens, requests int64
 			var cost float64
-			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cache_read_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND requested_at>=? AND requested_at<=?`, e.Account, windowStart, e.RequestedAt).Scan(&tokens, &cacheReadTokens, &cost, &requests); err != nil {
+			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND requested_at>=? AND requested_at<=?`, e.Account, windowStart, e.RequestedAt).Scan(&tokens, &cost, &requests); err != nil {
 				return err
 			}
-			_, err = tx.ExecContext(ctx, `INSERT INTO quota_samples(sampled_at,account,used_percent,reset_at,window_minutes,plan_type,window_tokens,window_cache_read_tokens,window_cost_usd,requests) VALUES(?,?,?,?,?,?,?,?,?,?)`, e.RequestedAt, e.Account, *e.UsedPercent, e.ResetAt, e.WindowMinutes, e.PlanType, tokens, cacheReadTokens, cost, requests)
+			_, err = tx.ExecContext(ctx, `INSERT INTO quota_samples(sampled_at,account,used_percent,reset_at,window_minutes,plan_type,window_tokens,window_cost_usd,requests) VALUES(?,?,?,?,?,?,?,?,?)`, e.RequestedAt, e.Account, *e.UsedPercent, e.ResetAt, e.WindowMinutes, e.PlanType, tokens, cost, requests)
 			if err != nil {
 				return err
 			}
@@ -257,7 +213,7 @@ func (s *store) accounts(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
-func (s *store) latestPoints(ctx context.Context, account string, limit int, tokenMode string) ([]quotaPoint, string, error) {
+func (s *store) latestPoints(ctx context.Context, account string, limit int) ([]quotaPoint, string, error) {
 	if limit <= 0 || limit > 10000 {
 		limit = 2000
 	}
@@ -267,18 +223,15 @@ func (s *store) latestPoints(ctx context.Context, account string, limit int, tok
 	if err != nil {
 		return nil, "", err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT sampled_at,used_percent,reset_at,window_minutes,window_tokens,window_cache_read_tokens,window_cost_usd,requests FROM quota_samples WHERE account=? AND reset_at=? ORDER BY sampled_at ASC LIMIT ?`, account, reset, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT sampled_at,used_percent,reset_at,window_minutes,window_tokens,window_cost_usd,requests FROM quota_samples WHERE account=? AND reset_at=? ORDER BY sampled_at ASC LIMIT ?`, account, reset, limit)
 	if err != nil {
 		return nil, "", err
 	}
 	var points []quotaPoint
 	for rows.Next() {
 		var p quotaPoint
-		if err = rows.Scan(&p.Time, &p.UsedPercent, &p.ResetAt, &p.WindowMinutes, &p.WindowTokens, &p.WindowCacheReadTokens, &p.WindowCostUSD, &p.Requests); err != nil {
+		if err = rows.Scan(&p.Time, &p.UsedPercent, &p.ResetAt, &p.WindowMinutes, &p.WindowTokens, &p.WindowCostUSD, &p.Requests); err != nil {
 			return nil, "", err
-		}
-		if tokenMode == tokenModeIncludeCache {
-			p.WindowTokens += p.WindowCacheReadTokens
 		}
 		points = append(points, p)
 	}
@@ -296,29 +249,15 @@ func (s *store) latestPoints(ctx context.Context, account string, limit int, tok
 		windowStart := last.ResetAt - last.WindowMinutes*60
 		var live quotaPoint
 		live.UsedPercent, live.ResetAt, live.WindowMinutes = last.UsedPercent, last.ResetAt, last.WindowMinutes
-		err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(requested_at),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cache_read_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND requested_at>=?`, account, windowStart).Scan(&live.Time, &live.WindowTokens, &live.WindowCacheReadTokens, &live.WindowCostUSD, &live.Requests)
+		err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(requested_at),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND requested_at>=?`, account, windowStart).Scan(&live.Time, &live.WindowTokens, &live.WindowCostUSD, &live.Requests)
 		if err != nil {
 			return nil, "", err
-		}
-		if tokenMode == tokenModeIncludeCache {
-			live.WindowTokens += live.WindowCacheReadTokens
 		}
 		if live.Time > last.Time {
 			points = append(points, live)
 		}
 	}
 	return points, plan, nil
-}
-
-func (s *store) metadata(ctx context.Context, key string) (string, error) {
-	var value string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, key).Scan(&value)
-	return value, err
-}
-
-func (s *store) setMetadata(ctx context.Context, key, value string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
-	return err
 }
 
 func (s *store) cleanup(ctx context.Context, days int) error {

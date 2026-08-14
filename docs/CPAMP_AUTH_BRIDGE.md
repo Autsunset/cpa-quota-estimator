@@ -42,7 +42,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o cpa-manager-plus ./cmd/cpa-man
 1. CPAMP `/health` 为 `200`，日志没有 SQLite 迁移错误。
 2. 登录 CPAMP 后打开 `#/plugin-pages/cpa-quota-estimator/0`。
 3. iframe 不显示密钥框，摘要、曲线和预测均能加载。
-4. 切换 Token 口径，离开页面再返回，选项仍保持。
+4. 刷新或离开页面再返回，摘要与曲线仍能正常加载。
 5. 浏览器网络请求中不存在重复的 `/v0/management/v0/management/`。
 
 ## 当前部署标识
