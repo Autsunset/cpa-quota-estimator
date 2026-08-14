@@ -11,8 +11,15 @@ func estimateBurn(points []quotaPoint, now int64) burnForecast {
 		return result
 	}
 	last := points[len(points)-1]
-	windowSeconds := last.WindowMinutes * 60
-	windowStart := last.ResetAt - windowSeconds
+	windowStart := last.CycleStart
+	if windowStart <= 0 {
+		windowStart = last.ResetAt - last.WindowMinutes*60
+	}
+	windowSeconds := last.ResetAt - windowStart
+	if windowSeconds <= 0 {
+		windowSeconds = last.WindowMinutes * 60
+		windowStart = last.ResetAt - windowSeconds
+	}
 	if windowSeconds <= 0 || last.ResetAt <= windowStart || now < windowStart {
 		return result
 	}
@@ -88,7 +95,7 @@ func estimateBurn(points []quotaPoint, now int64) burnForecast {
 }
 
 func estimateCapacity(points []quotaPoint) estimate {
-	result := estimate{Confidence: "insufficient", Explanation: "至少需要两次周额度百分比增长后才能估算。"}
+	result := estimate{Confidence: "insufficient", Explanation: "至少需要一个有效额度增长区间（即两个递增的额度样本）后才能估算。"}
 	if len(points) < 2 {
 		return result
 	}
@@ -105,7 +112,7 @@ func estimateCapacity(points []quotaPoint) estimate {
 	for i := 1; i < len(milestones); i++ {
 		a, b := milestones[i-1], milestones[i]
 		dp := b.UsedPercent - a.UsedPercent
-		if dp <= 0 || b.ResetAt != a.ResetAt {
+		if dp <= 0 {
 			continue
 		}
 		dt := float64(b.WindowTokens - a.WindowTokens)
@@ -182,7 +189,7 @@ func monotonicMilestones(points []quotaPoint) []quotaPoint {
 	milestones := []quotaPoint{points[0]}
 	maxPercent := points[0].UsedPercent
 	for _, point := range points[1:] {
-		if point.ResetAt == points[0].ResetAt && point.UsedPercent > maxPercent {
+		if point.UsedPercent > maxPercent {
 			milestones = append(milestones, point)
 			maxPercent = point.UsedPercent
 		}

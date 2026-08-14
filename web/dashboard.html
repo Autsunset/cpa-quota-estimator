@@ -10,20 +10,22 @@
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% -10%,var(--glow) 0,transparent 35%),var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"PingFang SC",sans-serif}.wrap{max-width:1380px;margin:auto;padding:28px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}h1{font-size:24px;margin:0}h1 span{display:block;font-size:13px;color:var(--muted);font-weight:400;margin-top:3px}.actions{display:flex;gap:10px;align-items:center}button,select,input{border:1px solid var(--line);background:var(--control);color:var(--text);border-radius:9px;padding:9px 12px}button{cursor:pointer}button:hover{border-color:var(--blue)}.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-bg);font-weight:650}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}.card,.chart{background:linear-gradient(150deg,var(--panel-start),var(--panel-end));border:1px solid var(--line);border-radius:14px}.card{padding:17px;min-height:124px}.label{color:var(--muted);font-size:12px}.value{font-size:29px;letter-spacing:-.8px;font-weight:680;margin:6px 0}.sub{color:var(--muted);font-size:12px}.good{color:var(--green)}.warn{color:var(--amber)}.charts{display:grid;grid-template-columns:2fr 1fr;gap:13px;margin-top:13px}.chart{padding:18px}.chart h2{font-size:14px;margin:0 0 14px}.chart svg{display:block;width:100%;height:300px;overflow:visible}#curve svg{height:520px}.capacity-history{margin-top:13px}#capacityCurve svg{height:390px}.legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:8px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:13px}.rows{padding:5px 18px}.row{display:flex;justify-content:space-between;gap:20px;padding:12px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}.row span:first-child{color:var(--muted)}.note{margin-top:13px;color:var(--muted);border:1px dashed var(--line);padding:12px 15px;border-radius:11px}.empty{height:300px;display:grid;place-items:center;color:var(--muted)}.login{position:fixed;inset:0;display:none;place-items:center;background:var(--overlay);backdrop-filter:blur(12px);z-index:9}.login.show{display:grid}.loginbox{width:min(420px,calc(100vw - 32px));background:var(--login-bg);border:1px solid var(--line);border-radius:16px;padding:24px}.loginbox h2{margin-top:0}.loginbox input{width:100%;margin:8px 0 12px}.error{color:var(--red);min-height:21px;font-size:12px}@media(max-width:900px){.top{align-items:flex-start;flex-direction:column}.actions{width:100%;flex-wrap:wrap}.grid{grid-template-columns:1fr 1fr}.charts,.details{grid-template-columns:1fr}.wrap{padding:16px}}@media(max-width:600px){.wrap{padding:10px}.top{gap:12px;margin-bottom:14px}h1{font-size:20px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.actions>#account,.actions>#period,.actions>#language{grid-column:1/-1;width:100%}.actions button{width:100%}.grid{gap:8px}.card{padding:12px;min-height:105px}.value{font-size:22px}.charts{gap:8px;margin-top:8px}.chart{padding:12px}.capacity-history,.details,.note{margin-top:8px}#curve,#capacityCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#curve svg{height:440px;min-width:720px}#capacityCurve svg{height:340px;min-width:760px}.legend{gap:8px 14px}.row{font-size:12px;gap:8px}.row b{text-align:right}}@media(max-width:370px){.grid{grid-template-columns:1fr}.actions{grid-template-columns:1fr}.actions>*{grid-column:1!important}}
 .pace-section{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:13px;margin-top:13px}.pace-chart{min-width:0}.pace-stats{padding:5px 18px}.pace-stats .row b{max-width:62%;text-align:right}.pace-status{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;background:color-mix(in srgb,var(--green) 15%,transparent);color:var(--green)}.pace-status.fast{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}.pace-status.slow{background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue)}#paceCurve svg{height:360px}@media(max-width:900px){.pace-section{grid-template-columns:1fr}}@media(max-width:600px){.pace-section{gap:8px;margin-top:8px}.pace-chart{padding:12px}#paceCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#paceCurve svg{height:320px;min-width:760px}.pace-stats{padding:4px 12px}}
 .charts>.chart{min-width:0}#capacity svg{height:245px}.capacity-bar{height:7px;border-radius:999px;background:var(--grid);overflow:hidden;margin:0 2px 14px}.capacity-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--green),var(--blue))}.capacity-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}.capacity-item{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:10px;padding:9px 10px}.capacity-item span{display:block;color:var(--muted);font-size:11px}.capacity-item b{display:block;margin-top:3px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(max-width:600px){#capacity svg{height:220px}.capacity-meta{gap:6px}.capacity-item{padding:8px}.capacity-item b{font-size:14px}}
+.monthly{margin-top:13px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.section-head h2{margin-bottom:3px}.section-head select{min-width:130px}.monthly-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.monthly-item{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:11px;padding:11px 12px}.monthly-item span{display:block;color:var(--muted);font-size:11px}.monthly-item b{display:block;margin-top:4px;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.monthly-item small{display:block;color:var(--muted);font-size:10px;margin-top:2px;min-height:15px}.coverage-note{color:var(--muted);font-size:11px;margin:10px 1px}.cycle-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}.cycle-table{width:100%;border-collapse:collapse;min-width:900px}.cycle-table th,.cycle-table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.cycle-table th{color:var(--muted);font-size:11px;font-weight:550;background:color-mix(in srgb,var(--control) 70%,transparent)}.cycle-table td{font-size:12px}.cycle-table tr:last-child td{border-bottom:0}.cycle-state{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:10px;background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue)}.cycle-state.early{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}.cycle-state.closed{background:color-mix(in srgb,var(--muted) 13%,transparent);color:var(--muted)}@media(max-width:900px){.monthly-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.monthly{margin-top:8px}.section-head{align-items:stretch;flex-direction:column}.section-head select{width:100%}.monthly-grid{gap:6px}.monthly-item{padding:9px}.monthly-item b{font-size:16px}}
 </style>
 </head>
 <body><main class="wrap">
-<div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与美元等效容量</span></h1><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="周窗口"><option value="">当前周</option></select><select id="language" aria-label="界面语言"></select><button id="sync">同步价格</button><button id="refresh" class="primary">刷新</button></div></div>
+<div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与美元等效容量</span></h1><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="额度周期"><option value="">当前周期</option></select><select id="language" aria-label="界面语言"></select><button id="sync">同步价格</button><button id="refresh" class="primary">刷新</button></div></div>
 <section class="grid">
- <div class="card"><div class="label">所选周已用</div><div class="value" id="used">—</div><div class="sub" id="window">等待额度样本</div></div>
- <div class="card"><div class="label">所选窗口已计 Token</div><div class="value" id="tokens">—</div><div class="sub" id="requests">—</div></div>
- <div class="card"><div class="label">所选窗口估算费用</div><div class="value" id="cost">—</div><div class="sub" id="pricing">—</div></div>
+ <div class="card"><div class="label">所选周期额度使用率</div><div class="value" id="used">—</div><div class="sub" id="window">等待额度样本</div></div>
+ <div class="card"><div class="label">所选周期累计 Token</div><div class="value" id="tokens">—</div><div class="sub" id="requests">—</div></div>
+ <div class="card"><div class="label">所选周期累计估算费用</div><div class="value" id="cost">—</div><div class="sub" id="pricing">—</div></div>
  <div class="card"><div class="label">预计额度耗尽</div><div class="value" id="exhaust">—</div><div class="sub" id="confidence">尚无预测</div></div>
 </section>
-<section class="pace-section"><div class="chart pace-chart"><h2>周额度进度预测</h2><div id="paceCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>实际额度轨迹</span><span><i class="dot" style="background:var(--green)"></i>可持续基准线（窗口内匀速消耗）</span><span><i class="dot" style="background:var(--purple)"></i>累计平均预测（窗口开始至预测时点）</span><span><i class="dot" style="background:var(--amber)"></i>近期速率预测（近期采样区间）</span></div></div><div class="chart pace-stats"><h2>所选周节奏</h2><div class="row"><span>当前状态</span><b id="paceState">—</b></div><div class="row"><span>窗口时间进度</span><b id="timeProgress">—</b></div><div class="row"><span>实际用量 / 基准用量（同期）</span><b id="usageVsAverage">—</b></div><div class="row"><span>累计平均速率 / 可持续速率</span><b id="dailyRate">—</b></div><div class="row"><span>近期消耗速率（采样区间）</span><b id="recentRate">—</b></div><div class="row"><span>累计平均模型预计耗尽时间</span><b id="averageEnd">—</b></div><div class="row"><span>近期速率模型预计耗尽时间</span><b id="paceEnd">—</b></div><div class="row"><span>近期速率模型期末预计用量</span><b id="projectedUsage">—</b></div><div class="row"><span>周窗口重置时间</span><b id="nextReset">—</b></div><div class="row"><span>预测时点至重置的剩余时间</span><b id="resetCountdown">—</b></div></div></section>
-<section class="charts"><div class="chart"><h2>周窗口增长曲线</h2><div id="curve"></div><div class="legend"><span><i class="dot" style="background:var(--green)"></i>额度（%）</span><span><i class="dot" style="background:var(--blue)"></i>Token（Token）</span><span><i class="dot" style="background:var(--amber)"></i>计费（USD）</span></div></div><div class="chart"><h2>等效周容量</h2><div id="capacity"></div></div></section>
-<section class="chart capacity-history"><h2>周限容量预测曲线</h2><div id="capacityCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>预测整周 Token 容量（Token）</span><span><i class="dot" style="background:var(--amber)"></i>预测整周计费额度（USD）</span></div></section>
-<section class="details"><div class="chart rows"><h2>等效容量估计（基于当前请求结构）</h2><div class="row"><span>全窗口等效 Token 容量（100% 额度，中位数）</span><b id="fullTokens">—</b></div><div class="row"><span>全窗口等效计费金额（100% 额度，USD 中位数）</span><b id="fullCost">—</b></div><div class="row"><span>剩余额度等效 Token 容量（估计值）</span><b id="remainTokens">—</b></div><div class="row"><span>剩余额度等效计费金额（USD 估计值）</span><b id="remainCost">—</b></div></div><div class="chart rows"><h2>采样质量</h2><div class="row"><span>有效增长区间</span><b id="samples">—</b></div><div class="row"><span>覆盖额度跨度</span><b id="span">—</b></div><div class="row"><span>全窗口 Token 容量估计四分位数区间（Q1–Q3，中间 50%）</span><b id="tokenRange">—</b></div><div class="row"><span>全窗口计费金额估计四分位数区间（Q1–Q3，USD）</span><b id="costRange">—</b></div></div></section>
+<section class="pace-section"><div class="chart pace-chart"><h2>额度周期进度预测</h2><div id="paceCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>实际额度轨迹</span><span><i class="dot" style="background:var(--green)"></i>可持续基准线（周期内匀速消耗）</span><span><i class="dot" style="background:var(--purple)"></i>累计平均预测（周期开始至预测时点）</span><span><i class="dot" style="background:var(--amber)"></i>近期速率预测（近期采样区间）</span></div></div><div class="chart pace-stats"><h2>所选周期消耗节奏</h2><div class="row"><span>当前状态</span><b id="paceState">—</b></div><div class="row"><span>周期时间进度</span><b id="timeProgress">—</b></div><div class="row"><span>实际用量 / 基准用量（同期）</span><b id="usageVsAverage">—</b></div><div class="row"><span>累计平均速率 / 可持续速率</span><b id="dailyRate">—</b></div><div class="row"><span>近期消耗速率（采样区间）</span><b id="recentRate">—</b></div><div class="row"><span>累计平均模型预计耗尽时间</span><b id="averageEnd">—</b></div><div class="row"><span>近期速率模型预计耗尽时间</span><b id="paceEnd">—</b></div><div class="row"><span>近期速率模型期末预计用量</span><b id="projectedUsage">—</b></div><div class="row"><span>周期计划重置时间</span><b id="nextReset">—</b></div><div class="row"><span>预测时点至重置的剩余时间</span><b id="resetCountdown">—</b></div></div></section>
+<section class="charts"><div class="chart"><h2>额度周期累计曲线</h2><div id="curve"></div><div class="legend"><span><i class="dot" style="background:var(--green)"></i>额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>累计 Token（Token）</span><span><i class="dot" style="background:var(--amber)"></i>累计估算费用（USD）</span></div></div><div class="chart"><h2>周期等效容量</h2><div id="capacity"></div></div></section>
+<section class="chart capacity-history"><h2>周期等效容量估计轨迹</h2><div id="capacityCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>完整周期等效 Token 容量（Token）</span><span><i class="dot" style="background:var(--amber)"></i>完整周期美元等效容量（USD）</span></div></section>
+<section class="details"><div class="chart rows"><h2>等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="fullTokens">—</b></div><div class="row"><span>完整周期美元等效容量（100% 额度；USD 中位数）</span><b id="fullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="remainTokens">—</b></div><div class="row"><span>剩余额度的美元等效容量（USD 估计值）</span><b id="remainCost">—</b></div></div><div class="chart rows"><h2>采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="samples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="span">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="tokenRange">—</b></div><div class="row"><span>完整周期美元等效容量的四分位数区间（Q1–Q3；USD）</span><b id="costRange">—</b></div></div></section>
+<section class="chart monthly"><div class="section-head"><div><h2>月度额度汇总</h2><div class="sub">按自然月汇总实际消耗，并以每次确认的官方重置划分额度周期</div></div><select id="month" aria-label="统计月份"></select></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="monthTokens">—</b><small id="monthRequests">—</small></div><div class="monthly-item"><span>本月请求估算费用</span><b id="monthCost">—</b><small>USD · models.dev</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="monthCycles">—</b><small id="monthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="monthQuotaEquivalent">—</b><small id="monthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="monthCapacity">—</b><small id="monthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="monthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="monthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="monthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="monthlyNote">实际 Token 按请求发生时间归属月份；费用由 models.dev 价格估算；估计总容量按额度周期开始时间归属月份。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月估算费用</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="cycleRows"></tbody></table></div></section>
 <div class="note" id="note">额度百分比来自上游响应头，美元来自 models.dev 价格；预测不是 OpenAI 官方标称额度。</div>
 </main>
 <div class="login" id="login"><div class="loginbox"><h2>连接 Management API</h2><div class="sub">请输入 CPA Management Key；密钥只保存在当前浏览器标签页。</div><input id="key" type="password" placeholder="CPA Management Key"><div class="error" id="loginError"></div><button id="loginBtn" class="primary" style="width:100%">进入仪表盘</button></div></div>
@@ -46,12 +48,13 @@ const messages = {
     chinese: '中文',
     english: 'English',
     accountLabel: '凭证账号',
-    periodLabel: '周窗口',
+    periodLabel: '额度周期',
+    monthLabel: '统计月份',
     languageLabel: '界面语言',
-    noWindows: '暂无周窗口',
-    currentWeek: '当前周',
-    previousWeek: '上一周',
-    historyWeek: '历史第 {index} 周',
+    noCycles: '暂无额度周期',
+    currentCycle: '当前周期',
+    previousCycle: '上一周期',
+    historyCycle: '历史第 {index} 周期',
     managementKeyRequired: '请输入有效的 CPA Management Key',
     bridgeUnavailable: '未检测到 CPAMP 授权桥接',
     requestFailed: '请求失败',
@@ -64,17 +67,17 @@ const messages = {
     fastSource: 'Fast 使用 models.dev 显式价格',
     usableUntilReset: '可用至重置',
     recentRate: '近期 {rate}%/天',
-    averageRate: '本周平均 {rate}%/天',
+    averageRate: '周期累计平均 {rate}%/天',
     confidence: '{level}置信度',
     confidenceHigh: '高',
     confidenceMedium: '中',
     confidenceLow: '低',
     insufficientGrowth: '至少等待一次额度增长',
     historyLastPrediction: '历史末次预测 · ',
-    historyReview: '历史周回看 · ',
-    estimateExplanation: '每个相邻额度增长区间都会折算出一组全窗口等效 Token 与计费金额；主预测取所有单次估计的中位数，四分位数区间（Q1–Q3）表示去除最高和最低各 25% 后的中间 50%。官方额度并非固定美元或 Token，结果仅表示当前请求结构下的等效容量。',
-    estimateInsufficient: '至少需要两次周额度百分比增长后才能估算。',
-    waitQuotaReset: '等待周额度与重置时间样本',
+    historyReview: '历史周期回看 · ',
+    estimateExplanation: '每个相邻额度增长区间都会折算出一组完整周期 Token 与美元等效容量；主预测取各区间估计的中位数，四分位数区间（Q1–Q3）表示估计值分布的中间 50%。官方额度并非固定美元或 Token，结果仅表示当前请求结构下的等效容量。',
+    estimateInsufficient: '至少需要一个有效额度增长区间（即两个递增的额度样本）后才能估算。',
+    waitQuotaReset: '等待额度周期与计划重置时间样本',
     paceFast: '消耗偏快',
     paceSlow: '慢于匀速基准',
     paceOnTrack: '接近匀速基准',
@@ -94,41 +97,59 @@ const messages = {
     chartNeedTwoSamples: '至少需要两个额度采样点',
     chartWaitGrowth: '等待额度增长',
     chartNeedTwoGrowth: '至少需要两个额度增长区间',
-    quotaSeries: '周额度',
+    quotaSeries: '额度使用率',
     tokenUsageSeries: 'Token 用量',
-    costUsageSeries: '计费用量',
+    costUsageSeries: '估算费用',
     timeAxis: '时间（Asia/Shanghai）',
-    selectedWeekAxis: '所选周时间（Asia/Shanghai）',
-    quotaAxis: '周额度已用（%）',
+    selectedCycleAxis: '所选周期时间（Asia/Shanghai）',
+    quotaAxis: '额度使用率（%）',
     currentPoint: '当前 {percent}%',
     lastPoint: '末次 {percent}%',
     now: '现在',
     lastSample: '末次样本',
     usedConfidence: '已使用 · {confidence}置信度',
     remainingQuota: '剩余额度',
-    forecastTokens: '全窗口等效 Token 容量',
-    currentCost: '当前累计费用（USD）',
-    forecastCost: '全窗口等效计费金额（USD）',
+    forecastTokens: '完整周期 Token 等效容量',
+    currentCost: '当前累计估算费用（USD）',
+    forecastCost: '完整周期美元等效容量（USD）',
     remainingTokens: '剩余额度等效 Token 容量',
-    remainingCost: '剩余额度等效计费金额（USD）',
-    forecastTokenSeries: '预测整周 Token',
-    forecastCostSeries: '预测整周计费额度',
+    remainingCost: '剩余额度美元等效容量（USD）',
+    forecastTokenSeries: '完整周期等效 Token',
+    forecastCostSeries: '完整周期美元等效容量',
     growthTimeAxis: '额度增长时间（Asia/Shanghai）',
     dayUnit: '天',
     hourUnit: '小时',
-    minuteUnit: '分钟'
+    minuteUnit: '分钟',
+    monthlyRequests: '{count} 个请求',
+    monthlyResetSummary: '{count} 次重置 · {early} 次提前',
+    quotaEquivalent: '{value}× 完整额度',
+    quotaPercent: '累计 {value}%',
+    estimateCoverage: '{estimated} / {allocated}',
+    coverageComplete: '完整',
+    coveragePartial: '部分覆盖',
+    cycleCurrent: '进行中',
+    cycleScheduledReset: '定时重置',
+    cycleEarlyReset: '提前重置',
+    cycleScheduleChange: '窗口变更',
+    cycleObservedReset: '历史重置',
+    cycleClosed: '已结束',
+    currentCycleEnd: '预计重置 {time}',
+    noCycleRecords: '所选月份暂无额度周期记录',
+    capacityRange: '{low} — {high}',
+    monthlyMethodNote: '实际 Token 按请求发生时间归属月份；费用由 models.dev 价格估算；估计总容量按额度周期开始时间归属月份。'
   },
   en: {
     autoLanguage: 'Auto (follow panel)',
     chinese: '中文',
     english: 'English',
     accountLabel: 'Credential account',
-    periodLabel: 'Weekly window',
+    periodLabel: 'Quota cycle',
+    monthLabel: 'Statistics month',
     languageLabel: 'Interface language',
-    noWindows: 'No weekly windows',
-    currentWeek: 'Current week',
-    previousWeek: 'Previous week',
-    historyWeek: 'History week {index}',
+    noCycles: 'No quota cycles',
+    currentCycle: 'Current cycle',
+    previousCycle: 'Previous cycle',
+    historyCycle: 'History cycle {index}',
     managementKeyRequired: 'Enter a valid CPA Management Key',
     bridgeUnavailable: 'CPAMP authorization bridge was not detected',
     requestFailed: 'Request failed',
@@ -141,16 +162,16 @@ const messages = {
     fastSource: 'Fast uses explicit models.dev pricing',
     usableUntilReset: 'Available until reset',
     recentRate: 'Recent {rate}%/day',
-    averageRate: 'Weekly avg {rate}%/day',
+    averageRate: 'Cycle-to-date avg {rate}%/day',
     confidence: '{level} confidence',
     confidenceHigh: 'High',
     confidenceMedium: 'Medium',
     confidenceLow: 'Low',
     insufficientGrowth: 'Waiting for at least one quota increase',
     historyLastPrediction: 'Last historical forecast · ',
-    historyReview: 'Historical week · ',
-    estimateExplanation: 'Each adjacent quota-growth interval produces one full-window Token-equivalent and billed-cost estimate. The main forecast is their median; the interquartile interval (Q1–Q3) is the middle 50% after excluding the highest and lowest 25%. Official quota is not a fixed USD or Token amount, so these values are equivalents for the current request mix.',
-    estimateInsufficient: 'At least two weekly quota percentage increases are required.',
+    historyReview: 'Historical cycle · ',
+    estimateExplanation: 'Each adjacent quota-growth interval produces a full-cycle Token and USD-equivalent capacity estimate. The main forecast is the median across intervals; the interquartile interval (Q1–Q3) is the middle 50% of that estimate distribution. Official quota is not a fixed USD or Token amount, so these values are equivalents for the current request mix.',
+    estimateInsufficient: 'At least one valid quota-growth interval (two increasing quota samples) is required.',
     waitQuotaReset: 'Waiting for quota and reset-time samples',
     paceFast: 'Burning too fast',
     paceSlow: 'Below sustainable pace',
@@ -171,29 +192,46 @@ const messages = {
     chartNeedTwoSamples: 'At least two quota samples are required',
     chartWaitGrowth: 'Waiting for quota growth',
     chartNeedTwoGrowth: 'At least two quota-growth intervals are required',
-    quotaSeries: 'Weekly quota',
+    quotaSeries: 'Quota used',
     tokenUsageSeries: 'Token usage',
-    costUsageSeries: 'Billed usage',
+    costUsageSeries: 'Estimated cost',
     timeAxis: 'Time (Asia/Shanghai)',
-    selectedWeekAxis: 'Selected week time (Asia/Shanghai)',
-    quotaAxis: 'Weekly quota used (%)',
+    selectedCycleAxis: 'Selected cycle time (Asia/Shanghai)',
+    quotaAxis: 'Quota used (%)',
     currentPoint: 'Current {percent}%',
     lastPoint: 'Last {percent}%',
     now: 'Now',
     lastSample: 'Last sample',
     usedConfidence: 'Used · {confidence} confidence',
     remainingQuota: 'Remaining quota',
-    forecastTokens: 'Full-window Token-equivalent capacity',
-    currentCost: 'Current cumulative cost (USD)',
-    forecastCost: 'Full-window equivalent billed cost (USD)',
+    forecastTokens: 'Full-cycle Token-equivalent capacity',
+    currentCost: 'Current cumulative estimated cost (USD)',
+    forecastCost: 'Full-cycle USD-equivalent capacity',
     remainingTokens: 'Remaining-quota Token-equivalent capacity',
-    remainingCost: 'Remaining-quota equivalent billed cost (USD)',
-    forecastTokenSeries: 'Forecast weekly Tokens',
-    forecastCostSeries: 'Forecast weekly billed usage',
+    remainingCost: 'Remaining-quota USD-equivalent capacity',
+    forecastTokenSeries: 'Full-cycle equivalent Tokens',
+    forecastCostSeries: 'Full-cycle USD-equivalent capacity',
     growthTimeAxis: 'Quota growth time (Asia/Shanghai)',
     dayUnit: 'd',
     hourUnit: 'h',
-    minuteUnit: 'm'
+    minuteUnit: 'm',
+    monthlyRequests: '{count} requests',
+    monthlyResetSummary: '{count} resets · {early} early',
+    quotaEquivalent: '{value}× full quota',
+    quotaPercent: '{value}% cumulative',
+    estimateCoverage: '{estimated} / {allocated}',
+    coverageComplete: 'Complete',
+    coveragePartial: 'Partial coverage',
+    cycleCurrent: 'Active',
+    cycleScheduledReset: 'Scheduled reset',
+    cycleEarlyReset: 'Early reset',
+    cycleScheduleChange: 'Window changed',
+    cycleObservedReset: 'Historical reset',
+    cycleClosed: 'Closed',
+    currentCycleEnd: 'Expected reset {time}',
+    noCycleRecords: 'No quota cycles in the selected month',
+    capacityRange: '{low} — {high}',
+    monthlyMethodNote: 'Actual Tokens are assigned by request time; cost is estimated from models.dev pricing; estimated total capacity is assigned by quota-cycle start time.'
   }
 };
 
@@ -202,47 +240,69 @@ const staticEnglish = {
   '把额度百分比变化映射为 Token 与美元等效容量': 'Map quota percentage changes to Token and USD-equivalent capacity',
   '同步价格': 'Sync pricing',
   '刷新': 'Refresh',
-  '当前周': 'Current week',
-  '所选周已用': 'Selected week used',
+  '额度周期': 'Quota cycle',
+  '当前周期': 'Current cycle',
+  '所选周期额度使用率': 'Selected-cycle quota used',
   '等待额度样本': 'Waiting for quota samples',
-  '所选窗口已计 Token': 'Selected window Tokens',
-  '所选窗口估算费用': 'Selected window estimated cost',
+  '所选周期累计 Token': 'Selected-cycle cumulative Tokens',
+  '所选周期累计估算费用': 'Selected-cycle cumulative estimated cost',
   '预计额度耗尽': 'Estimated quota exhaustion',
   '尚无预测': 'No forecast yet',
-  '周额度进度预测': 'Weekly quota progress forecast',
+  '额度周期进度预测': 'Quota-cycle progress forecast',
   '实际额度轨迹': 'Actual quota trajectory',
-  '可持续基准线（窗口内匀速消耗）': 'Sustainable baseline (uniform usage over the window)',
-  '累计平均预测（窗口开始至预测时点）': 'Cumulative-average forecast (window start to forecast point)',
+  '可持续基准线（周期内匀速消耗）': 'Sustainable baseline (uniform usage over the cycle)',
+  '累计平均预测（周期开始至预测时点）': 'Cumulative-average forecast (cycle start to forecast point)',
   '近期速率预测（近期采样区间）': 'Recent-rate forecast (recent sampling interval)',
-  '所选周节奏': 'Selected week pace',
+  '所选周期消耗节奏': 'Selected-cycle consumption pace',
   '当前状态': 'Current status',
-  '窗口时间进度': 'Window time progress',
+  '周期时间进度': 'Cycle time progress',
   '实际用量 / 基准用量（同期）': 'Actual / baseline usage (same point in time)',
   '累计平均速率 / 可持续速率': 'Cumulative-average / sustainable rate',
   '近期消耗速率（采样区间）': 'Recent consumption rate (sampling interval)',
   '累计平均模型预计耗尽时间': 'Estimated exhaustion time (cumulative-average model)',
   '近期速率模型预计耗尽时间': 'Estimated exhaustion time (recent-rate model)',
-  '近期速率模型期末预计用量': 'Projected end-of-window usage (recent-rate model)',
-  '周窗口重置时间': 'Weekly window reset time',
+  '近期速率模型期末预计用量': 'Projected end-of-cycle usage (recent-rate model)',
+  '周期计划重置时间': 'Scheduled cycle reset time',
   '预测时点至重置的剩余时间': 'Time remaining from forecast point to reset',
-  '周窗口增长曲线': 'Weekly window growth',
-  '额度（%）': 'Quota (%)',
-  'Token（Token）': 'Tokens (Token)',
-  '计费（USD）': 'Billed usage (USD)',
-  '等效周容量': 'Equivalent weekly capacity',
-  '周限容量预测曲线': 'Weekly capacity forecast history',
-  '预测整周 Token 容量（Token）': 'Forecast weekly Token capacity (Token)',
-  '预测整周计费额度（USD）': 'Forecast weekly billed capacity (USD)',
+  '额度周期累计曲线': 'Quota-cycle cumulative curves',
+  '额度使用率（%）': 'Quota used (%)',
+  '累计 Token（Token）': 'Cumulative Tokens (Token)',
+  '累计估算费用（USD）': 'Cumulative estimated cost (USD)',
+  '周期等效容量': 'Cycle-equivalent capacity',
+  '周期等效容量估计轨迹': 'Cycle-equivalent capacity estimate trajectory',
+  '完整周期等效 Token 容量（Token）': 'Full-cycle equivalent Token capacity (Token)',
+  '完整周期美元等效容量（USD）': 'Full-cycle USD-equivalent capacity',
   '等效容量估计（基于当前请求结构）': 'Equivalent-capacity estimates (based on the current request mix)',
-  '全窗口等效 Token 容量（100% 额度，中位数）': 'Full-window Token-equivalent capacity (100% quota, median)',
-  '全窗口等效计费金额（100% 额度，USD 中位数）': 'Full-window equivalent billed cost (100% quota, USD median)',
-  '剩余额度等效 Token 容量（估计值）': 'Remaining-quota Token-equivalent capacity (estimate)',
-  '剩余额度等效计费金额（USD 估计值）': 'Remaining-quota equivalent billed cost (USD estimate)',
+  '完整周期 Token 等效容量（100% 额度；中位数）': 'Full-cycle Token-equivalent capacity (100% quota; median)',
+  '完整周期美元等效容量（100% 额度；USD 中位数）': 'Full-cycle USD-equivalent capacity (100% quota; median)',
+  '剩余额度的 Token 等效容量（估计值）': 'Remaining-quota Token-equivalent capacity (estimate)',
+  '剩余额度的美元等效容量（USD 估计值）': 'Remaining-quota USD-equivalent capacity (estimate)',
   '采样质量': 'Sample quality',
-  '有效增长区间': 'Valid growth intervals',
-  '覆盖额度跨度': 'Covered quota span',
-  '全窗口 Token 容量估计四分位数区间（Q1–Q3，中间 50%）': 'Interquartile interval of full-window Token-capacity estimates (Q1–Q3, middle 50%)',
-  '全窗口计费金额估计四分位数区间（Q1–Q3，USD）': 'Interquartile interval of full-window billed-cost estimates (Q1–Q3, USD)',
+  '可用于估计的增长区间数': 'Quota-growth intervals used for estimation',
+  '有效样本覆盖的额度增量': 'Quota increase covered by valid samples',
+  '完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）': 'Interquartile interval of full-cycle Token-equivalent estimates (Q1–Q3; middle 50%)',
+  '完整周期美元等效容量的四分位数区间（Q1–Q3；USD）': 'Interquartile interval of full-cycle USD-equivalent estimates (Q1–Q3)',
+  '月度额度汇总': 'Monthly quota summary',
+  '按自然月汇总实际消耗，并以每次确认的官方重置划分额度周期': 'Summarize actual usage by calendar month and delimit quota cycles at each confirmed official reset',
+  '本月实际 Token': 'Actual Tokens this month',
+  '本月请求估算费用': 'Estimated cost of this month\'s requests',
+  '本月涉及的额度周期': 'Quota cycles overlapping this month',
+  '本月额度消耗当量': 'Monthly quota-consumption equivalent',
+  '本月新周期估计总容量': 'Estimated total capacity of cycles starting this month',
+  '容量估计覆盖率': 'Capacity-estimate coverage',
+  '已估计周期数 / 本月新周期数': 'Estimated cycles / cycles starting this month',
+  '重置时未消耗额度合计': 'Total unconsumed quota at resets',
+  '各次重置分别累加，可能超过 100%': 'Summed across resets; may exceed 100%',
+  '额度当量统计质量': 'Quota-equivalent data quality',
+  '是否覆盖各周期月初基线': 'Whether each cycle has a month-start baseline',
+  '实际 Token 按请求发生时间归属月份；费用由 models.dev 价格估算；估计总容量按额度周期开始时间归属月份。': 'Actual Tokens are assigned by request time; cost is estimated from models.dev pricing; estimated total capacity is assigned by quota-cycle start time.',
+  '结束原因': 'End reason',
+  '周期峰值使用率': 'Peak cycle quota used',
+  '本月 Token': 'Monthly Tokens',
+  '本月估算费用': 'Monthly estimated cost',
+  '本月请求': 'Monthly requests',
+  '完整周期等效 Token': 'Full-cycle equivalent Tokens',
+  '估计置信度': 'Estimate confidence',
   '额度百分比来自上游响应头，美元来自 models.dev 价格；预测不是 OpenAI 官方标称额度。': 'Quota percentages come from upstream response headers and USD values use models.dev pricing. Forecasts are not official OpenAI quota values.',
   '连接 Management API': 'Connect to Management API',
   '请输入 CPA Management Key；密钥只保存在当前浏览器标签页。': 'Enter the CPA Management Key. It is stored only in this browser tab.',
@@ -347,6 +407,7 @@ function applyLanguage(nextLanguage) {
   $('#key').placeholder = language === 'en' ? 'CPA Management Key' : 'CPA Management Key';
   $('#account').setAttribute('aria-label', tr('accountLabel'));
   $('#period').setAttribute('aria-label', tr('periodLabel'));
+  $('#month').setAttribute('aria-label', tr('monthLabel'));
   $('#language').setAttribute('aria-label', tr('languageLabel'));
   renderLanguageSelect();
 }
@@ -527,18 +588,26 @@ async function load() {
     let account = $('#account').value;
     let period = $('#period').value;
     if (account) query.set('account', account);
-    if (period) query.set('reset_at', period);
+    if (period) query.set('cycle_id', period);
     let summary = await api('/summary' + (query.size ? '?' + query : ''));
     state = summary;
     $('#login').classList.remove('show');
     renderSummary(summary);
     let seriesQuery = new URLSearchParams({limit: '5000'});
     if (summary.account) seriesQuery.set('account', summary.account);
-    if (summary.selected_reset_at) seriesQuery.set('reset_at', summary.selected_reset_at);
-    let series = await api('/series?' + seriesQuery);
+    if (summary.selected_cycle_id) seriesQuery.set('cycle_id', summary.selected_cycle_id);
+    let monthlyQuery = new URLSearchParams();
+    if (summary.account) monthlyQuery.set('account', summary.account);
+    if ($('#month').value) monthlyQuery.set('month', $('#month').value);
+    let results = await Promise.all([
+      api('/series?' + seriesQuery),
+      api('/monthly' + (monthlyQuery.size ? '?' + monthlyQuery : ''))
+    ]);
+    let series = results[0];
     renderPace(series);
     renderCharts(series);
     renderCapacityHistory(series.capacity_points || []);
+    renderMonthly(results[1]);
   } catch (error) {
     if (error.auth || !key) {
       showLogin(error.message);
@@ -563,28 +632,101 @@ function renderAccounts(summary) {
 
 function renderPeriods(summary) {
   let select = $('#period');
-  let windows = summary.windows || [];
+  let cycles = summary.cycles || [];
   select.replaceChildren();
-  if (!windows.length) {
+  if (!cycles.length) {
     let option = document.createElement('option');
-    option.textContent = tr('noWindows');
+    option.textContent = tr('noCycles');
     option.value = '';
     select.append(option);
     return;
   }
-  windows.forEach((windowInfo, index) => {
+  cycles.forEach((cycle, index) => {
     let option = document.createElement('option');
-    let prefix = index === 0 ? tr('currentWeek') : index === 1
-      ? tr('previousWeek')
-      : tr('historyWeek', {index: index});
-    option.value = String(windowInfo.reset_at);
-    option.textContent = prefix + ' · ' + day(windowInfo.window_start) + ' — ' +
-      day(windowInfo.reset_at) + ' · ' + Number(windowInfo.end_percent || 0).toFixed(0) + '%';
+    let prefix = cycle.current ? tr('currentCycle') : index === 1
+      ? tr('previousCycle')
+      : tr('historyCycle', {index: index});
+    option.value = String(cycle.id);
+    option.textContent = prefix + ' · ' + day(cycle.started_at) + ' — ' +
+      day(cycle.ended_at || cycle.reset_at) + ' · ' + Number(cycle.peak_percent || 0).toFixed(0) + '%';
     select.append(option);
   });
-  select.value = summary.selected_reset_at
-    ? String(summary.selected_reset_at)
-    : String(windows[0].reset_at);
+  select.value = summary.selected_cycle_id
+    ? String(summary.selected_cycle_id)
+    : String(cycles[0].id);
+}
+
+function cycleReason(cycle) {
+  if (cycle.current) return [tr('cycleCurrent'), ''];
+  if (cycle.close_reason === 'early_reset') return [tr('cycleEarlyReset'), 'early'];
+  if (cycle.close_reason === 'scheduled_reset') return [tr('cycleScheduledReset'), 'closed'];
+  if (cycle.close_reason === 'schedule_change') return [tr('cycleScheduleChange'), 'closed'];
+  if (cycle.close_reason === 'observed_reset') return [tr('cycleObservedReset'), 'closed'];
+  return [tr('cycleClosed'), 'closed'];
+}
+
+function renderMonthly(data) {
+  data = data || {};
+  let summary = data.summary || {};
+  let select = $('#month');
+  select.replaceChildren();
+  (data.months || []).forEach(month => {
+    let option = document.createElement('option');
+    option.value = month;
+    option.textContent = month;
+    select.append(option);
+  });
+  if (summary.month) select.value = summary.month;
+
+  $('#monthTokens').textContent = fmt(summary.actual_tokens);
+  $('#monthRequests').textContent = tr('monthlyRequests', {count: fmt(summary.requests || 0)});
+  $('#monthCost').textContent = usd(summary.actual_cost_usd);
+  $('#monthCycles').textContent = fmt(summary.cycle_count || 0);
+  $('#monthResets').textContent = tr('monthlyResetSummary', {
+    count: summary.reset_count || 0,
+    early: summary.early_reset_count || 0
+  });
+  $('#monthQuotaEquivalent').textContent = tr('quotaEquivalent', {
+    value: Number(summary.consumed_quota_equivalent || 0).toFixed(2)
+  });
+  $('#monthQuotaPercent').textContent = tr('quotaPercent', {
+    value: Number(summary.consumed_quota_percent || 0).toFixed(1)
+  });
+  $('#monthCapacity').textContent = summary.estimated_cycle_count
+    ? fmt(summary.estimated_tokens) : '—';
+  $('#monthCapacityCost').textContent = summary.estimated_cycle_count
+    ? usd(summary.estimated_cost_usd) : tr('insufficientSamples');
+  $('#monthEstimateCoverage').textContent = tr('estimateCoverage', {
+    estimated: summary.estimated_cycle_count || 0,
+    allocated: summary.allocated_cycle_count || 0
+  });
+  $('#monthUnused').textContent = Number(summary.unused_quota_at_reset || 0).toFixed(1) + '%';
+  $('#monthCoverage').textContent = summary.cycle_count
+    ? (summary.quota_coverage_complete ? tr('coverageComplete') : tr('coveragePartial'))
+    : tr('insufficientSamples');
+  $('#monthlyNote').textContent = tr('monthlyMethodNote');
+
+  let rows = summary.cycles || [];
+  if (!rows.length) {
+    $('#cycleRows').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">' + tr('noCycleRecords') + '</td></tr>';
+    return;
+  }
+  $('#cycleRows').innerHTML = rows.map(cycle => {
+    let reason = cycleReason(cycle);
+    let period = dt(cycle.started_at) + ' — ' + (cycle.ended_at
+      ? dt(cycle.ended_at)
+      : tr('currentCycleEnd', {time: dt(cycle.reset_at)}));
+    return '<tr>' +
+      '<td>' + period + '</td>' +
+      '<td><span class="cycle-state ' + reason[1] + '">' + reason[0] + '</span></td>' +
+      '<td>' + Number(cycle.peak_percent || 0).toFixed(0) + '%</td>' +
+      '<td>' + fmt(cycle.month_tokens) + '</td>' +
+      '<td>' + usd(cycle.month_cost_usd) + '</td>' +
+      '<td>' + fmt(cycle.month_requests) + '</td>' +
+      '<td>' + (cycle.capacity_available ? fmt(cycle.full_window_tokens) : '—') + '</td>' +
+      '<td>' + (cycle.capacity_available ? confidenceLabel(cycle.confidence) : tr('insufficientSamples')) + '</td>' +
+      '</tr>';
+  }).join('');
 }
 
 function confidenceLabel(confidence) {
@@ -720,7 +862,7 @@ function renderPace(series) {
   let span = Math.max(1, reset - start);
   let x = timestamp => L + (Math.min(reset, Math.max(start, timestamp)) - start) / span * (W - L - R);
   let y = value => T + (100 - Math.min(100, Math.max(0, value))) / 100 * (H - T - B);
-  let actual = points.filter(point => point.reset_at === reset && point.time >= start && point.time <= reset);
+  let actual = points.filter(point => point.time >= start && point.time <= reset);
   let svg = '';
 
   for (let index = 0; index <= 4; index++) {
@@ -764,7 +906,7 @@ function renderPace(series) {
   svg += svgLine(nowX, T, nowX, H - B, 'stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="3 5"');
   svg += svgText(nowX, T + 12, tr(historical ? 'lastSample' : 'now'),
     'fill="var(--muted)" text-anchor="middle" font-size="10"');
-  svg += svgText((L + W - R) / 2, H - 3, tr('selectedWeekAxis'),
+  svg += svgText((L + W - R) / 2, H - 3, tr('selectedCycleAxis'),
     'fill="var(--muted)" text-anchor="middle" font-size="11"');
   svg += svgText(15, (T + H - B) / 2, tr('quotaAxis'),
     'fill="var(--muted)" text-anchor="middle" font-size="11" transform="rotate(-90 15 ' + ((T + H - B) / 2) + ')"');
@@ -908,9 +1050,11 @@ $('#key').onkeydown = event => {
 $('#refresh').onclick = load;
 $('#account').onchange = () => {
   $('#period').value = '';
+  $('#month').value = '';
   load();
 };
 $('#period').onchange = load;
+$('#month').onchange = load;
 $('#language').onchange = event => setLanguageMode(event.target.value);
 $('#sync').onclick = async () => {
   try {

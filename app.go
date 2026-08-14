@@ -223,7 +223,7 @@ func (a *app) recordUsage(r usageRecord) error {
 	reset, _ := headerInt(r.ResponseHeaders, "X-Codex-Primary-Reset-At")
 	// reset_at is occasionally off by a few seconds between concurrent
 	// responses because some upstreams derive it from reset_after_seconds.
-	// Canonicalize to a minute so one weekly window is not split into many.
+	// Canonicalize to a minute so one quota cycle is not split into many.
 	if reset > 0 {
 		reset = ((reset + 30) / 60) * 60
 	}

@@ -44,6 +44,7 @@ func (s *store) migrate() error {
 	_, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS usage_events (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	cycle_id INTEGER NOT NULL DEFAULT 0,
  requested_at INTEGER NOT NULL,
  account TEXT NOT NULL,
  provider TEXT NOT NULL DEFAULT '',
@@ -68,6 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_account_time ON usage_events(account, reque
 CREATE INDEX IF NOT EXISTS idx_usage_model_time ON usage_events(model, requested_at);
 CREATE TABLE IF NOT EXISTS quota_samples (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	cycle_id INTEGER NOT NULL DEFAULT 0,
  sampled_at INTEGER NOT NULL,
  account TEXT NOT NULL,
  used_percent REAL NOT NULL,
@@ -80,6 +82,23 @@ CREATE TABLE IF NOT EXISTS quota_samples (
 );
 CREATE INDEX IF NOT EXISTS idx_quota_account_time ON quota_samples(account, sampled_at);
 CREATE INDEX IF NOT EXISTS idx_quota_account_window ON quota_samples(account, reset_at, sampled_at);
+CREATE TABLE IF NOT EXISTS quota_cycles (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ account TEXT NOT NULL,
+ started_at INTEGER NOT NULL,
+ ended_at INTEGER NOT NULL DEFAULT 0,
+ reset_at INTEGER NOT NULL DEFAULT 0,
+ window_minutes INTEGER NOT NULL DEFAULT 0,
+ plan_type TEXT NOT NULL DEFAULT '',
+ close_reason TEXT NOT NULL DEFAULT '',
+ first_sample_at INTEGER NOT NULL DEFAULT 0,
+ last_sample_at INTEGER NOT NULL DEFAULT 0,
+ start_used_percent REAL NOT NULL DEFAULT 0,
+ end_used_percent REAL NOT NULL DEFAULT 0,
+ peak_used_percent REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_cycles_account_start ON quota_cycles(account, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cycles_account_open ON quota_cycles(account, ended_at);
 CREATE TABLE IF NOT EXISTS model_prices (
  model TEXT PRIMARY KEY,
  input REAL NOT NULL DEFAULT 0,
@@ -99,7 +118,19 @@ CREATE TABLE IF NOT EXISTS model_prices (
 );
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	if err = ensureColumn(s.db, "usage_events", "cycle_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err = ensureColumn(s.db, "quota_samples", "cycle_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if _, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_usage_cycle_time ON usage_events(cycle_id, requested_at); CREATE INDEX IF NOT EXISTS idx_quota_cycle_time ON quota_samples(cycle_id, sampled_at);`); err != nil {
+		return err
+	}
+	return s.backfillCycles()
 }
 
 func (s *store) close() error { return s.db.Close() }
@@ -110,36 +141,42 @@ func (s *store) insertEvent(ctx context.Context, e event, sampleInterval time.Du
 		return err
 	}
 	defer tx.Rollback()
+	cycle, err := s.ensureEventCycle(ctx, tx, e)
+	if err != nil {
+		return err
+	}
 	var used any
 	if e.UsedPercent != nil {
 		used = *e.UsedPercent
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO usage_events
-(requested_at,account,provider,model,alias,service_tier,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,failed,status_code,used_percent,reset_at,window_minutes,plan_type)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		e.RequestedAt, e.Account, e.Provider, e.Model, e.Alias, e.ServiceTier,
+(cycle_id,requested_at,account,provider,model,alias,service_tier,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,failed,status_code,used_percent,reset_at,window_minutes,plan_type)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		cycle.ID, e.RequestedAt, e.Account, e.Provider, e.Model, e.Alias, e.ServiceTier,
 		e.InputTokens, e.OutputTokens, e.ReasoningTokens, e.CacheReadTokens, e.CacheWriteTokens,
 		e.TotalTokens, e.CostUSD, e.Failed, e.StatusCode, used, e.ResetAt, e.WindowMinutes, e.PlanType)
 	if err != nil {
 		return err
 	}
-	if e.UsedPercent != nil && e.ResetAt > 0 && e.WindowMinutes > 0 {
+	if cycle.ID > 0 && e.UsedPercent != nil && e.ResetAt > 0 && e.WindowMinutes > 0 {
 		var lastAt int64
 		var lastPercent float64
-		errLast := tx.QueryRowContext(ctx, `SELECT sampled_at, used_percent FROM quota_samples WHERE account=? AND reset_at=? ORDER BY sampled_at DESC LIMIT 1`, e.Account, e.ResetAt).Scan(&lastAt, &lastPercent)
+		errLast := tx.QueryRowContext(ctx, `SELECT sampled_at, used_percent FROM quota_samples WHERE cycle_id=? ORDER BY sampled_at DESC LIMIT 1`, cycle.ID).Scan(&lastAt, &lastPercent)
 		due := errLast == sql.ErrNoRows || (*e.UsedPercent >= lastPercent && (lastPercent != *e.UsedPercent || e.RequestedAt-lastAt >= int64(sampleInterval/time.Second)))
 		if errLast != nil && errLast != sql.ErrNoRows {
 			return errLast
 		}
 		if due {
-			windowStart := e.ResetAt - e.WindowMinutes*60
 			var tokens, requests int64
 			var cost float64
-			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND requested_at>=? AND requested_at<=?`, e.Account, windowStart, e.RequestedAt).Scan(&tokens, &cost, &requests); err != nil {
+			if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE cycle_id=? AND requested_at<=?`, cycle.ID, e.RequestedAt).Scan(&tokens, &cost, &requests); err != nil {
 				return err
 			}
-			_, err = tx.ExecContext(ctx, `INSERT INTO quota_samples(sampled_at,account,used_percent,reset_at,window_minutes,plan_type,window_tokens,window_cost_usd,requests) VALUES(?,?,?,?,?,?,?,?,?)`, e.RequestedAt, e.Account, *e.UsedPercent, e.ResetAt, e.WindowMinutes, e.PlanType, tokens, cost, requests)
+			_, err = tx.ExecContext(ctx, `INSERT INTO quota_samples(cycle_id,sampled_at,account,used_percent,reset_at,window_minutes,plan_type,window_tokens,window_cost_usd,requests) VALUES(?,?,?,?,?,?,?,?,?,?)`, cycle.ID, e.RequestedAt, e.Account, *e.UsedPercent, e.ResetAt, e.WindowMinutes, e.PlanType, tokens, cost, requests)
 			if err != nil {
+				return err
+			}
+			if err = updateCycleSample(ctx, tx, cycle.ID, e.RequestedAt, *e.UsedPercent, e.ResetAt, e.WindowMinutes, e.PlanType); err != nil {
 				return err
 			}
 		}
@@ -324,7 +361,7 @@ func (s *store) cleanup(ctx context.Context, days int) error {
 		days = 7
 	}
 	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Unix()
-	_, err := s.db.ExecContext(ctx, `DELETE FROM usage_events WHERE requested_at<?; DELETE FROM quota_samples WHERE sampled_at<?`, cutoff, cutoff)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM usage_events WHERE requested_at<?; DELETE FROM quota_samples WHERE sampled_at<?; DELETE FROM quota_cycles WHERE ended_at>0 AND ended_at<?`, cutoff, cutoff, cutoff)
 	return err
 }
 

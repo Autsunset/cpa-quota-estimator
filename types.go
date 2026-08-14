@@ -150,6 +150,8 @@ type event struct {
 }
 
 type quotaPoint struct {
+	CycleID       int64   `json:"cycle_id"`
+	CycleStart    int64   `json:"cycle_start"`
 	Time          int64   `json:"time"`
 	UsedPercent   float64 `json:"used_percent"`
 	ResetAt       int64   `json:"reset_at"`
@@ -157,6 +159,26 @@ type quotaPoint struct {
 	WindowTokens  int64   `json:"window_tokens"`
 	WindowCostUSD float64 `json:"window_cost_usd"`
 	Requests      int64   `json:"requests"`
+}
+
+type quotaCycle struct {
+	ID               int64   `json:"id"`
+	StartedAt        int64   `json:"started_at"`
+	EndedAt          int64   `json:"ended_at,omitempty"`
+	ResetAt          int64   `json:"reset_at"`
+	WindowMinutes    int64   `json:"window_minutes"`
+	PlanType         string  `json:"plan_type"`
+	CloseReason      string  `json:"close_reason,omitempty"`
+	FirstSampleAt    int64   `json:"first_sample_at"`
+	LastSampleAt     int64   `json:"last_sample_at"`
+	StartPercent     float64 `json:"start_percent"`
+	EndPercent       float64 `json:"end_percent"`
+	PeakPercent      float64 `json:"peak_percent"`
+	ActualTokens     int64   `json:"actual_tokens"`
+	ActualCostUSD    float64 `json:"actual_cost_usd"`
+	Requests         int64   `json:"requests"`
+	Current          bool    `json:"current"`
+	ObservedComplete bool    `json:"observed_complete"`
 }
 
 type quotaWindow struct {
@@ -224,4 +246,45 @@ type burnForecast struct {
 	RecentEstimatedExhaustAt int64   `json:"recent_estimated_exhaust_at,omitempty"`
 	RecentWillExhaustBefore  bool    `json:"recent_will_exhaust_before_reset"`
 	Status                   string  `json:"status"`
+}
+
+type monthlyCycle struct {
+	quotaCycle
+	MonthTokens       int64   `json:"month_tokens"`
+	MonthCostUSD      float64 `json:"month_cost_usd"`
+	MonthRequests     int64   `json:"month_requests"`
+	CapacityAvailable bool    `json:"capacity_available"`
+	FullWindowTokens  float64 `json:"full_window_tokens"`
+	FullWindowCostUSD float64 `json:"full_window_cost_usd"`
+	TokenLow          float64 `json:"token_low"`
+	TokenHigh         float64 `json:"token_high"`
+	CostLow           float64 `json:"cost_low"`
+	CostHigh          float64 `json:"cost_high"`
+	Confidence        string  `json:"confidence"`
+}
+
+type monthlySummary struct {
+	Month                   string         `json:"month"`
+	Timezone                string         `json:"timezone"`
+	StartAt                 int64          `json:"start_at"`
+	EndAt                   int64          `json:"end_at"`
+	ActualTokens            int64          `json:"actual_tokens"`
+	ActualCostUSD           float64        `json:"actual_cost_usd"`
+	Requests                int64          `json:"requests"`
+	CycleCount              int            `json:"cycle_count"`
+	ResetCount              int            `json:"reset_count"`
+	EarlyResetCount         int            `json:"early_reset_count"`
+	AllocatedCycleCount     int            `json:"allocated_cycle_count"`
+	EstimatedCycleCount     int            `json:"estimated_cycle_count"`
+	ConsumedQuotaPercent    float64        `json:"consumed_quota_percent"`
+	ConsumedQuotaEquivalent float64        `json:"consumed_quota_equivalent"`
+	QuotaCoverageComplete   bool           `json:"quota_coverage_complete"`
+	UnusedQuotaAtReset      float64        `json:"unused_quota_at_reset"`
+	EstimatedTokens         float64        `json:"estimated_tokens"`
+	EstimatedTokenLow       float64        `json:"estimated_token_low"`
+	EstimatedTokenHigh      float64        `json:"estimated_token_high"`
+	EstimatedCostUSD        float64        `json:"estimated_cost_usd"`
+	EstimatedCostLow        float64        `json:"estimated_cost_low"`
+	EstimatedCostHigh       float64        `json:"estimated_cost_high"`
+	Cycles                  []monthlyCycle `json:"cycles"`
 }
