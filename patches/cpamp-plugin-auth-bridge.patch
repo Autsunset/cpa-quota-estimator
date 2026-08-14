@@ -1,0 +1,98 @@
+diff --git a/apps/web/src/features/plugins/PluginResourcePage.tsx b/apps/web/src/features/plugins/PluginResourcePage.tsx
+index 60b34c9d..bf6b17c5 100644
+--- a/apps/web/src/features/plugins/PluginResourcePage.tsx
++++ b/apps/web/src/features/plugins/PluginResourcePage.tsx
+@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
+ import { useTranslation } from 'react-i18next';
+ import { EmptyState } from '@/components/ui/EmptyState';
+ import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+-import { pluginsApi } from '@/services/api';
++import { apiClient, pluginsApi } from '@/services/api';
+ import { useAuthStore, useThemeStore } from '@/stores';
+ import { getErrorMessage, isRecord } from '@/utils/helpers';
+ import type { PluginListResponse } from '@/types';
+@@ -34,6 +34,9 @@ const parseMenuIndex = (value = '') => {
+   return Number.isInteger(index) && index >= 0 ? index : -1;
+ };
+ 
++const PLUGIN_API_REQUEST = 'cpamp:plugin-api-request';
++const PLUGIN_API_RESPONSE = 'cpamp:plugin-api-response';
++
+ export function PluginResourcePage() {
+   const { t } = useTranslation();
+   const params = useParams<{ pluginId: string; menuIndex: string }>();
+@@ -101,6 +104,74 @@ export function PluginResourcePage() {
+ 
+   const iframeSrc = resource ? resolvePluginAssetURL(resource.menu.path, apiBase) : '';
+ 
++  // Plugin resources are loaded as iframes, so they cannot inherit the
++  // Authorization header held by the authenticated CPAMP application. Proxy
++  // only the iframe's own plugin-management routes through the configured API
++  // client. The management/admin key never leaves the parent page.
++  useEffect(() => {
++    if (!iframeSrc || !pluginID) return;
++
++    let iframeOrigin = '';
++    try {
++      iframeOrigin = new URL(iframeSrc, window.location.href).origin;
++    } catch {
++      return;
++    }
++
++    const handlePluginAPIRequest = async (event: MessageEvent) => {
++      const frameWindow = iframeRef.current?.contentWindow;
++      if (!frameWindow || event.source !== frameWindow || event.origin !== iframeOrigin) return;
++      if (!isRecord(event.data) || event.data.type !== PLUGIN_API_REQUEST) return;
++
++      const id = typeof event.data.id === 'string' ? event.data.id : '';
++      const path = typeof event.data.path === 'string' ? event.data.path : '';
++      const method = typeof event.data.method === 'string' ? event.data.method.toUpperCase() : 'GET';
++      if (!id || !path || !['GET', 'POST'].includes(method)) return;
++
++      let parsed: URL;
++      try {
++        parsed = new URL(path, window.location.origin);
++      } catch {
++        return;
++      }
++      const allowedPrefix = `/v0/management/${pluginID}/`;
++      if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith(allowedPrefix)) {
++        frameWindow.postMessage(
++          { type: PLUGIN_API_RESPONSE, id, status: 403, data: { error: 'plugin route denied' } },
++          event.origin
++        );
++        return;
++      }
++
++      try {
++        const managementPath = `${parsed.pathname.slice('/v0/management'.length)}${parsed.search}`;
++        const response = await apiClient.requestRaw({
++          url: managementPath,
++          method,
++          data: event.data.body,
++          validateStatus: () => true,
++        });
++        frameWindow.postMessage(
++          { type: PLUGIN_API_RESPONSE, id, status: response.status, data: response.data },
++          event.origin
++        );
++      } catch (error) {
++        frameWindow.postMessage(
++          {
++            type: PLUGIN_API_RESPONSE,
++            id,
++            status: 502,
++            data: { error: getErrorMessage(error, 'plugin API bridge failed') },
++          },
++          event.origin
++        );
++      }
++    };
++
++    window.addEventListener('message', handlePluginAPIRequest);
++    return () => window.removeEventListener('message', handlePluginAPIRequest);
++  }, [iframeSrc, pluginID]);
++
+   const refreshPluginHostStyle = useCallback(() => {
+     const iframe = iframeRef.current;
+     if (!iframe) return;

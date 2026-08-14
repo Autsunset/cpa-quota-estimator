@@ -8,9 +8,11 @@ import (
 )
 
 const (
-	pluginID      = "cpa-quota-estimator"
-	pluginName    = "CPA Quota Estimator"
-	pluginVersion = "0.1.0"
+	pluginID              = "cpa-quota-estimator"
+	pluginName            = "CPA Quota Estimator"
+	pluginVersion         = "0.1.0"
+	tokenModeStandard     = "standard"
+	tokenModeIncludeCache = "include_cache_read"
 )
 
 type envelope struct {
@@ -92,6 +94,7 @@ type config struct {
 	FastMultiplier           float64 `yaml:"fast_multiplier"`
 	LongContextThreshold     int64   `yaml:"long_context_threshold"`
 	HistoryDays              int     `yaml:"history_days"`
+	TokenCountMode           string  `yaml:"token_count_mode"`
 }
 
 func defaultConfig() config {
@@ -105,6 +108,7 @@ func defaultConfig() config {
 		FastMultiplier:           2.5,
 		LongContextThreshold:     272000,
 		HistoryDays:              180,
+		TokenCountMode:           tokenModeStandard,
 	}
 }
 
@@ -149,13 +153,14 @@ type event struct {
 }
 
 type quotaPoint struct {
-	Time          int64   `json:"time"`
-	UsedPercent   float64 `json:"used_percent"`
-	ResetAt       int64   `json:"reset_at"`
-	WindowMinutes int64   `json:"window_minutes"`
-	WindowTokens  int64   `json:"window_tokens"`
-	WindowCostUSD float64 `json:"window_cost_usd"`
-	Requests      int64   `json:"requests"`
+	Time                  int64   `json:"time"`
+	UsedPercent           float64 `json:"used_percent"`
+	ResetAt               int64   `json:"reset_at"`
+	WindowMinutes         int64   `json:"window_minutes"`
+	WindowTokens          int64   `json:"window_tokens"`
+	WindowCacheReadTokens int64   `json:"window_cache_read_tokens"`
+	WindowCostUSD         float64 `json:"window_cost_usd"`
+	Requests              int64   `json:"requests"`
 }
 
 type estimate struct {

@@ -15,6 +15,9 @@
   - `source`：使用 models.dev 的 `experimental.modes.fast.cost` 显式价格。
 - 根据相邻额度增长区间取中位数，输出全周容量、剩余容量、四分位区间、置信度和预计耗尽时间。
 - 内置中文仪表盘，无第三方前端依赖；自动跟随 CPAMP 深色/浅色主题。
+- 支持“输入 + 输出”和“输入 + 输出 + 缓存命中”两种 Token 统计口径；选择保存在服务端 SQLite，下次进入仍保持原设置。
+- 嵌入当前定制 CPAMP 时复用面板登录态，不再重复输入密钥；独立打开资源页时仍保留手动密钥登录。
+- 针对手机布局优化，图表在窄屏中可横向滑动，避免坐标与单位被压缩。
 - 曲线分别显示周额度（%）、Token（Token）和计费用量（USD），横轴固定为 Asia/Shanghai 时间。
 - 记录每次额度增长后的滚动中位数预测，绘制整周 Token 容量与整周美元额度的历史变化曲线。
 
@@ -67,6 +70,7 @@ plugins:
       price_sync_interval_minutes: 1440
       fast_pricing_mode: multiplier
       fast_multiplier: 2.5
+      token_count_mode: standard
       long_context_threshold: 272000
       history_days: 180
   enabled: true
@@ -78,7 +82,14 @@ plugins:
 plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 ```
 
-在 CPAMP 左侧菜单打开“额度容量预测”。页面可使用 Manager Server 管理员密钥或 CPA Management Key 登录；密钥只写入当前标签页的 `sessionStorage`。
+在当前定制 CPAMP 左侧菜单打开“额度容量预测”时，页面通过受限的父页面消息桥复用已有登录态，不会再次显示密钥输入框，也不会把 Manager Server 管理员密钥传给插件 iframe。独立打开资源页时仍可使用 Manager Server 管理员密钥或 CPA Management Key 登录；密钥只写入当前标签页的 `sessionStorage`。
+
+Token 口径可随时切换：
+
+- `standard`：输入 Token + 输出 Token；
+- `include_cache_read`：输入 Token + 输出 Token + 缓存命中 Token。
+
+第二种是“处理量”视图，会把通常已包含在输入 Token 中的缓存命中量再加一次；费用估算始终按缓存折扣价格独立计算，不受该显示口径开关影响。
 
 ## 管理 API
 
@@ -88,6 +99,8 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 |---|---|---|
 | GET | `/v0/management/cpa-quota-estimator/summary` | 当前窗口和预测摘要 |
 | GET | `/v0/management/cpa-quota-estimator/series` | 当前窗口曲线点 |
+| GET | `/v0/management/cpa-quota-estimator/settings` | 读取持久化 Token 口径 |
+| POST | `/v0/management/cpa-quota-estimator/settings` | 保存 Token 口径 |
 | GET | `/v0/management/cpa-quota-estimator/prices` | 已同步价格与 Fast 策略 |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即同步 models.dev |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | 仪表盘资源 |
@@ -109,6 +122,8 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 `ReasoningTokens` 已包含在输出 Token 中，不重复计费。输入大于 `long_context_threshold` 时整次请求采用 context tier；`service_tier=priority` 或 `fast` 时采用 Fast 策略。
 
+当前实例的 `fast_pricing_mode=multiplier`、`fast_multiplier=2.5`，所以实际响应记录为 `priority` 的 `/fast` 请求按 **2.5 倍**估算；普通 `auto/default` 请求仍按 1 倍估算。
+
 ## 升级与恢复
 
 数据库在 CPA 数据卷中，升级 `.so` 不会删除历史曲线：
@@ -122,6 +137,8 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 3. 替换 `.so`，保持文件名 ID 前缀为 `cpa-quota-estimator-v<版本>.so`。
 4. 重启 CPA 并检查注册日志、`summary` API 和仪表盘。
 5. 如需回滚，恢复 `config.yaml.bak-latest` 和旧 `.so`；不要删除 SQLite。
+
+当前 CPAMP 无重复密钥登录依赖一处定制桥接；升级 CPAMP 前请按 [`docs/CPAMP_AUTH_BRIDGE.md`](docs/CPAMP_AUTH_BRIDGE.md) 检查官方实现并决定是否重放补丁。
 
 ## 数据与隐私
 
