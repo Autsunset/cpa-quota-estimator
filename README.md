@@ -140,6 +140,10 @@ The SQLite database contains credential identifiers, model names, Token counts, 
 
 The plugin does not require CPAMP. A custom CPAMP deployment can optionally reuse its existing login state through a restricted `postMessage` bridge; see [`docs/CPAMP_AUTH_BRIDGE.md`](docs/CPAMP_AUTH_BRIDGE.md). The dashboard automatically falls back when the bridge is absent.
 
+## Acknowledgements
+
+感谢 [Linux.do 社区](https://linux.do/) 在测试、反馈与技术交流方面提供的支持。
+
 ## License
 
 [MIT](LICENSE)
