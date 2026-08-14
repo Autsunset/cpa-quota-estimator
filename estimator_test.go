@@ -37,6 +37,10 @@ func TestEstimateCapacityUsesFirstMonotonicCrossings(t *testing.T) {
 	if e.SampleCount != 2 || e.FullWindowTokens != 10_000 || e.FullWindowCostUSD != 1000 {
 		t.Fatalf("monotonic estimate = %#v", e)
 	}
+	history := capacityHistory(points)
+	if len(history) != 2 || history[0].FullWindowTokens != 10_000 || history[1].FullWindowCostUSD != 1000 {
+		t.Fatalf("capacity history = %#v", history)
+	}
 }
 
 func TestCalculateCostCacheLongAndFast(t *testing.T) {

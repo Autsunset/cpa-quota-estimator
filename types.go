@@ -174,3 +174,11 @@ type estimate struct {
 	Confidence         string  `json:"confidence"`
 	Explanation        string  `json:"explanation"`
 }
+
+type capacityPoint struct {
+	Time              int64   `json:"time"`
+	UsedPercent       float64 `json:"used_percent"`
+	FullWindowTokens  float64 `json:"full_window_tokens"`
+	FullWindowCostUSD float64 `json:"full_window_cost_usd"`
+	SampleCount       int     `json:"sample_count"`
+}

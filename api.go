@@ -60,7 +60,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil && err != sql.ErrNoRows {
 			return textResponse(500, err.Error())
 		}
-		return jsonResponse(200, map[string]any{"account": account, "plan_type": plan, "points": points, "estimate": estimateCapacity(points)})
+		return jsonResponse(200, map[string]any{"account": account, "plan_type": plan, "points": points, "capacity_points": capacityHistory(points), "estimate": estimateCapacity(points)})
 	case strings.HasSuffix(req.Path, "/prices/sync"):
 		count, err := syncPrices(ctx, a.store, a.cfg)
 		if err != nil {

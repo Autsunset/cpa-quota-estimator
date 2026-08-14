@@ -14,14 +14,7 @@ func estimateCapacity(points []quotaPoint) estimate {
 	// repeat the same integer percentage. Use only the first crossing of each
 	// new all-time high; adjacent periodic samples would severely undercount
 	// the work needed to advance by one percent.
-	milestones := []quotaPoint{points[0]}
-	maxPercent := points[0].UsedPercent
-	for _, point := range points[1:] {
-		if point.ResetAt == points[0].ResetAt && point.UsedPercent > maxPercent {
-			milestones = append(milestones, point)
-			maxPercent = point.UsedPercent
-		}
-	}
+	milestones := monotonicMilestones(points)
 	if len(milestones) < 2 {
 		return result
 	}
@@ -68,6 +61,51 @@ func estimateCapacity(points []quotaPoint) estimate {
 		result.EstimatedExhaustAt = last.Time + int64((100-last.UsedPercent)/rate)
 	}
 	return result
+}
+
+func capacityHistory(points []quotaPoint) []capacityPoint {
+	milestones := monotonicMilestones(points)
+	if len(milestones) < 2 {
+		return []capacityPoint{}
+	}
+	var tokenEstimates, costEstimates []float64
+	out := make([]capacityPoint, 0, len(milestones)-1)
+	for i := 1; i < len(milestones); i++ {
+		a, b := milestones[i-1], milestones[i]
+		dp := b.UsedPercent - a.UsedPercent
+		if dp <= 0 {
+			continue
+		}
+		if delta := float64(b.WindowTokens - a.WindowTokens); delta > 0 {
+			tokenEstimates = append(tokenEstimates, delta*100/dp)
+		}
+		if delta := b.WindowCostUSD - a.WindowCostUSD; delta > 0 {
+			costEstimates = append(costEstimates, delta*100/dp)
+		}
+		out = append(out, capacityPoint{
+			Time:              b.Time,
+			UsedPercent:       b.UsedPercent,
+			FullWindowTokens:  median(tokenEstimates),
+			FullWindowCostUSD: median(costEstimates),
+			SampleCount:       max(len(tokenEstimates), len(costEstimates)),
+		})
+	}
+	return out
+}
+
+func monotonicMilestones(points []quotaPoint) []quotaPoint {
+	if len(points) == 0 {
+		return nil
+	}
+	milestones := []quotaPoint{points[0]}
+	maxPercent := points[0].UsedPercent
+	for _, point := range points[1:] {
+		if point.ResetAt == points[0].ResetAt && point.UsedPercent > maxPercent {
+			milestones = append(milestones, point)
+			maxPercent = point.UsedPercent
+		}
+	}
+	return milestones
 }
 
 func median(values []float64) float64 { return quantile(values, .5) }
