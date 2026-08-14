@@ -1,6 +1,6 @@
 # 项目维护说明
 
-本文件适用于整个仓库。任何修改都应同时考虑源码发布、GitHub Release 和 CPA 插件市场状态，不能只更新其中一处。
+本文件适用于整个仓库。任何发布都应同时检查源码、GitHub Release 和 CPA 插件市场兼容性，不能只更新源码而忽略商店要求。
 
 ## 基本要求
 
@@ -17,14 +17,16 @@
 4. 确认 Release 至少包含 Linux amd64/arm64、macOS amd64/arm64、Windows amd64 和 `checksums.txt`。
 5. 校验发布包名称、版本号和校验文件一致。
 
-## CPA 插件市场同步
+## CPA 插件市场规则
 
-每次发布新版本都必须检查 [CLIProxyAPI Plugins Store](https://github.com/router-for-me/CLIProxyAPI-Plugins-Store) 中本插件的状态，并根据实际状态处理：
+以 [CLIProxyAPI Plugins Store 官方说明](https://github.com/router-for-me/CLIProxyAPI-Plugins-Store#release-requirements) 为准：商店会读取插件仓库的最新 GitHub Release，Release 标签是插件版本的事实来源。`registry.json` 中的 `version` 是可选的旧版兼容字段，只在无法查询最新 Release 时用于展示。
 
-- 首次上架 PR 仍为 **Open**：更新同一个 PR 的来源分支、`registry.json`、版本号、描述和 PR 正文，使其指向最新的已发布版本；不要另开重复 PR。
-- 首次上架 PR 已 **Merged**：不要再修改或尝试复用旧 PR。检查官方注册表是否需要显式更新版本；如果需要，按商店流程创建新的版本更新 PR，如果商店能自动跟随 Release，则记录检查结果，不创建无意义 PR。
-- PR 为 **Closed 且未合并**：检查关闭原因并修正；不能直接假设旧 PR 仍有效，必要时创建新的合规 PR。
+- 每次发布新版本：只要 GitHub Release 的标签、压缩包、文件布局和 `checksums.txt` 符合官方规范，商店会自动获取最新版本，不需要修改 `registry.json`，也不需要为普通版本升级创建新 PR。
+- 首次上架 PR 仍为 **Open**：更新同一个 PR 的来源分支和 PR 正文，使其引用最新的已发布版本及构建证据；如果 PR 中保留了兼容字段 `version`，也同步更新。不要另开重复 PR。
+- 首次上架 PR 已 **Merged**：不要再修改或尝试复用旧 PR。后续普通版本升级只发布新的 GitHub Release。
+- 只有插件的注册元数据发生变化，例如名称、描述、仓库地址、Logo、主页、许可证或标签需要调整时，才按商店流程提交新的注册表 PR。
+- PR 为 **Closed 且未合并**：检查关闭原因并修正；不能直接假设旧 PR 仍有效，必要时创建新的合规上架 PR。
 
 当前首次上架 PR：<https://github.com/router-for-me/CLIProxyAPI-Plugins-Store/pull/78>
 
-更新商店 PR 前必须重新查询其状态，不能依赖本文件记录的历史状态。
+处理商店事项前必须重新查询首次上架 PR 的状态，不能依赖本文件记录的历史状态。
