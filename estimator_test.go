@@ -1,0 +1,54 @@
+package main
+
+import (
+	"math"
+	"strings"
+	"testing"
+)
+
+func TestEstimateCapacity(t *testing.T) {
+	points := []quotaPoint{
+		{Time: 1000, UsedPercent: 10, ResetAt: 9000, WindowTokens: 100_000_000, WindowCostUSD: 100},
+		{Time: 2000, UsedPercent: 12, ResetAt: 9000, WindowTokens: 160_000_000, WindowCostUSD: 160},
+		{Time: 3000, UsedPercent: 15, ResetAt: 9000, WindowTokens: 250_000_000, WindowCostUSD: 250},
+	}
+	e := estimateCapacity(points)
+	if !e.Available || e.SampleCount != 2 || e.PercentSpan != 5 {
+		t.Fatalf("unexpected estimate: %#v", e)
+	}
+	if e.FullWindowTokens != 3_000_000_000 || e.FullWindowCostUSD != 3000 {
+		t.Fatalf("capacity = %.0f tokens, %.2f USD", e.FullWindowTokens, e.FullWindowCostUSD)
+	}
+	if e.RemainingTokens != 2_550_000_000 || e.RemainingCostUSD != 2550 {
+		t.Fatalf("remaining = %.0f tokens, %.2f USD", e.RemainingTokens, e.RemainingCostUSD)
+	}
+}
+
+func TestCalculateCostCacheLongAndFast(t *testing.T) {
+	p := price{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25, LongInput: 10, LongOutput: 45, LongRead: 1, LongWrite: 12.5, FastInput: 10, FastOutput: 60, FastRead: 1, FastWrite: 12.5}
+	cfg := defaultConfig()
+	detail := usageDetail{InputTokens: 300_000, OutputTokens: 10_000, CacheReadTokens: 200_000, CacheCreationTokens: 20_000}
+	got := calculateCost(p, detail, "priority", cfg)
+	want := (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*45) / 1_000_000 * 2.5
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("cost = %f, want %f", got, want)
+	}
+	cfg.FastPricingMode = "source"
+	got = calculateCost(p, detail, "priority", cfg)
+	want = (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*60) / 1_000_000
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("source fast cost = %f, want %f", got, want)
+	}
+}
+
+func TestDecodeCatalog(t *testing.T) {
+	raw := `{"providers":{"openai":{"models":{"gpt-test":{"cost":{"input":1,"output":2,"cache_read":0.1,"cache_write":0.2,"tiers":[{"input":3,"output":4,"cache_read":0.3,"cache_write":0.4,"tier":{"type":"context","size":272000}}]},"experimental":{"modes":{"fast":{"cost":{"input":2.5,"output":5,"cache_read":0.25,"cache_write":0.5}}}}}}}}}`
+	prices, err := decodeCatalog(strings.NewReader(raw))
+	if err != nil || len(prices) != 1 {
+		t.Fatalf("decode: %v %#v", err, prices)
+	}
+	p := prices[0]
+	if p.LongInput != 3 || p.FastOutput != 5 || p.CacheWrite != .2 {
+		t.Fatalf("price = %#v", p)
+	}
+}
