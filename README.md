@@ -13,7 +13,7 @@
 [![Release](https://img.shields.io/github/v/release/Autsunset/cpa-quota-estimator)](https://github.com/Autsunset/cpa-quota-estimator/releases)
 [![License](https://img.shields.io/github/license/Autsunset/cpa-quota-estimator)](LICENSE)
 
-A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugin that maps Codex weekly quota changes to estimated Token and USD-equivalent capacity, then visualizes burn rate and exhaustion forecasts.
+A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugin that records actual Codex quota cycles, maps quota changes to estimated Token and USD-equivalent capacity, and summarizes usage across scheduled or early official resets.
 
 > OpenAI does not publish a fixed Token or USD value for the Codex weekly quota. The estimates shown here are workload-equivalent capacity estimates, not official plan face values.
 
@@ -26,9 +26,11 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 - Supports configurable Fast pricing:
   - `multiplier`: multiply normal/long-context pricing, default **2.5×**;
   - `source`: use explicit `experimental.modes.fast.cost` pricing from models.dev.
-- Estimates total and remaining weekly Token/USD-equivalent capacity with quartile ranges and confidence levels.
-- Shows actual quota usage, sustainable pace, cumulative-average projection, recent 24-hour projection, predicted exhaustion, reset time, and countdown.
-- Keeps each observed weekly quota window separately and lets you switch back to prior weeks to review their usage, capacity estimates, and end-of-window forecasts.
+- Estimates full-cycle and remaining-quota Token/USD-equivalent capacity with interquartile ranges and confidence levels.
+- Shows actual quota usage, a sustainable baseline, cumulative-average projection, recent-rate projection, predicted exhaustion, planned reset time, and countdown.
+- Maintains an independent ledger for every confirmed quota cycle. Historical cycles remain available in the selector after a reset.
+- Detects normal resets from schedule transitions and confirms same-`reset_at` early resets only after two consecutive low-usage observations, reducing false splits from a single stale header.
+- Adds calendar-month reporting for actual Tokens, estimated request cost, requests, involved cycles, confirmed resets, early resets, cumulative quota-consumption equivalents, unconsumed quota at reset, and estimated capacity allocated by cycles starting in that month.
 - Automatically follows the official CPA or CPAMP panel language, supports Chinese/English manual switching, and remembers the selected mode in the browser.
 - Includes a responsive embedded dashboard with dark/light themes and mobile layouts.
 - Retains data for 365 days by default and never stores request or response bodies.
@@ -36,25 +38,37 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 
 ## Estimation
 
-For adjacent quota-growth samples in the same weekly window:
+For adjacent quota-growth samples in the same quota cycle:
 
 ```text
-Token-equivalent weekly capacity = ΔToken × 100 / Δquota_percent
-USD-equivalent weekly capacity   = Δcost × 100 / Δquota_percent
+Token-equivalent full-cycle capacity = ΔToken × 100 / Δquota_percent
+USD-equivalent full-cycle capacity   = Δcost × 100 / Δquota_percent
 ```
 
 The dashboard uses the median of valid intervals and reports P25–P75 as the uncertainty range. Because quota response headers are usually integer percentages, early estimates can vary significantly and become more stable as percentage coverage increases.
 
-The burn forecast compares elapsed weekly time with consumed quota:
+The burn forecast compares elapsed cycle time with consumed quota:
 
 ```text
-time progress          = elapsed seconds / weekly window seconds
+time progress          = elapsed seconds / cycle seconds
 cumulative daily pace = used percent / elapsed days
 projected reset usage = used percent / time progress
-estimated exhaustion  = window start + elapsed time × 100 / used percent
+estimated exhaustion  = cycle start + elapsed time × 100 / used percent
 ```
 
-The green line is the pace that reaches exactly 100% at reset. Purple is the cumulative-average projection. Orange is the recent approximately 24-hour projection, falling back to the cumulative average when recent evidence is insufficient.
+The green line is the pace that reaches exactly 100% at reset. Purple is the cumulative-average projection. Orange is the recent approximately 24-hour projection, falling back to the cumulative average when recent evidence is insufficient. For an early refill that keeps the same `reset_at`, the new cycle begins at the first confirmed low-usage observation and forecasts over the shortened remaining interval.
+
+### Cycle and monthly accounting
+
+`reset_at` is treated as the upstream planned reset time, not by itself as proof that a reset has already occurred. A normal schedule transition closes the preceding cycle. If the planned time remains unchanged but used quota abruptly returns near 0%, the plugin waits for a second consistent observation before confirming an early reset; it then assigns the first low observation and subsequent requests to the new cycle.
+
+Calendar-month totals use Asia/Shanghai boundaries:
+
+- actual Tokens and requests are assigned by request timestamp; request cost is estimated from models.dev pricing and assigned by the same timestamp;
+- quota-consumption equivalent is the sum of observed percentage growth attributable to the month, so multiple cycles can exceed `100%` or `1.00×`;
+- reset counts and unconsumed quota include confirmed scheduled, early, and migrated historical resets;
+- estimated monthly capacity sums the median full-cycle estimates for cycles that start in the selected month. It remains a workload-equivalent estimate rather than an official allowance;
+- quota-equivalent data is marked as partial when a cycle crosses the month boundary without an earlier sample from which to establish the month-start baseline.
 
 ## Installation
 
@@ -99,6 +113,8 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 Open **额度容量预测 / Quota Estimator** from the management center. When the host panel cannot provide an authenticated plugin bridge, the dashboard falls back to CPA Management Key login and stores the key only in the current tab's `sessionStorage`.
 
+Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
+
 ## Token and cost rules
 
 The Token charts use input + output Tokens. Cached Tokens are normally included in input Tokens and are therefore not added again. Cost calculation still applies cache pricing independently:
@@ -121,13 +137,14 @@ All management routes are protected by CPA Management Key:
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/v0/management/cpa-quota-estimator/summary` | Current window and forecast summary |
-| GET | `/v0/management/cpa-quota-estimator/series` | Current window chart samples |
+| GET | `/v0/management/cpa-quota-estimator/summary` | Selected quota-cycle and forecast summary |
+| GET | `/v0/management/cpa-quota-estimator/series` | Selected quota-cycle chart samples |
+| GET | `/v0/management/cpa-quota-estimator/monthly` | Calendar-month usage, reset, and capacity summary |
 | GET | `/v0/management/cpa-quota-estimator/prices` | Synced prices and Fast policy |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | Trigger an immediate models.dev sync |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | Embedded dashboard resource |
 
-Use `?account=<AuthID>` on `summary` and `series` to select a credential.
+Use `?account=<AuthID>` to select a credential, `?cycle_id=<ID>` on `summary` or `series` to select a historical cycle, and `?month=YYYY-MM` on `monthly` to select a month.
 
 ## Build
 
@@ -154,7 +171,3 @@ The plugin does not require CPAMP. A custom CPAMP deployment can optionally reus
 Thanks to [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) for the underlying proxy capabilities and native plugin system.
 
 Thanks to the [Linux.do community](https://linux.do/) for testing, feedback, and technical discussion.
-
-## License
-
-[MIT](LICENSE)
