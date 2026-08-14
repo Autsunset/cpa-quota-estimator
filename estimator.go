@@ -60,6 +60,30 @@ func estimateBurn(points []quotaPoint, now int64) burnForecast {
 		result.EstimatedExhaustAt = windowStart + int64(float64(elapsed)*100/used)
 		result.WillExhaustBeforeReset = result.EstimatedExhaustAt < last.ResetAt
 	}
+	milestones := monotonicMilestones(points)
+	if len(milestones) >= 2 {
+		latest := milestones[len(milestones)-1]
+		cutoff := latest.Time - 24*60*60
+		anchorIndex := 0
+		for i := 0; i < len(milestones)-1; i++ {
+			if milestones[i].Time <= cutoff {
+				anchorIndex = i
+			}
+		}
+		anchor := milestones[anchorIndex]
+		recentSeconds := latest.Time - anchor.Time
+		recentSpan := latest.UsedPercent - anchor.UsedPercent
+		if recentSeconds > 0 && recentSpan > 0 {
+			recentRate := recentSpan / float64(recentSeconds)
+			result.RecentAvailable = true
+			result.RecentWindowSeconds = recentSeconds
+			result.RecentPercentSpan = recentSpan
+			result.RecentPercentPerDay = recentRate * 86400
+			result.RecentProjectedAtReset = used + recentRate*float64(remaining)
+			result.RecentEstimatedExhaustAt = calculatedAt + int64((100-used)/recentRate)
+			result.RecentWillExhaustBefore = result.RecentEstimatedExhaustAt < last.ResetAt
+		}
+	}
 	return result
 }
 

@@ -201,5 +201,12 @@ type burnForecast struct {
 	ProjectedUsedAtReset     float64 `json:"projected_used_at_reset"`
 	EstimatedExhaustAt       int64   `json:"estimated_exhaust_at,omitempty"`
 	WillExhaustBeforeReset   bool    `json:"will_exhaust_before_reset"`
+	RecentAvailable          bool    `json:"recent_available"`
+	RecentWindowSeconds      int64   `json:"recent_window_seconds"`
+	RecentPercentSpan        float64 `json:"recent_percent_span"`
+	RecentPercentPerDay      float64 `json:"recent_percent_per_day"`
+	RecentProjectedAtReset   float64 `json:"recent_projected_at_reset"`
+	RecentEstimatedExhaustAt int64   `json:"recent_estimated_exhaust_at,omitempty"`
+	RecentWillExhaustBefore  bool    `json:"recent_will_exhaust_before_reset"`
 	Status                   string  `json:"status"`
 }

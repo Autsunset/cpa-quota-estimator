@@ -73,6 +73,26 @@ func TestEstimateBurnSlowPaceLastsToReset(t *testing.T) {
 	}
 }
 
+func TestEstimateBurnRecentPace(t *testing.T) {
+	const day = int64(24 * 60 * 60)
+	const week = 7 * day
+	points := []quotaPoint{
+		{Time: day, UsedPercent: 10, ResetAt: week, WindowMinutes: week / 60},
+		{Time: 2 * day, UsedPercent: 30, ResetAt: week, WindowMinutes: week / 60},
+		{Time: 3 * day, UsedPercent: 40, ResetAt: week, WindowMinutes: week / 60},
+	}
+	got := estimateBurn(points, 3*day)
+	if !got.RecentAvailable || got.RecentWindowSeconds != day || got.RecentPercentSpan != 10 {
+		t.Fatalf("unexpected recent sample: %#v", got)
+	}
+	if got.RecentPercentPerDay != 10 || got.RecentProjectedAtReset != 80 {
+		t.Fatalf("unexpected recent pace: %#v", got)
+	}
+	if got.RecentEstimatedExhaustAt != 9*day || got.RecentWillExhaustBefore {
+		t.Fatalf("unexpected recent exhaustion: %#v", got)
+	}
+}
+
 func TestCalculateCostCacheLongAndFast(t *testing.T) {
 	p := price{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25, LongInput: 10, LongOutput: 45, LongRead: 1, LongWrite: 12.5, FastInput: 10, FastOutput: 60, FastRead: 1, FastWrite: 12.5}
 	cfg := defaultConfig()
