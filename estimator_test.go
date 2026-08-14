@@ -24,6 +24,21 @@ func TestEstimateCapacity(t *testing.T) {
 	}
 }
 
+func TestEstimateCapacityUsesFirstMonotonicCrossings(t *testing.T) {
+	points := []quotaPoint{
+		{Time: 1000, UsedPercent: 10, ResetAt: 9000, WindowTokens: 100, WindowCostUSD: 10},
+		{Time: 1100, UsedPercent: 10, ResetAt: 9000, WindowTokens: 180, WindowCostUSD: 18},
+		{Time: 1200, UsedPercent: 11, ResetAt: 9000, WindowTokens: 200, WindowCostUSD: 20},
+		{Time: 1300, UsedPercent: 10, ResetAt: 9000, WindowTokens: 230, WindowCostUSD: 23}, // stale concurrent response
+		{Time: 1400, UsedPercent: 11, ResetAt: 9000, WindowTokens: 280, WindowCostUSD: 28},
+		{Time: 1500, UsedPercent: 12, ResetAt: 9000, WindowTokens: 300, WindowCostUSD: 30},
+	}
+	e := estimateCapacity(points)
+	if e.SampleCount != 2 || e.FullWindowTokens != 10_000 || e.FullWindowCostUSD != 1000 {
+		t.Fatalf("monotonic estimate = %#v", e)
+	}
+}
+
 func TestCalculateCostCacheLongAndFast(t *testing.T) {
 	p := price{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25, LongInput: 10, LongOutput: 45, LongRead: 1, LongWrite: 12.5, FastInput: 10, FastOutput: 60, FastRead: 1, FastWrite: 12.5}
 	cfg := defaultConfig()

@@ -10,10 +10,25 @@ func estimateCapacity(points []quotaPoint) estimate {
 	if len(points) < 2 {
 		return result
 	}
+	// Concurrent responses may carry stale percentages, and periodic samples
+	// repeat the same integer percentage. Use only the first crossing of each
+	// new all-time high; adjacent periodic samples would severely undercount
+	// the work needed to advance by one percent.
+	milestones := []quotaPoint{points[0]}
+	maxPercent := points[0].UsedPercent
+	for _, point := range points[1:] {
+		if point.ResetAt == points[0].ResetAt && point.UsedPercent > maxPercent {
+			milestones = append(milestones, point)
+			maxPercent = point.UsedPercent
+		}
+	}
+	if len(milestones) < 2 {
+		return result
+	}
 	var tokenEstimates, costEstimates []float64
-	first, last := points[0], points[len(points)-1]
-	for i := 1; i < len(points); i++ {
-		a, b := points[i-1], points[i]
+	first, last := milestones[0], milestones[len(milestones)-1]
+	for i := 1; i < len(milestones); i++ {
+		a, b := milestones[i-1], milestones[i]
 		dp := b.UsedPercent - a.UsedPercent
 		if dp <= 0 || b.ResetAt != a.ResetAt {
 			continue

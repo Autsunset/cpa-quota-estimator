@@ -127,7 +127,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		var lastAt int64
 		var lastPercent float64
 		errLast := tx.QueryRowContext(ctx, `SELECT sampled_at, used_percent FROM quota_samples WHERE account=? AND reset_at=? ORDER BY sampled_at DESC LIMIT 1`, e.Account, e.ResetAt).Scan(&lastAt, &lastPercent)
-		due := errLast == sql.ErrNoRows || lastPercent != *e.UsedPercent || e.RequestedAt-lastAt >= int64(sampleInterval/time.Second)
+		due := errLast == sql.ErrNoRows || (*e.UsedPercent >= lastPercent && (lastPercent != *e.UsedPercent || e.RequestedAt-lastAt >= int64(sampleInterval/time.Second)))
 		if errLast != nil && errLast != sql.ErrNoRows {
 			return errLast
 		}
