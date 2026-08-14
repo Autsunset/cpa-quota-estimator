@@ -15,7 +15,17 @@ func TestPublicReleaseDefaults(t *testing.T) {
 	if cfg.HistoryDays != 365 {
 		t.Fatalf("history days = %d, want 365", cfg.HistoryDays)
 	}
-	for _, marker := range [][]byte{[]byte("bridgeState"), []byte("directApi"), []byte("CPA Management Key"), []byte("renderPeriods"), []byte("reset_at")} {
+	for _, marker := range [][]byte{
+		[]byte("bridgeState"),
+		[]byte("directApi"),
+		[]byte("CPA Management Key"),
+		[]byte("renderPeriods"),
+		[]byte("reset_at"),
+		[]byte("cli-proxy-language"),
+		[]byte("cqe-language-mode"),
+		[]byte("MutationObserver"),
+		[]byte("Auto (follow panel)"),
+	} {
 		if !bytes.Contains(dashboardHTML, marker) {
 			t.Fatalf("dashboard is missing public-host fallback marker %q", marker)
 		}
