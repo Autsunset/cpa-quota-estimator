@@ -5,6 +5,64 @@ import (
 	"sort"
 )
 
+func estimateBurn(points []quotaPoint, now int64) burnForecast {
+	result := burnForecast{Status: "insufficient"}
+	if len(points) == 0 {
+		return result
+	}
+	last := points[len(points)-1]
+	windowSeconds := last.WindowMinutes * 60
+	windowStart := last.ResetAt - windowSeconds
+	if windowSeconds <= 0 || last.ResetAt <= windowStart || now < windowStart {
+		return result
+	}
+	calculatedAt := min(now, last.ResetAt)
+	elapsed := calculatedAt - windowStart
+	if elapsed <= 0 {
+		return result
+	}
+	remaining := max(int64(0), last.ResetAt-calculatedAt)
+	timeProgress := math.Min(100, float64(elapsed)*100/float64(windowSeconds))
+	used := math.Max(0, last.UsedPercent)
+	paceRatio := float64(0)
+	if timeProgress > 0 {
+		paceRatio = used / timeProgress
+	}
+	averagePerDay := used * 86400 / float64(elapsed)
+	sustainablePerDay := 100 * 86400 / float64(windowSeconds)
+	projectedAtReset := paceRatio * 100
+	status := "on_track"
+	delta := used - timeProgress
+	if delta > 2 {
+		status = "fast"
+	} else if delta < -2 {
+		status = "slow"
+	}
+	result = burnForecast{
+		Available:                true,
+		WindowStart:              windowStart,
+		ResetAt:                  last.ResetAt,
+		CalculatedAt:             calculatedAt,
+		WindowSeconds:            windowSeconds,
+		ElapsedSeconds:           elapsed,
+		RemainingSeconds:         remaining,
+		TimeProgressPercent:      timeProgress,
+		UsedPercent:              used,
+		ExpectedUsedPercent:      timeProgress,
+		PaceDeltaPercent:         delta,
+		PaceRatio:                paceRatio,
+		AveragePercentPerDay:     averagePerDay,
+		SustainablePercentPerDay: sustainablePerDay,
+		ProjectedUsedAtReset:     projectedAtReset,
+		Status:                   status,
+	}
+	if used > 0 {
+		result.EstimatedExhaustAt = windowStart + int64(float64(elapsed)*100/used)
+		result.WillExhaustBeforeReset = result.EstimatedExhaustAt < last.ResetAt
+	}
+	return result
+}
+
 func estimateCapacity(points []quotaPoint) estimate {
 	result := estimate{Confidence: "insufficient", Explanation: "至少需要两次周额度百分比增长后才能估算。"}
 	if len(points) < 2 {

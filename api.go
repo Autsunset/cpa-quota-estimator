@@ -41,6 +41,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			}
 			resp["plan_type"] = plan
 			resp["estimate"] = estimateCapacity(points)
+			resp["burn_forecast"] = estimateBurn(points, time.Now().Unix())
 			if len(points) > 0 {
 				resp["latest"] = points[len(points)-1]
 				resp["window_start"] = points[len(points)-1].ResetAt - points[len(points)-1].WindowMinutes*60
@@ -60,7 +61,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil && err != sql.ErrNoRows {
 			return textResponse(500, err.Error())
 		}
-		return jsonResponse(200, map[string]any{"account": account, "plan_type": plan, "points": points, "capacity_points": capacityHistory(points), "estimate": estimateCapacity(points)})
+		return jsonResponse(200, map[string]any{"account": account, "plan_type": plan, "points": points, "capacity_points": capacityHistory(points), "estimate": estimateCapacity(points), "burn_forecast": estimateBurn(points, time.Now().Unix())})
 	case strings.HasSuffix(req.Path, "/prices/sync"):
 		count, err := syncPrices(ctx, a.store, a.cfg)
 		if err != nil {

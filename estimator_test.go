@@ -43,6 +43,36 @@ func TestEstimateCapacityUsesFirstMonotonicCrossings(t *testing.T) {
 	}
 }
 
+func TestEstimateBurnFastPace(t *testing.T) {
+	const week = int64(7 * 24 * 60 * 60)
+	points := []quotaPoint{{Time: week / 2, UsedPercent: 70, ResetAt: week, WindowMinutes: week / 60}}
+	got := estimateBurn(points, week/2)
+	if !got.Available || got.Status != "fast" || !got.WillExhaustBeforeReset {
+		t.Fatalf("unexpected burn forecast: %#v", got)
+	}
+	if got.TimeProgressPercent != 50 || got.ExpectedUsedPercent != 50 || got.PaceDeltaPercent != 20 || got.PaceRatio != 1.4 {
+		t.Fatalf("unexpected pace: %#v", got)
+	}
+	if math.Abs(got.AveragePercentPerDay-20) > 1e-9 || math.Abs(got.SustainablePercentPerDay-100.0/7) > 1e-9 {
+		t.Fatalf("unexpected daily rate: %#v", got)
+	}
+	if got.ProjectedUsedAtReset != 140 || got.EstimatedExhaustAt != 5*24*60*60 {
+		t.Fatalf("unexpected projection: %#v", got)
+	}
+}
+
+func TestEstimateBurnSlowPaceLastsToReset(t *testing.T) {
+	const week = int64(7 * 24 * 60 * 60)
+	points := []quotaPoint{{Time: week / 2, UsedPercent: 25, ResetAt: week, WindowMinutes: week / 60}}
+	got := estimateBurn(points, week/2)
+	if !got.Available || got.Status != "slow" || got.WillExhaustBeforeReset {
+		t.Fatalf("unexpected burn forecast: %#v", got)
+	}
+	if got.ProjectedUsedAtReset != 50 || got.EstimatedExhaustAt != 14*24*60*60 {
+		t.Fatalf("unexpected projection: %#v", got)
+	}
+}
+
 func TestCalculateCostCacheLongAndFast(t *testing.T) {
 	p := price{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25, LongInput: 10, LongOutput: 45, LongRead: 1, LongWrite: 12.5, FastInput: 10, FastOutput: 60, FastRead: 1, FastWrite: 12.5}
 	cfg := defaultConfig()

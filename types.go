@@ -182,3 +182,24 @@ type capacityPoint struct {
 	FullWindowCostUSD float64 `json:"full_window_cost_usd"`
 	SampleCount       int     `json:"sample_count"`
 }
+
+type burnForecast struct {
+	Available                bool    `json:"available"`
+	WindowStart              int64   `json:"window_start"`
+	ResetAt                  int64   `json:"reset_at"`
+	CalculatedAt             int64   `json:"calculated_at"`
+	WindowSeconds            int64   `json:"window_seconds"`
+	ElapsedSeconds           int64   `json:"elapsed_seconds"`
+	RemainingSeconds         int64   `json:"remaining_seconds"`
+	TimeProgressPercent      float64 `json:"time_progress_percent"`
+	UsedPercent              float64 `json:"used_percent"`
+	ExpectedUsedPercent      float64 `json:"expected_used_percent"`
+	PaceDeltaPercent         float64 `json:"pace_delta_percent"`
+	PaceRatio                float64 `json:"pace_ratio"`
+	AveragePercentPerDay     float64 `json:"average_percent_per_day"`
+	SustainablePercentPerDay float64 `json:"sustainable_percent_per_day"`
+	ProjectedUsedAtReset     float64 `json:"projected_used_at_reset"`
+	EstimatedExhaustAt       int64   `json:"estimated_exhaust_at,omitempty"`
+	WillExhaustBeforeReset   bool    `json:"will_exhaust_before_reset"`
+	Status                   string  `json:"status"`
+}
