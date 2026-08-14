@@ -4,13 +4,16 @@
 
 # CPA Quota Estimator
 
+<p align="center">
+  <a href="./README.md"><img src="https://img.shields.io/badge/Language-English-0969da?style=for-the-badge" alt="English"></a>
+  <a href="./README.zh-CN.md"><img src="https://img.shields.io/badge/语言-简体中文-d0d7de?style=for-the-badge" alt="简体中文"></a>
+</p>
+
 [![CI](https://github.com/Autsunset/cpa-quota-estimator/actions/workflows/ci.yml/badge.svg)](https://github.com/Autsunset/cpa-quota-estimator/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Autsunset/cpa-quota-estimator)](https://github.com/Autsunset/cpa-quota-estimator/releases)
 [![License](https://img.shields.io/github/license/Autsunset/cpa-quota-estimator)](LICENSE)
 
 A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugin that maps Codex weekly quota changes to estimated Token and USD-equivalent capacity, then visualizes burn rate and exhaustion forecasts.
-
-一个原生 CLIProxyAPI（CPA）用量插件：持续记录 Token、估算费用和 Codex 周额度响应头，用额度百分比的实际增长反推当前负载结构下的**周 Token / 美元等效容量**并绘制趋势。
 
 > OpenAI does not publish a fixed Token or USD value for the Codex weekly quota. The estimates shown here are workload-equivalent capacity estimates, not official plan face values.
 
@@ -148,7 +151,9 @@ The plugin does not require CPAMP. A custom CPAMP deployment can optionally reus
 
 ## Acknowledgements
 
-感谢 [Linux.do 社区](https://linux.do/) 在测试、反馈与技术交流方面提供的支持。
+Thanks to [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) for the underlying proxy capabilities and native plugin system.
+
+Thanks to the [Linux.do community](https://linux.do/) for testing, feedback, and technical discussion.
 
 ## License
 
