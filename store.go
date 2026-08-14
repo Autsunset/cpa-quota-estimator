@@ -213,17 +213,71 @@ func (s *store) accounts(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
+func (s *store) windows(ctx context.Context, account string, limit int) ([]quotaWindow, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 60
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT reset_at,
+       MAX(window_minutes),
+       MAX(plan_type),
+       MIN(sampled_at),
+       MAX(sampled_at),
+       MIN(used_percent),
+       MAX(used_percent),
+       MAX(window_tokens),
+       MAX(window_cost_usd),
+       MAX(requests)
+FROM quota_samples
+WHERE account=?
+GROUP BY reset_at
+ORDER BY reset_at DESC
+LIMIT ?`, account, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	windows := make([]quotaWindow, 0)
+	for rows.Next() {
+		var window quotaWindow
+		if err = rows.Scan(
+			&window.ResetAt,
+			&window.WindowMinutes,
+			&window.PlanType,
+			&window.FirstSampleAt,
+			&window.LastSampleAt,
+			&window.StartPercent,
+			&window.EndPercent,
+			&window.WindowTokens,
+			&window.WindowCostUSD,
+			&window.Requests,
+		); err != nil {
+			return nil, err
+		}
+		window.WindowStart = window.ResetAt - window.WindowMinutes*60
+		windows = append(windows, window)
+	}
+	return windows, rows.Err()
+}
+
 func (s *store) latestPoints(ctx context.Context, account string, limit int) ([]quotaPoint, string, error) {
+	var resetAt int64
+	if err := s.db.QueryRowContext(ctx, `SELECT reset_at FROM quota_samples WHERE account=? ORDER BY sampled_at DESC LIMIT 1`, account).Scan(&resetAt); err != nil {
+		return nil, "", err
+	}
+	return s.pointsForWindow(ctx, account, resetAt, limit)
+}
+
+func (s *store) pointsForWindow(ctx context.Context, account string, resetAt int64, limit int) ([]quotaPoint, string, error) {
 	if limit <= 0 || limit > 10000 {
 		limit = 2000
 	}
-	var reset int64
 	var plan string
-	err := s.db.QueryRowContext(ctx, `SELECT reset_at,plan_type FROM quota_samples WHERE account=? ORDER BY sampled_at DESC LIMIT 1`, account).Scan(&reset, &plan)
+	err := s.db.QueryRowContext(ctx, `SELECT plan_type FROM quota_samples WHERE account=? AND reset_at=? ORDER BY sampled_at DESC LIMIT 1`, account, resetAt).Scan(&plan)
 	if err != nil {
 		return nil, "", err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT sampled_at,used_percent,reset_at,window_minutes,window_tokens,window_cost_usd,requests FROM quota_samples WHERE account=? AND reset_at=? ORDER BY sampled_at ASC LIMIT ?`, account, reset, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT sampled_at,used_percent,reset_at,window_minutes,window_tokens,window_cost_usd,requests FROM quota_samples WHERE account=? AND reset_at=? ORDER BY sampled_at ASC LIMIT ?`, account, resetAt, limit)
 	if err != nil {
 		return nil, "", err
 	}
@@ -242,14 +296,19 @@ func (s *store) latestPoints(ctx context.Context, account string, limit int) ([]
 	if err = rows.Close(); err != nil {
 		return nil, "", err
 	}
-	// Quota samples are intentionally throttled. Append a live aggregate so the
-	// cards never lag behind the most recent request by the sampling interval.
+	// Quota samples are intentionally throttled. Append a final aggregate so
+	// current cards do not lag and completed windows include requests that
+	// arrived after their last quota sample.
 	if len(points) > 0 {
 		last := points[len(points)-1]
 		windowStart := last.ResetAt - last.WindowMinutes*60
+		windowEnd := last.ResetAt
+		if now := time.Now().Unix(); windowEnd > now {
+			windowEnd = now + 1
+		}
 		var live quotaPoint
 		live.UsedPercent, live.ResetAt, live.WindowMinutes = last.UsedPercent, last.ResetAt, last.WindowMinutes
-		err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(requested_at),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND requested_at>=?`, account, windowStart).Scan(&live.Time, &live.WindowTokens, &live.WindowCostUSD, &live.Requests)
+		err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(requested_at),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND requested_at>=? AND requested_at<?`, account, windowStart, windowEnd).Scan(&live.Time, &live.WindowTokens, &live.WindowCostUSD, &live.Requests)
 		if err != nil {
 			return nil, "", err
 		}

@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.1.0"
+var pluginVersion = "0.2.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -154,6 +154,20 @@ type quotaPoint struct {
 	UsedPercent   float64 `json:"used_percent"`
 	ResetAt       int64   `json:"reset_at"`
 	WindowMinutes int64   `json:"window_minutes"`
+	WindowTokens  int64   `json:"window_tokens"`
+	WindowCostUSD float64 `json:"window_cost_usd"`
+	Requests      int64   `json:"requests"`
+}
+
+type quotaWindow struct {
+	ResetAt       int64   `json:"reset_at"`
+	WindowStart   int64   `json:"window_start"`
+	WindowMinutes int64   `json:"window_minutes"`
+	PlanType      string  `json:"plan_type"`
+	FirstSampleAt int64   `json:"first_sample_at"`
+	LastSampleAt  int64   `json:"last_sample_at"`
+	StartPercent  float64 `json:"start_percent"`
+	EndPercent    float64 `json:"end_percent"`
 	WindowTokens  int64   `json:"window_tokens"`
 	WindowCostUSD float64 `json:"window_cost_usd"`
 	Requests      int64   `json:"requests"`

@@ -25,6 +25,7 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
   - `source`: use explicit `experimental.modes.fast.cost` pricing from models.dev.
 - Estimates total and remaining weekly Token/USD-equivalent capacity with quartile ranges and confidence levels.
 - Shows actual quota usage, sustainable pace, cumulative-average projection, recent 24-hour projection, predicted exhaustion, reset time, and countdown.
+- Keeps each observed weekly quota window separately and lets you switch back to prior weeks to review their usage, capacity estimates, and end-of-window forecasts.
 - Includes a responsive embedded dashboard with dark/light themes and mobile layouts.
 - Retains data for 365 days by default and never stores request or response bodies.
 - Runs independently of CPA Manager Plus (CPAMP).
@@ -131,7 +132,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.1.0
+make package VERSION=0.2.0
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
