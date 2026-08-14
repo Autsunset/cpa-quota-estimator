@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./logo.png" alt="CPA Quota Estimator icon" width="160" height="160">
+</p>
+
 # CPA Quota Estimator
 
 [![CI](https://github.com/Autsunset/cpa-quota-estimator/actions/workflows/ci.yml/badge.svg)](https://github.com/Autsunset/cpa-quota-estimator/actions/workflows/ci.yml)

@@ -60,7 +60,7 @@ func pluginRegistration() any {
 	return map[string]any{
 		"schema_version": 1,
 		"metadata": map[string]any{
-			"Name": pluginName, "Version": pluginVersion, "Author": "Autsunset", "GitHubRepository": "https://github.com/Autsunset/cpa-quota-estimator", "Logo": "",
+			"Name": pluginName, "Version": pluginVersion, "Author": "Autsunset", "GitHubRepository": "https://github.com/Autsunset/cpa-quota-estimator", "Logo": "https://raw.githubusercontent.com/Autsunset/cpa-quota-estimator/main/logo.png",
 			"ConfigFields": []map[string]any{
 				{"Name": "enabled", "Type": "boolean", "Description": "是否采集用量和额度样本"},
 				{"Name": "data_path", "Type": "string", "Description": "SQLite 数据库路径"},
