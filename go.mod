@@ -1,4 +1,4 @@
-module github.com/autsun/cpa-quota-estimator
+module github.com/Autsunset/cpa-quota-estimator
 
 go 1.22
 

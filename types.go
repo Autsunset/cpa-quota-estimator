@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	pluginID      = "cpa-quota-estimator"
-	pluginName    = "CPA Quota Estimator"
-	pluginVersion = "0.1.0"
+	pluginID   = "cpa-quota-estimator"
+	pluginName = "CPA Quota Estimator"
 )
+
+var pluginVersion = "0.1.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -104,7 +105,7 @@ func defaultConfig() config {
 		FastPricingMode:          "multiplier",
 		FastMultiplier:           2.5,
 		LongContextThreshold:     272000,
-		HistoryDays:              180,
+		HistoryDays:              365,
 	}
 }
 

@@ -1,10 +1,26 @@
 package main
 
 import (
+	"bytes"
 	"math"
 	"strings"
 	"testing"
 )
+
+func TestPublicReleaseDefaults(t *testing.T) {
+	cfg, err := parseConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HistoryDays != 365 {
+		t.Fatalf("history days = %d, want 365", cfg.HistoryDays)
+	}
+	for _, marker := range [][]byte{[]byte("bridgeState"), []byte("directApi"), []byte("CPA Management Key")} {
+		if !bytes.Contains(dashboardHTML, marker) {
+			t.Fatalf("dashboard is missing public-host fallback marker %q", marker)
+		}
+	}
+}
 
 func TestEstimateCapacity(t *testing.T) {
 	points := []quotaPoint{

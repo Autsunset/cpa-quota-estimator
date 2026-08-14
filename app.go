@@ -60,7 +60,7 @@ func pluginRegistration() any {
 	return map[string]any{
 		"schema_version": 1,
 		"metadata": map[string]any{
-			"Name": pluginName, "Version": pluginVersion, "Author": "autsun", "GitHubRepository": "https://github.com/autsun/cpa-quota-estimator", "Logo": "",
+			"Name": pluginName, "Version": pluginVersion, "Author": "Autsunset", "GitHubRepository": "https://github.com/Autsunset/cpa-quota-estimator", "Logo": "",
 			"ConfigFields": []map[string]any{
 				{"Name": "enabled", "Type": "boolean", "Description": "是否采集用量和额度样本"},
 				{"Name": "data_path", "Type": "string", "Description": "SQLite 数据库路径"},
@@ -115,7 +115,7 @@ func parseConfig(raw []byte) (config, error) {
 		cfg.LongContextThreshold = 272000
 	}
 	if cfg.HistoryDays < 7 {
-		cfg.HistoryDays = 180
+		cfg.HistoryDays = 365
 	}
 	return cfg, nil
 }
