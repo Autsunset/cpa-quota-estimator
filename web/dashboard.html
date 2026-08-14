@@ -599,15 +599,22 @@ async function load() {
     let monthlyQuery = new URLSearchParams();
     if (summary.account) monthlyQuery.set('account', summary.account);
     if ($('#month').value) monthlyQuery.set('month', $('#month').value);
-    let results = await Promise.all([
+    let results = await Promise.allSettled([
       api('/series?' + seriesQuery),
       api('/monthly' + (monthlyQuery.size ? '?' + monthlyQuery : ''))
     ]);
-    let series = results[0];
+    if (results[0].status === 'rejected') throw results[0].reason;
+    let series = results[0].value;
     renderPace(series);
     renderCharts(series);
     renderCapacityHistory(series.capacity_points || []);
-    renderMonthly(results[1]);
+    if (results[1].status === 'fulfilled') {
+      renderMonthly(results[1].value);
+    } else if (results[1].reason && results[1].reason.auth) {
+      throw results[1].reason;
+    } else {
+      $('#monthlyNote').textContent = tr('loadFailed', {message: results[1].reason && results[1].reason.message || tr('requestFailed')});
+    }
   } catch (error) {
     if (error.auth || !key) {
       showLogin(error.message);
