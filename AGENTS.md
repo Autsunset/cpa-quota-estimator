@@ -9,6 +9,16 @@
 - 发布前至少运行 `go test ./...`、构建目标平台插件，并检查 Markdown、JavaScript 和 Git diff。
 - 只有 GitHub Release 已成功生成全部平台压缩包和 `checksums.txt` 后，才能在插件市场中引用该版本。
 
+## 运行服务安全
+
+当前维护环境中的 AI 请求链路依赖 VPS 上的 New API 和 CPA。停止任一服务都可能立即切断正在执行的 AI 会话，使维护代理无法继续完成部署或自行恢复服务。
+
+- **禁止**对 `cpa` 或 `new-api` 执行 `docker stop`、`docker compose stop` 或 `docker compose down`；也不要同时重启两项服务。
+- 插件升级时，下载、校验、在线备份和插件文件原子替换必须在 CPA 保持运行时完成，最后最多执行一次 `docker restart cpa` 使新插件生效。
+- 重启命令必须与启动状态、健康检查及插件注册日志检查放在同一个远程脚本中；如果新版本验证失败，应立即原子恢复旧插件并再次重启 CPA。
+- New API 必须在 CPA 插件更新全过程保持运行。除非任务明确要求更新 New API，否则不得对它执行任何启停操作。
+- 当前部署目标为 `root@173.242.122.85`，Compose 目录为 `/opt/proxy`；操作前先只读确认容器状态、挂载目录和待替换文件，不得依赖旧会话中的历史状态。
+
 ## GitHub 发布流程
 
 1. 将相关修改按逻辑拆分为 Conventional Commits。

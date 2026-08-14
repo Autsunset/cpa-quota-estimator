@@ -111,6 +111,8 @@ plugins:
 plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 ```
 
+> **升级安全提醒：** 如果当前 AI 客户端通过 New API 和 CPA 访问上游，升级插件时不要停止 CPA 或 New API，也不要执行 `docker compose down`。应在服务保持运行时完成下载、校验、在线数据库备份和插件文件原子替换，最后只执行一次 CPA 重启并立即检查健康状态与插件注册日志。直接停止任一服务可能切断当前 AI 会话，使维护过程无法继续。
+
 在管理中心打开**额度容量预测 / Quota Estimator**。如果宿主面板无法提供已认证的插件桥接，仪表盘会回退到 CPA Management Key 登录；密钥只保存在当前浏览器标签页的 `sessionStorage` 中。
 
 插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。

@@ -111,6 +111,8 @@ Restart CPA. The log should include:
 plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 ```
 
+> **Upgrade safety:** If the active AI client reaches its upstream through New API and CPA, do not stop either service or run `docker compose down` during a plugin upgrade. Keep the services running while downloading, verifying, taking an online database backup, and atomically replacing the plugin file. Then perform only one CPA restart and immediately verify health and plugin-registration logs. Stopping either service can sever the active AI session and prevent the maintenance operation from continuing.
+
 Open **额度容量预测 / Quota Estimator** from the management center. When the host panel cannot provide an authenticated plugin bridge, the dashboard falls back to CPA Management Key login and stores the key only in the current tab's `sessionStorage`.
 
 Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
