@@ -17,6 +17,10 @@
 
 > OpenAI 没有公布 Codex 周额度对应的固定 Token 数或美元金额。本项目展示的是当前请求结构下的等效容量估计，并非官方标称额度。
 
+<p align="center">
+  <img src="./docs/images/dashboard-zh.png" alt="额度容量预测仪表盘（简体中文）" width="720">
+</p>
+
 ## 功能特性
 
 - 监听 CPA 原生 `usage.handle` 事件，不发送探测请求，也不会额外消耗额度。
@@ -114,6 +118,8 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 > **升级安全提醒：** 如果当前 AI 客户端通过 New API 和 CPA 访问上游，升级插件时不要停止 CPA 或 New API，也不要执行 `docker compose down`。应在服务保持运行时完成下载、校验、在线数据库备份和插件文件原子替换，最后只执行一次 CPA 重启并立即检查健康状态与插件注册日志。直接停止任一服务可能切断当前 AI 会话，使维护过程无法继续。
 
 在管理中心打开**额度容量预测 / Quota Estimator**。如果宿主面板无法提供已认证的插件桥接，仪表盘会回退到 CPA Management Key 登录；密钥只保存在当前浏览器标签页的 `sessionStorage` 中。
+
+> **冷启动说明：** 安装插件后并不会立即看到额度。插件完全被动，只记录真实流经 CPA 的请求，也无法回补安装之前的历史用量。首次真实的 Codex 请求之后，才会出现当前额度百分比和重置时间；只有当记录样本之间的额度百分比确实增长（Δ额度百分比 > 0）时，才开始计算容量估算。由于额度响应头只提供整数百分比，首个可用估算可能需要多次请求才会出现，并随着消耗累积逐渐稳定。
 
 插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
 
