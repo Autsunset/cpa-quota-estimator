@@ -23,6 +23,20 @@ func TestPublicReleaseDefaults(t *testing.T) {
 		[]byte("reset_at"),
 		[]byte("cli-proxy-language"),
 		[]byte("cqe-language-mode"),
+		[]byte("cli-proxy-auth"),
+		[]byte("readCPAMPRememberedKey"),
+		[]byte("dailyTimeTicks"),
+		[]byte("daySeconds = 86400"),
+		[]byte("resetChartRange"),
+		[]byte("groupPointsByCycle"),
+		[]byte("range_points"),
+		[]byte("currentForecast"),
+		[]byte("selectedCycleOutsideRange"),
+		[]byte("$('#period').onchange = () =>"),
+		[]byte("chartRangeCycleID = 0"),
+		[]byte("cqe-persistent-key"),
+		[]byte("rememberKey"),
+		[]byte("localStorage.setItem(persistentKeyStorageKey"),
 		[]byte("MutationObserver"),
 		[]byte("Auto (follow panel)"),
 	} {
@@ -66,6 +80,25 @@ func TestEstimateCapacityUsesFirstMonotonicCrossings(t *testing.T) {
 	history := capacityHistory(points)
 	if len(history) != 2 || history[0].FullWindowTokens != 10_000 || history[1].FullWindowCostUSD != 1000 {
 		t.Fatalf("capacity history = %#v", history)
+	}
+}
+
+func TestCapacityHistoryForCyclesDoesNotCrossReset(t *testing.T) {
+	points := []quotaPoint{
+		{CycleID: 1, Time: 100, UsedPercent: 10, WindowTokens: 100, WindowCostUSD: 10},
+		{CycleID: 1, Time: 200, UsedPercent: 20, WindowTokens: 200, WindowCostUSD: 20},
+		{CycleID: 2, Time: 300, UsedPercent: 5, WindowTokens: 50, WindowCostUSD: 5},
+		{CycleID: 2, Time: 400, UsedPercent: 15, WindowTokens: 150, WindowCostUSD: 15},
+	}
+	history := capacityHistoryForCycles(points)
+	if len(history) != 2 {
+		t.Fatalf("capacity history = %#v", history)
+	}
+	if history[0].CycleID != 1 || history[1].CycleID != 2 {
+		t.Fatalf("cycle ids = %#v", history)
+	}
+	if history[0].FullWindowTokens != 1000 || history[1].FullWindowTokens != 1000 {
+		t.Fatalf("cross-cycle capacity calculation = %#v", history)
 	}
 }
 

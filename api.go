@@ -80,7 +80,20 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil && err != sql.ErrNoRows {
 			return textResponse(500, err.Error())
 		}
-		return jsonResponse(200, map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "estimate": estimateCapacity(points), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))})
+		rangePoints := points
+		rangeCycles := []quotaCycle{selected}
+		startAt, _ := strconv.ParseInt(req.Query.Get("start_at"), 10, 64)
+		endAt, _ := strconv.ParseInt(req.Query.Get("end_at"), 10, 64)
+		if startAt > 0 || endAt > 0 {
+			if startAt <= 0 || endAt <= startAt {
+				return textResponse(400, "invalid chart range")
+			}
+			rangePoints, rangeCycles, err = a.store.pointsForRange(ctx, account, startAt, endAt, limit)
+			if err != nil {
+				return textResponse(500, err.Error())
+			}
+		}
+		return jsonResponse(200, map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "estimate": estimateCapacity(points), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))})
 	case strings.HasSuffix(req.Path, "/monthly"):
 		account := req.Query.Get("account")
 		if account == "" {

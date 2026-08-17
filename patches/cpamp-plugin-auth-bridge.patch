@@ -1,34 +1,33 @@
-diff --git a/apps/web/src/features/plugins/PluginResourcePage.tsx b/apps/web/src/features/plugins/PluginResourcePage.tsx
-index 60b34c9d..bf6b17c5 100644
---- a/apps/web/src/features/plugins/PluginResourcePage.tsx
-+++ b/apps/web/src/features/plugins/PluginResourcePage.tsx
-@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
- import { useTranslation } from 'react-i18next';
- import { EmptyState } from '@/components/ui/EmptyState';
+diff --git a/src/features/plugins/PluginResourcePage.tsx b/src/features/plugins/PluginResourcePage.tsx
+index 051f035..149fb5c 100644
+--- a/src/features/plugins/PluginResourcePage.tsx
++++ b/src/features/plugins/PluginResourcePage.tsx
+@@ -1,2 +1,2 @@
+-import { useCallback, useEffect, useMemo, useState } from 'react';
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import { useParams } from 'react-router-dom';
+@@ -5,3 +5,3 @@ import { EmptyState } from '@/components/ui/EmptyState';
  import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 -import { pluginsApi } from '@/services/api';
 +import { apiClient, pluginsApi } from '@/services/api';
- import { useAuthStore, useThemeStore } from '@/stores';
- import { getErrorMessage, isRecord } from '@/utils/helpers';
- import type { PluginListResponse } from '@/types';
-@@ -34,6 +34,9 @@ const parseMenuIndex = (value = '') => {
-   return Number.isInteger(index) && index >= 0 ? index : -1;
- };
- 
+ import { useAuthStore } from '@/stores';
+@@ -17,3 +17,5 @@ import styles from './PluginResourcePage.module.scss';
+ const hasStatus = (error: unknown, status: number) => isRecord(error) && error.status === status;
 +const PLUGIN_API_REQUEST = 'cpamp:plugin-api-request';
 +const PLUGIN_API_RESPONSE = 'cpamp:plugin-api-response';
+-
 +
- export function PluginResourcePage() {
-   const { t } = useTranslation();
-   const params = useParams<{ pluginId: string; menuIndex: string }>();
-@@ -101,6 +104,74 @@ export function PluginResourcePage() {
- 
+ const safeDecodeURIComponent = (value = '') => {
+@@ -36,3 +38,4 @@ export function PluginResourcePage() {
+   const apiBase = useAuthStore((state) => state.apiBase);
++  const iframeRef = useRef<HTMLIFrameElement>(null);
+-
++
+   const [data, setData] = useState<PluginListResponse | null>(null);
+@@ -88,3 +91,66 @@ export function PluginResourcePage() {
    const iframeSrc = resource ? resolvePluginAssetURL(resource.menu.path, apiBase) : '';
- 
-+  // Plugin resources are loaded as iframes, so they cannot inherit the
-+  // Authorization header held by the authenticated CPAMP application. Proxy
-+  // only the iframe's own plugin-management routes through the configured API
-+  // client. The management/admin key never leaves the parent page.
+-
++
 +  useEffect(() => {
 +    if (!iframeSrc || !pluginID) return;
 +
@@ -46,7 +45,8 @@ index 60b34c9d..bf6b17c5 100644
 +
 +      const id = typeof event.data.id === 'string' ? event.data.id : '';
 +      const path = typeof event.data.path === 'string' ? event.data.path : '';
-+      const method = typeof event.data.method === 'string' ? event.data.method.toUpperCase() : 'GET';
++      const method =
++        typeof event.data.method === 'string' ? event.data.method.toUpperCase() : 'GET';
 +      if (!id || !path || !['GET', 'POST'].includes(method)) return;
 +
 +      let parsed: URL;
@@ -66,23 +66,21 @@ index 60b34c9d..bf6b17c5 100644
 +
 +      try {
 +        const managementPath = `${parsed.pathname.slice('/v0/management'.length)}${parsed.search}`;
-+        const response = await apiClient.requestRaw({
-+          url: managementPath,
-+          method,
-+          data: event.data.body,
-+          validateStatus: () => true,
-+        });
-+        frameWindow.postMessage(
-+          { type: PLUGIN_API_RESPONSE, id, status: response.status, data: response.data },
-+          event.origin
-+        );
++        const data =
++          method === 'POST'
++            ? await apiClient.post(managementPath, event.data.body)
++            : await apiClient.get(managementPath);
++        frameWindow.postMessage({ type: PLUGIN_API_RESPONSE, id, status: 200, data }, event.origin);
 +      } catch (error) {
 +        frameWindow.postMessage(
 +          {
 +            type: PLUGIN_API_RESPONSE,
 +            id,
-+            status: 502,
-+            data: { error: getErrorMessage(error, 'plugin API bridge failed') },
++            status: isRecord(error) && typeof error.status === 'number' ? error.status : 502,
++            data:
++              isRecord(error) && error.data
++                ? error.data
++                : { error: getErrorMessage(error, 'plugin API bridge failed') },
 +          },
 +          event.origin
 +        );
@@ -93,6 +91,8 @@ index 60b34c9d..bf6b17c5 100644
 +    return () => window.removeEventListener('message', handlePluginAPIRequest);
 +  }, [iframeSrc, pluginID]);
 +
-   const refreshPluginHostStyle = useCallback(() => {
-     const iframe = iframeRef.current;
-     if (!iframe) return;
+   return (
+@@ -115,2 +181,3 @@ export function PluginResourcePage() {
+         <iframe
++          ref={iframeRef}
+           className={styles.frame}

@@ -415,6 +415,50 @@ func TestMonthlySummaryAcrossCycles(t *testing.T) {
 	}
 }
 
+func TestPointsForRangeSpansCyclesInTimeOrder(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "range.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	account := "range-account"
+
+	result, err := s.db.ExecContext(ctx, `INSERT INTO quota_cycles(account,started_at,ended_at,reset_at,window_minutes,plan_type,close_reason) VALUES(?,?,?,?,?,?,?)`, account, 100, 300, 300, 10, "pro", "scheduled_reset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cycle1, _ := result.LastInsertId()
+	result, err = s.db.ExecContext(ctx, `INSERT INTO quota_cycles(account,started_at,reset_at,window_minutes,plan_type) VALUES(?,?,?,?,?)`, account, 300, 900, 10, "pro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cycle2, _ := result.LastInsertId()
+
+	for _, row := range []struct {
+		cycle int64
+		at    int64
+		used  float64
+		reset int64
+	}{{cycle1, 150, 10, 300}, {cycle1, 250, 20, 300}, {cycle2, 350, 5, 900}, {cycle2, 450, 15, 900}} {
+		_, err = s.db.ExecContext(ctx, `INSERT INTO quota_samples(cycle_id,sampled_at,account,used_percent,reset_at,window_minutes,plan_type,window_tokens,window_cost_usd,requests) VALUES(?,?,?,?,?,?,?,?,?,?)`, row.cycle, row.at, account, row.used, row.reset, 10, "pro", row.at, float64(row.at)/10, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	points, cycles, err := s.pointsForRange(ctx, account, 200, 400, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 2 || cycles[0].ID != cycle1 || cycles[1].ID != cycle2 {
+		t.Fatalf("cycles = %#v", cycles)
+	}
+	if len(points) != 2 || points[0].CycleID != cycle1 || points[0].Time != 250 || points[1].CycleID != cycle2 || points[1].Time != 350 {
+		t.Fatalf("points = %#v", points)
+	}
+}
+
 func TestMonthlySummaryIncludesEarlyResetAcrossMonthBoundary(t *testing.T) {
 	s, err := openStore(filepath.Join(t.TempDir(), "monthly-early-reset.sqlite"))
 	if err != nil {

@@ -172,12 +172,26 @@ func capacityHistory(points []quotaPoint) []capacityPoint {
 			costEstimates = append(costEstimates, delta*100/dp)
 		}
 		out = append(out, capacityPoint{
+			CycleID:           b.CycleID,
 			Time:              b.Time,
 			UsedPercent:       b.UsedPercent,
 			FullWindowTokens:  median(tokenEstimates),
 			FullWindowCostUSD: median(costEstimates),
 			SampleCount:       max(len(tokenEstimates), len(costEstimates)),
 		})
+	}
+	return out
+}
+
+func capacityHistoryForCycles(points []quotaPoint) []capacityPoint {
+	var out []capacityPoint
+	for start := 0; start < len(points); {
+		end := start + 1
+		for end < len(points) && points[end].CycleID == points[start].CycleID {
+			end++
+		}
+		out = append(out, capacityHistory(points[start:end])...)
+		start = end
 	}
 	return out
 }

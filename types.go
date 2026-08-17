@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.4.1"
+var pluginVersion = "0.4.5"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -213,6 +213,7 @@ type estimate struct {
 }
 
 type capacityPoint struct {
+	CycleID           int64   `json:"cycle_id"`
 	Time              int64   `json:"time"`
 	UsedPercent       float64 `json:"used_percent"`
 	FullWindowTokens  float64 `json:"full_window_tokens"`

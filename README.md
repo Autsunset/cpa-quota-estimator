@@ -37,6 +37,7 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 - Adds calendar-month reporting for actual Tokens, estimated request cost, requests, involved cycles, confirmed resets, early resets, cumulative quota-consumption equivalents, unconsumed quota at reset, and estimated capacity allocated by cycles starting in that month.
 - Automatically follows the official CPA or CPAMP panel language, supports Chinese/English manual switching, and remembers the selected mode in the browser.
 - Includes a responsive embedded dashboard with dark/light themes and mobile layouts.
+- Separates the forecast-cycle selector from the chart range. Changing the forecast cycle updates all selected-cycle statistics and resets the charts to that cycle. A manual chart range may span multiple cycles and changes only chart rendering, while statistics remain scoped to the selected forecast cycle. Each cycle is drawn as a separate segment at its real timestamps, with one x-axis grid interval per day and the forecast cycle highlighted.
 - Retains data for 365 days by default and never stores request or response bodies.
 - Runs independently of CPA Manager Plus (CPAMP).
 
@@ -117,7 +118,7 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 > **Upgrade safety:** If the active AI client reaches its upstream through New API and CPA, do not stop either service or run `docker compose down` during a plugin upgrade. Keep the services running while downloading, verifying, taking an online database backup, and atomically replacing the plugin file. Then perform only one CPA restart and immediately verify health and plugin-registration logs. Stopping either service can sever the active AI session and prevent the maintenance operation from continuing.
 
-Open **额度容量预测 / Quota Estimator** from the management center. When the host panel cannot provide an authenticated plugin bridge, the dashboard falls back to CPA Management Key login and stores the key only in the current tab's `sessionStorage`.
+Open **额度容量预测 / Quota Estimator** from CPAMP. The dashboard first tries the authenticated plugin bridge. If the bridge is unavailable in a same-origin deployment, it can reuse the Management Key already persisted by CPAMP's **Remember password** option. Cross-origin deployments and non-persisted CPAMP sessions fall back to CPA Management Key login. Enable **Remember the key in this browser** there to keep the fallback key in this browser's `localStorage`; otherwise it remains only in the current tab's `sessionStorage`. Do not enable persistent storage on a shared device.
 
 > **Cold start:** Installing the plugin does not immediately show your quota. The plugin is completely passive — it only records requests that actually flow through CPA and cannot reconstruct usage that happened before installation. The current quota percentage and reset time appear only after the first real Codex request, and capacity estimates start only once quota usage actually grows between recorded samples (Δquota_percent > 0). Because quota headers report integer percentages, the first usable estimate may take several requests, and results stabilize as consumption accumulates.
 
@@ -152,7 +153,7 @@ All management routes are protected by CPA Management Key:
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | Trigger an immediate models.dev sync |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | Embedded dashboard resource |
 
-Use `?account=<AuthID>` to select a credential, `?cycle_id=<ID>` on `summary` or `series` to select a historical cycle, and `?month=YYYY-MM` on `monthly` to select a month.
+Use `?account=<AuthID>` to select a credential, `?cycle_id=<ID>` on `summary` or `series` to select the forecast cycle, and `?month=YYYY-MM` on `monthly` to select a month. On `series`, pass Unix-second `?start_at=<timestamp>&end_at=<timestamp>` values to return chart samples and capacity trajectories across every quota cycle overlapping that range.
 
 ## Build
 
@@ -161,7 +162,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.4.1
+make package VERSION=0.4.5
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

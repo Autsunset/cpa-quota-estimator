@@ -364,6 +364,47 @@ func (s *store) pointsForCycle(ctx context.Context, account string, cycleID int6
 	return points, cycle.PlanType, nil
 }
 
+func (s *store) pointsForRange(ctx context.Context, account string, startAt, endAt int64, limit int) ([]quotaPoint, []quotaCycle, error) {
+	if startAt <= 0 || endAt <= startAt {
+		return nil, nil, fmt.Errorf("invalid chart range")
+	}
+	if limit <= 0 || limit > 10000 {
+		limit = 5000
+	}
+	allCycles, err := s.cycles(ctx, account, 1000)
+	if err != nil {
+		return nil, nil, err
+	}
+	var selected []quotaCycle
+	for index := len(allCycles) - 1; index >= 0; index-- {
+		cycle := allCycles[index]
+		cycleEnd := cycle.EndedAt
+		if cycleEnd == 0 {
+			cycleEnd = cycle.ResetAt
+		}
+		if cycle.StartedAt <= endAt && (cycleEnd == 0 || cycleEnd >= startAt) {
+			selected = append(selected, cycle)
+		}
+	}
+	var out []quotaPoint
+	for _, cycle := range selected {
+		points, _, errPoints := s.pointsForCycle(ctx, account, cycle.ID, 10000)
+		if errPoints != nil {
+			return nil, nil, errPoints
+		}
+		for _, point := range points {
+			if point.Time < startAt || point.Time > endAt {
+				continue
+			}
+			out = append(out, point)
+			if len(out) >= limit {
+				return out, selected, nil
+			}
+		}
+	}
+	return out, selected, nil
+}
+
 func shanghaiLocation() *time.Location {
 	return time.FixedZone("Asia/Shanghai", 8*60*60)
 }
