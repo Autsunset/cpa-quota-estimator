@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="./logo.png" alt="CPA Quota Estimator icon" width="160" height="160">
+  <img src="https://raw.githubusercontent.com/Autsunset/cpa-quota-estimator/main/logo.png" alt="CPA Quota Estimator icon" width="160" height="160">
 </p>
 
 # CPA Quota Estimator
 
 <p align="center">
-  <a href="./README.md"><img src="https://img.shields.io/badge/Language-English-0969da?style=for-the-badge" alt="English"></a>
-  <a href="./README.zh-CN.md"><img src="https://img.shields.io/badge/语言-简体中文-d0d7de?style=for-the-badge" alt="简体中文"></a>
+  <a href="https://github.com/Autsunset/cpa-quota-estimator/blob/main/README.md"><kbd>English</kbd></a>
+  <a href="https://github.com/Autsunset/cpa-quota-estimator/blob/main/README.zh-CN.md"><kbd>简体中文</kbd></a>
 </p>
 
 [![CI](https://github.com/Autsunset/cpa-quota-estimator/actions/workflows/ci.yml/badge.svg)](https://github.com/Autsunset/cpa-quota-estimator/actions/workflows/ci.yml)
@@ -18,7 +18,7 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 > OpenAI does not publish a fixed Token or USD value for the Codex weekly quota. The estimates shown here are workload-equivalent capacity estimates, not official plan face values.
 
 <p align="center">
-  <img src="./docs/images/dashboard-en.png" alt="Quota Estimator dashboard (English)" width="720">
+  <img src="https://raw.githubusercontent.com/Autsunset/cpa-quota-estimator/main/docs/images/dashboard-en.png" alt="Quota Estimator dashboard (English)" width="720">
 </p>
 
 ## Features

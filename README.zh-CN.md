@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="./logo.png" alt="CPA Quota Estimator 图标" width="160" height="160">
+  <img src="https://raw.githubusercontent.com/Autsunset/cpa-quota-estimator/main/logo.png" alt="CPA Quota Estimator 图标" width="160" height="160">
 </p>
 
 # CPA Quota Estimator
 
 <p align="center">
-  <a href="./README.md"><img src="https://img.shields.io/badge/Language-English-d0d7de?style=for-the-badge" alt="English"></a>
-  <a href="./README.zh-CN.md"><img src="https://img.shields.io/badge/语言-简体中文-0969da?style=for-the-badge" alt="简体中文"></a>
+  <a href="https://github.com/Autsunset/cpa-quota-estimator/blob/main/README.md"><kbd>English</kbd></a>
+  <a href="https://github.com/Autsunset/cpa-quota-estimator/blob/main/README.zh-CN.md"><kbd>简体中文</kbd></a>
 </p>
 
 [![CI](https://github.com/Autsunset/cpa-quota-estimator/actions/workflows/ci.yml/badge.svg)](https://github.com/Autsunset/cpa-quota-estimator/actions/workflows/ci.yml)
@@ -18,7 +18,7 @@
 > OpenAI 没有公布 Codex 周额度对应的固定 Token 数或美元金额。本项目展示的是当前请求结构下的等效容量估计，并非官方标称额度。
 
 <p align="center">
-  <img src="./docs/images/dashboard-zh.png" alt="额度容量预测仪表盘（简体中文）" width="720">
+  <img src="https://raw.githubusercontent.com/Autsunset/cpa-quota-estimator/main/docs/images/dashboard-zh.png" alt="额度容量预测仪表盘（简体中文）" width="720">
 </p>
 
 ## 功能特性
