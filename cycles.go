@@ -9,9 +9,23 @@ import (
 )
 
 const (
-	resetPercentTolerance = 1.0
-	resetLowPercent       = 5.0
+	resetPercentTolerance       = 1.0
+	resetLowPercent             = 5.0
+	resetConfirmationSamples    = 3
+	resetConfirmationMinSeconds = 60
+	scheduledResetTolerance     = 300
 )
+
+type recordedQuotaEvent struct {
+	ID            int64
+	RequestedAt   int64
+	ObservedAt    int64
+	UsedPercent   float64
+	ResetAt       int64
+	WindowMinutes int64
+	PlanType      string
+	Failed        bool
+}
 
 func ensureColumn(db *sql.DB, table, column, definition string) error {
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
@@ -117,68 +131,100 @@ ORDER BY account,MIN(sampled_at)`)
 		if index+1 < len(inserted) && inserted[index+1].Account == cycle.Account {
 			endAt = inserted[index+1].StartedAt
 		}
-		if _, err = tx.Exec(`UPDATE usage_events SET cycle_id=? WHERE cycle_id=0 AND account=? AND requested_at>=? AND requested_at<?`, cycle.ID, cycle.Account, cycle.StartedAt, endAt); err != nil {
+		if _, err = tx.Exec(`UPDATE usage_events SET cycle_id=? WHERE cycle_id=0 AND account=? AND quota_scope=? AND requested_at>=? AND requested_at<?`, cycle.ID, cycle.Account, mainQuotaScope, cycle.StartedAt, endAt); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
 }
 
-func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quotaCycle, error) {
+func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quotaCycle, bool, error) {
+	if eventQuotaScope(e) != mainQuotaScope {
+		return quotaCycle{}, false, nil
+	}
 	current, err := openCycle(ctx, tx, e.Account)
 	if err != nil && err != sql.ErrNoRows {
-		return quotaCycle{}, err
+		return quotaCycle{}, false, err
 	}
 	hasQuota := e.UsedPercent != nil && e.ResetAt > 0 && e.WindowMinutes > 0
 	if err == sql.ErrNoRows {
 		if !hasQuota {
-			return quotaCycle{}, nil
+			return quotaCycle{}, false, nil
 		}
 		created, errCreate := createCycle(ctx, tx, e.Account, eventCycleStart(e, 0), e)
 		if errCreate != nil {
-			return quotaCycle{}, errCreate
+			return quotaCycle{}, false, errCreate
 		}
-		if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=0 AND account=? AND requested_at>=? AND requested_at<=?`, created.ID, e.Account, created.StartedAt, e.RequestedAt); err != nil {
-			return quotaCycle{}, err
+		if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=0 AND account=? AND quota_scope=? AND requested_at>=? AND requested_at<=?`, created.ID, e.Account, mainQuotaScope, created.StartedAt, e.RequestedAt); err != nil {
+			return quotaCycle{}, false, err
 		}
-		return created, nil
+		return created, true, nil
 	}
 	if !hasQuota {
-		return current, nil
+		return current, false, nil
 	}
 
 	resetAtChanged := current.ResetAt != e.ResetAt
 	regimeChanged := (current.WindowMinutes > 0 && current.WindowMinutes != e.WindowMinutes) ||
 		(current.PlanType != "" && e.PlanType != "" && current.PlanType != e.PlanType)
+	if resetAtChanged && scheduledResetObservation(current, e) {
+		confirmed, errConfirm := confirmScheduledReset(ctx, tx, current, e)
+		if errConfirm != nil {
+			return quotaCycle{}, false, errConfirm
+		}
+		if !confirmed {
+			return current, false, nil
+		}
+		startedAt := current.ResetAt
+		if err = closeCycle(ctx, tx, current.ID, startedAt, "scheduled_reset"); err != nil {
+			return quotaCycle{}, false, err
+		}
+		created, errCreate := createCycle(ctx, tx, e.Account, startedAt, e)
+		if errCreate != nil {
+			return quotaCycle{}, false, errCreate
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND quota_scope=? AND requested_at>=?`, created.ID, current.ID, mainQuotaScope, startedAt); err != nil {
+			return quotaCycle{}, false, err
+		}
+		return created, true, nil
+	}
+	if resetAtChanged && e.Failed {
+		return current, false, nil
+	}
+
+	peak := current.PeakPercent
+	if !resetAtChanged && peak > 0 && !e.Failed && resetCandidate(peak, *e.UsedPercent) {
+		first, confirmed, errConfirm := confirmEarlyReset(ctx, tx, current, e)
+		if errConfirm != nil {
+			return quotaCycle{}, false, errConfirm
+		}
+		if !confirmed {
+			return current, false, nil
+		}
+		if err = closeCycle(ctx, tx, current.ID, first.RequestedAt, "early_reset"); err != nil {
+			return quotaCycle{}, false, err
+		}
+		firstUsed := first.UsedPercent
+		firstEvent := event{RequestedAt: first.RequestedAt, ObservedAt: first.ObservedAt, Account: e.Account, UsedPercent: &firstUsed, ResetAt: first.ResetAt, WindowMinutes: first.WindowMinutes, PlanType: first.PlanType}
+		created, errCreate := createCycle(ctx, tx, e.Account, first.RequestedAt, firstEvent)
+		if errCreate != nil {
+			return quotaCycle{}, false, errCreate
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND quota_scope=? AND (requested_at>? OR (requested_at=? AND id>=?))`, created.ID, current.ID, mainQuotaScope, first.RequestedAt, first.RequestedAt, first.ID); err != nil {
+			return quotaCycle{}, false, err
+		}
+		if err = insertSampleFromRecordedEvent(ctx, tx, created, first.ID, firstEvent); err != nil {
+			return quotaCycle{}, false, err
+		}
+		return created, true, nil
+	}
+
 	if resetAtChanged {
-		startedAt := eventCycleStart(e, current.StartedAt)
-		reason := "schedule_change"
-		if current.ResetAt > 0 {
-			delta := startedAt - current.ResetAt
-			if delta >= -300 && delta <= 300 {
-				reason = "scheduled_reset"
-			} else if startedAt < current.ResetAt-300 && resetCandidate(current.PeakPercent, *e.UsedPercent) {
-				reason = "early_reset"
-			}
-		}
-		if reason != "schedule_change" {
-			if err = closeCycle(ctx, tx, current.ID, startedAt, reason); err != nil {
-				return quotaCycle{}, err
-			}
-			created, errCreate := createCycle(ctx, tx, e.Account, startedAt, e)
-			if errCreate != nil {
-				return quotaCycle{}, errCreate
-			}
-			if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND requested_at>=?`, created.ID, current.ID, startedAt); err != nil {
-				return quotaCycle{}, err
-			}
-			return created, nil
-		}
 		regimeChanged = true
 	}
 	if regimeChanged {
 		if _, err = tx.ExecContext(ctx, `UPDATE quota_cycles SET reset_at=?,window_minutes=?,plan_type=CASE WHEN ?='' THEN plan_type ELSE ? END WHERE id=?`, e.ResetAt, e.WindowMinutes, e.PlanType, e.PlanType, current.ID); err != nil {
-			return quotaCycle{}, err
+			return quotaCycle{}, false, err
 		}
 		current.ResetAt = e.ResetAt
 		current.WindowMinutes = e.WindowMinutes
@@ -186,39 +232,100 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 			current.PlanType = e.PlanType
 		}
 	}
+	return current, true, nil
+}
 
-	peak := current.PeakPercent
-	if peak <= 0 || !resetCandidate(peak, *e.UsedPercent) {
-		return current, nil
+func eventObservationTime(e event) int64 {
+	if e.ObservedAt > 0 {
+		return e.ObservedAt
 	}
-	var previousID, previousAt int64
-	var previousUsed float64
-	var previousReset, previousWindow int64
-	var previousPlan string
-	err = tx.QueryRowContext(ctx, `SELECT id,requested_at,used_percent,reset_at,window_minutes,plan_type FROM usage_events WHERE cycle_id=? AND used_percent IS NOT NULL ORDER BY requested_at DESC,id DESC LIMIT 1`, current.ID).
-		Scan(&previousID, &previousAt, &previousUsed, &previousReset, &previousWindow, &previousPlan)
-	if err == sql.ErrNoRows || previousAt > e.RequestedAt || !resetCandidate(peak, previousUsed) {
-		return current, nil
-	}
-	if err != nil {
-		return quotaCycle{}, err
-	}
+	return e.RequestedAt
+}
 
-	if err = closeCycle(ctx, tx, current.ID, previousAt, "early_reset"); err != nil {
-		return quotaCycle{}, err
+func scheduledResetObservation(current quotaCycle, e event) bool {
+	if e.Failed || current.ResetAt <= 0 || e.ResetAt <= 0 || e.WindowMinutes <= 0 {
+		return false
 	}
-	previousEvent := event{RequestedAt: previousAt, Account: e.Account, UsedPercent: &previousUsed, ResetAt: previousReset, WindowMinutes: previousWindow, PlanType: previousPlan}
-	created, err := createCycle(ctx, tx, e.Account, previousAt, previousEvent)
+	declaredStart := e.ResetAt - e.WindowMinutes*60
+	return absInt64(declaredStart-current.ResetAt) <= scheduledResetTolerance &&
+		eventObservationTime(e) >= current.ResetAt-scheduledResetTolerance
+}
+
+func confirmScheduledReset(ctx context.Context, tx *sql.Tx, current quotaCycle, e event) (bool, error) {
+	events, err := recentQuotaEvents(ctx, tx, current.ID, 1)
+	if err != nil || len(events) == 0 {
+		return false, err
+	}
+	previous := events[0]
+	if previous.Failed || previous.ObservedAt > eventObservationTime(e) || !sameQuotaRegime(previous, e) {
+		return false, nil
+	}
+	previousUsed := previous.UsedPercent
+	previousEvent := event{RequestedAt: previous.RequestedAt, ObservedAt: previous.ObservedAt, UsedPercent: &previousUsed, ResetAt: previous.ResetAt, WindowMinutes: previous.WindowMinutes, PlanType: previous.PlanType}
+	return scheduledResetObservation(current, previousEvent), nil
+}
+
+func confirmEarlyReset(ctx context.Context, tx *sql.Tx, current quotaCycle, e event) (recordedQuotaEvent, bool, error) {
+	events, err := recentQuotaEvents(ctx, tx, current.ID, resetConfirmationSamples-1)
+	if err != nil || len(events) < resetConfirmationSamples-1 {
+		return recordedQuotaEvent{}, false, err
+	}
+	oldest, latest := events[len(events)-1], events[0]
+	observedAt := eventObservationTime(e)
+	if latest.ObservedAt > observedAt || observedAt-oldest.ObservedAt < resetConfirmationMinSeconds {
+		return recordedQuotaEvent{}, false, nil
+	}
+	sequence := append([]recordedQuotaEvent(nil), events...)
+	for left, right := 0, len(sequence)-1; left < right; left, right = left+1, right-1 {
+		sequence[left], sequence[right] = sequence[right], sequence[left]
+	}
+	for index, recorded := range sequence {
+		if recorded.Failed || !sameQuotaRegime(recorded, e) || !resetCandidate(current.PeakPercent, recorded.UsedPercent) {
+			return recordedQuotaEvent{}, false, nil
+		}
+		if index > 0 && recorded.UsedPercent+resetPercentTolerance < sequence[index-1].UsedPercent {
+			return recordedQuotaEvent{}, false, nil
+		}
+	}
+	if *e.UsedPercent+resetPercentTolerance < latest.UsedPercent {
+		return recordedQuotaEvent{}, false, nil
+	}
+	return oldest, true, nil
+}
+
+func recentQuotaEvents(ctx context.Context, tx *sql.Tx, cycleID int64, limit int) ([]recordedQuotaEvent, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id,requested_at,CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent,reset_at,window_minutes,plan_type,failed
+FROM usage_events
+WHERE cycle_id=? AND quota_scope=? AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0
+ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END DESC,id DESC
+LIMIT ?`, cycleID, mainQuotaScope, limit)
 	if err != nil {
-		return quotaCycle{}, err
+		return nil, err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND (requested_at>? OR (requested_at=? AND id>=?))`, created.ID, current.ID, previousAt, previousAt, previousID); err != nil {
-		return quotaCycle{}, err
+	defer rows.Close()
+	events := make([]recordedQuotaEvent, 0, limit)
+	for rows.Next() {
+		var item recordedQuotaEvent
+		if err = rows.Scan(&item.ID, &item.RequestedAt, &item.ObservedAt, &item.UsedPercent, &item.ResetAt, &item.WindowMinutes, &item.PlanType, &item.Failed); err != nil {
+			return nil, err
+		}
+		events = append(events, item)
 	}
-	if err = insertSampleFromRecordedEvent(ctx, tx, created, previousID, previousEvent); err != nil {
-		return quotaCycle{}, err
+	return events, rows.Err()
+}
+
+func sameQuotaRegime(recorded recordedQuotaEvent, e event) bool {
+	if recorded.ResetAt != e.ResetAt || recorded.WindowMinutes != e.WindowMinutes {
+		return false
 	}
-	return created, nil
+	return recorded.PlanType == "" || e.PlanType == "" || recorded.PlanType == e.PlanType
+}
+
+func absInt64(value int64) int64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func resetCandidate(peak, used float64) bool {
@@ -279,7 +386,7 @@ func insertSampleFromRecordedEvent(ctx context.Context, tx *sql.Tx, cycle quotaC
 	}
 	var tokens, requests int64
 	var cost float64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE cycle_id=? AND requested_at<=?`, cycle.ID, e.RequestedAt).Scan(&tokens, &cost, &requests); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE cycle_id=? AND quota_scope=? AND requested_at<=?`, cycle.ID, mainQuotaScope, e.RequestedAt).Scan(&tokens, &cost, &requests); err != nil {
 		return err
 	}
 	var exists int
@@ -303,7 +410,7 @@ func (s *store) cycles(ctx context.Context, account string, limit int) ([]quotaC
 SELECT c.id,c.started_at,c.ended_at,c.reset_at,c.window_minutes,c.plan_type,c.close_reason,c.first_sample_at,c.last_sample_at,c.start_used_percent,c.end_used_percent,c.peak_used_percent,
 COALESCE(SUM(u.total_tokens),0),COALESCE(SUM(u.cost_usd),0),COUNT(u.id)
 FROM quota_cycles c
-LEFT JOIN usage_events u ON u.cycle_id=c.id
+LEFT JOIN usage_events u ON u.cycle_id=c.id AND u.quota_scope='main'
 WHERE c.account=?
 GROUP BY c.id
 ORDER BY c.started_at DESC,c.id DESC
@@ -354,7 +461,7 @@ func (s *store) pointsForCycle(ctx context.Context, account string, cycleID int6
 	if len(points) > 0 {
 		last := points[len(points)-1]
 		live := quotaPoint{CycleID: cycle.ID, CycleStart: cycle.StartedAt, UsedPercent: last.UsedPercent, ResetAt: cycle.ResetAt, WindowMinutes: cycle.WindowMinutes}
-		if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(requested_at),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE cycle_id=?`, cycle.ID).Scan(&live.Time, &live.WindowTokens, &live.WindowCostUSD, &live.Requests); err != nil {
+		if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(requested_at),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE cycle_id=? AND quota_scope=?`, cycle.ID, mainQuotaScope).Scan(&live.Time, &live.WindowTokens, &live.WindowCostUSD, &live.Requests); err != nil {
 			return nil, "", err
 		}
 		if live.Time > last.Time {

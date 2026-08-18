@@ -16,8 +16,13 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	if strings.HasSuffix(req.Path, "/dashboard") {
 		return managementResponse{StatusCode: 200, Headers: map[string][]string{"Content-Type": {"text/html; charset=utf-8"}, "Cache-Control": {"no-store"}}, Body: dashboardHTML}
 	}
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	if strings.HasSuffix(req.Path, "/repair/early-resets") && strings.EqualFold(req.Method, "POST") {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+	} else {
+		a.mu.RLock()
+		defer a.mu.RUnlock()
+	}
 	if a.store == nil {
 		return textResponse(503, "plugin store is not ready")
 	}
@@ -93,7 +98,15 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, err.Error())
 			}
 		}
-		return jsonResponse(200, map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "estimate": estimateCapacity(points), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))})
+		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "estimate": estimateCapacity(points), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))}
+		if req.Query.Get("include_spark") == "1" {
+			sparkSeries, errSpark := a.store.latestQuotaScopeSeries(ctx, account, sparkQuotaScope, limit)
+			if errSpark != nil {
+				return textResponse(500, errSpark.Error())
+			}
+			response["spark_quota"] = sparkSeries
+		}
+		return jsonResponse(200, response)
 	case strings.HasSuffix(req.Path, "/monthly"):
 		account := req.Query.Get("account")
 		if account == "" {
@@ -117,7 +130,26 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
-		return jsonResponse(200, map[string]any{"account": account, "months": months, "summary": monthly})
+		response := map[string]any{"account": account, "months": months, "summary": monthly}
+		if req.Query.Get("include_spark") == "1" {
+			sparkMonthly, errSpark := a.store.monthlyQuotaScope(ctx, account, sparkQuotaScope, selectedMonth)
+			if errSpark != nil {
+				return textResponse(500, errSpark.Error())
+			}
+			response["spark_summary"] = sparkMonthly
+		}
+		return jsonResponse(200, response)
+	case strings.HasSuffix(req.Path, "/repair/early-resets"):
+		account := req.Query.Get("account")
+		if account == "" {
+			return textResponse(400, "account is required")
+		}
+		apply := strings.EqualFold(req.Method, "POST")
+		report, err := a.store.repairFalseEarlyResets(ctx, account, apply)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		return jsonResponse(200, report)
 	case strings.HasSuffix(req.Path, "/prices/sync"):
 		count, err := syncPrices(ctx, a.store, a.cfg)
 		if err != nil {

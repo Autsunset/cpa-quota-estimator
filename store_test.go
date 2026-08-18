@@ -104,8 +104,16 @@ func TestCycleChangesWhenResetScheduleChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	insert(710, 0, 1300, 300)
-
 	cycles, err := s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 {
+		t.Fatalf("first changed-schedule observation must not split the cycle: %#v", cycles)
+	}
+	insert(720, 1, 1300, 400)
+
+	cycles, err = s.cycles(ctx, account, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +127,7 @@ func TestCycleChangesWhenResetScheduleChanges(t *testing.T) {
 	if previous.EndedAt != 700 || previous.CloseReason != "scheduled_reset" || previous.ActualTokens != 300 {
 		t.Fatalf("previous cycle = %#v", previous)
 	}
-	if current.ActualTokens != 350 {
+	if current.ActualTokens != 750 {
 		t.Fatalf("current tokens = %d", current.ActualTokens)
 	}
 }
@@ -172,7 +180,8 @@ func TestCycleConfirmsEarlyResetWithSameResetAt(t *testing.T) {
 	}
 	insert(100, 40, 100)
 	insert(110, 0, 200)
-	insert(110, 1, 300)
+	insert(140, 1, 300)
+	insert(170, 2, 400)
 
 	cycles, err := s.cycles(ctx, account, 10)
 	if err != nil {
@@ -182,7 +191,7 @@ func TestCycleConfirmsEarlyResetWithSameResetAt(t *testing.T) {
 		t.Fatalf("cycles = %#v", cycles)
 	}
 	current, previous := cycles[0], cycles[1]
-	if current.StartedAt != 110 || current.ResetAt != 700 || current.ActualTokens != 500 {
+	if current.StartedAt != 110 || current.ResetAt != 700 || current.ActualTokens != 900 {
 		t.Fatalf("current cycle = %#v", current)
 	}
 	if previous.EndedAt != 110 || previous.CloseReason != "early_reset" || previous.ActualTokens != 100 {
@@ -192,8 +201,61 @@ func TestCycleConfirmsEarlyResetWithSameResetAt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(points) != 2 || points[0].UsedPercent != 0 || points[1].UsedPercent != 1 || points[1].WindowTokens != 500 {
+	if len(points) != 2 || points[0].UsedPercent != 0 || points[1].UsedPercent != 2 || points[1].WindowTokens != 900 {
 		t.Fatalf("new cycle points = %#v", points)
+	}
+}
+
+func TestCycleRequiresThreeStableLowObservations(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "two-low-observations.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	account := "two-low-observations-account"
+	for _, item := range []struct {
+		at   int64
+		used float64
+	}{{100, 40}, {110, 0}, {180, 1}} {
+		e := event{RequestedAt: item.at, Account: account, Provider: "openai", Model: "gpt", TotalTokens: 100, UsedPercent: &item.used, ResetAt: 700, WindowMinutes: 10, PlanType: "pro"}
+		if err = s.insertEvent(ctx, e, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cycles, err := s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 || cycles[0].ActualTokens != 300 {
+		t.Fatalf("cycles = %#v", cycles)
+	}
+}
+
+func TestCycleRejectsFailedLowObservation(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "failed-low-observation.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	account := "failed-low-observation-account"
+	for _, item := range []struct {
+		at     int64
+		used   float64
+		failed bool
+	}{{100, 40, false}, {110, 0, false}, {140, 1, true}, {180, 2, false}} {
+		e := event{RequestedAt: item.at, Account: account, Provider: "openai", Model: "gpt", TotalTokens: 100, Failed: item.failed, UsedPercent: &item.used, ResetAt: 700, WindowMinutes: 10, PlanType: "pro"}
+		if err = s.insertEvent(ctx, e, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cycles, err := s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 || cycles[0].ActualTokens != 400 {
+		t.Fatalf("cycles = %#v", cycles)
 	}
 }
 
@@ -220,6 +282,240 @@ func TestCycleRejectsSingleStaleLowerSample(t *testing.T) {
 	}
 	if len(cycles) != 1 || cycles[0].PeakPercent != 41 || cycles[0].ActualTokens != 300 {
 		t.Fatalf("cycles = %#v", cycles)
+	}
+}
+
+func TestSparkQuotaDoesNotAffectMainCycle(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "spark-scope.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	account := "spark-scope-account"
+	base := time.Date(2026, time.August, 18, 13, 0, 0, 0, shanghaiLocation()).Unix()
+	mainReset := base + 7*24*60*60
+	sparkReset := mainReset + 59*60
+
+	main81 := 81.0
+	if err = s.insertEvent(ctx, event{RequestedAt: base, Account: account, Provider: "openai", Model: "gpt-5.6-sol", TotalTokens: 100, CostUSD: 1, UsedPercent: &main81, ResetAt: mainReset, WindowMinutes: 10080, PlanType: "pro"}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	spark0 := 0.0
+	if err = s.insertEvent(ctx, event{RequestedAt: base + 10, Account: account, Provider: "openai", Model: "gpt-5.3-codex-spark", TotalTokens: 200, CostUSD: 2, UsedPercent: &spark0, ResetAt: sparkReset, WindowMinutes: 10080, PlanType: "pro", QuotaScope: quotaScopeForUsage("gpt-5.3-codex-spark", "")}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	main84 := 84.0
+	if err = s.insertEvent(ctx, event{RequestedAt: base + 20, Account: account, Provider: "openai", Model: "gpt-5.6-sol", TotalTokens: 300, CostUSD: 3, UsedPercent: &main84, ResetAt: mainReset, WindowMinutes: 10080, PlanType: "pro"}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	cycles, err := s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 || cycles[0].PeakPercent != 84 || cycles[0].ResetAt != mainReset || cycles[0].ActualTokens != 400 || cycles[0].ActualCostUSD != 4 || cycles[0].Requests != 2 {
+		t.Fatalf("main cycles = %#v", cycles)
+	}
+	var sparkRows, sparkAssigned, samples int64
+	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(CASE WHEN cycle_id<>0 THEN 1 ELSE 0 END),0) FROM usage_events WHERE account=? AND quota_scope=?`, account, sparkQuotaScope).Scan(&sparkRows, &sparkAssigned); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quota_samples WHERE account=?`, account).Scan(&samples); err != nil {
+		t.Fatal(err)
+	}
+	if sparkRows != 1 || sparkAssigned != 0 || samples != 2 {
+		t.Fatalf("spark rows=%d assigned=%d quota samples=%d", sparkRows, sparkAssigned, samples)
+	}
+	monthly, err := s.monthly(ctx, account, "2026-08")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if monthly.ActualTokens != 400 || monthly.ActualCostUSD != 4 || monthly.Requests != 2 || len(monthly.Cycles) != 1 || monthly.Cycles[0].MonthTokens != 400 || monthly.Cycles[0].MonthCostUSD != 4 || monthly.Cycles[0].MonthRequests != 2 {
+		t.Fatalf("monthly = %#v", monthly)
+	}
+	sparkMonthly, err := s.monthlyQuotaScope(ctx, account, sparkQuotaScope, "2026-08")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sparkMonthly.ActualTokens != 200 || sparkMonthly.ActualCostUSD != 2 || sparkMonthly.Requests != 1 || sparkMonthly.CycleCount != 1 || sparkMonthly.Cycles[0].MonthTokens != 200 {
+		t.Fatalf("Spark monthly = %#v", sparkMonthly)
+	}
+}
+
+func TestQuotaScopeForUsageRecognizesSparkAlias(t *testing.T) {
+	if got := quotaScopeForUsage("gpt-5.6-sol", "gpt-5.3-codex-spark"); got != sparkQuotaScope {
+		t.Fatalf("Spark alias scope = %q", got)
+	}
+	if got := quotaScopeForUsage("gpt-5.6-sol", ""); got != mainQuotaScope {
+		t.Fatalf("main scope = %q", got)
+	}
+}
+
+func TestLatestSparkQuotaSeriesUsesItsOwnResetCycle(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "spark-series.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	account := "spark-series-account"
+	for _, row := range []struct {
+		at      int64
+		used    float64
+		resetAt int64
+		failed  bool
+	}{{110, 90, 400, false}, {210, 0, 900, false}, {220, 1, 900, true}, {240, 2, 900, false}} {
+		if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,provider,model,used_percent,reset_at,window_minutes,plan_type,quota_scope,failed)
+VALUES(?,?,?,?,?,?,?,?,?,?,?)`, row.at, row.at, account, "openai", "gpt-5.3-codex-spark", row.used, row.resetAt, 10, "pro", sparkQuotaScope, row.failed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mainUsed := 84.0
+	if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,provider,model,used_percent,reset_at,window_minutes,plan_type,quota_scope)
+VALUES(?,?,?,?,?,?,?,?,?,?)`, 230, 230, account, "openai", "gpt-5.6-sol", mainUsed, 800, 10, "pro", mainQuotaScope); err != nil {
+		t.Fatal(err)
+	}
+
+	series, err := s.latestQuotaScopeSeries(ctx, account, sparkQuotaScope, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if series.Scope != sparkQuotaScope || series.ResetAt != 900 || series.StartedAt != 400 || series.WindowMinutes != 10 || len(series.Points) != 0 {
+		// The two current-cycle samples above intentionally precede the declared
+		// cycle start and therefore must not leak into the displayed cycle.
+		t.Fatalf("series with out-of-cycle points = %#v", series)
+	}
+
+	for _, row := range []struct {
+		at     int64
+		used   float64
+		tokens int64
+		cost   float64
+	}{{410, 2, 100, 1}, {450, 3, 300, 3}} {
+		if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,provider,model,used_percent,reset_at,window_minutes,plan_type,quota_scope,total_tokens,cost_usd)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, row.at, row.at, account, "openai", "gpt-5.3-codex-spark", row.used, 900, 10, "pro", sparkQuotaScope, row.tokens, row.cost); err != nil {
+			t.Fatal(err)
+		}
+	}
+	series, err = s.latestQuotaScopeSeries(ctx, account, sparkQuotaScope, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if series.UsedPercent != 3 || series.ObservationCount != 2 || len(series.CapacityPoints) != 1 || len(series.Points) != 2 || series.Points[0].Time != 410 || series.Points[0].UsedPercent != 2 || series.Points[0].WindowTokens != 100 || series.Points[1].Time != 450 || series.Points[1].UsedPercent != 3 || series.Points[1].WindowTokens != 400 || series.Points[1].WindowCostUSD != 4 || series.Points[1].Requests != 2 {
+		t.Fatalf("Spark series = %#v", series)
+	}
+	if !series.Estimate.Available || series.Estimate.FullWindowTokens != 30000 || series.Estimate.FullWindowCostUSD != 300 || series.Estimate.RemainingTokens != 29100 || series.Estimate.RemainingCostUSD != 291 {
+		t.Fatalf("Spark estimate = %#v", series.Estimate)
+	}
+}
+
+func TestSparkScheduleCorrectionDoesNotCreateOverlappingCycle(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "spark-schedule-correction.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	location := shanghaiLocation()
+	stamp := func(day, hour, minute int) int64 {
+		return time.Date(2026, time.August, day, hour, minute, 0, 0, location).Unix()
+	}
+	account := "spark-schedule-correction-account"
+	oldReset := stamp(20, 11, 29)
+	correctedReset := stamp(20, 18, 10)
+	for _, row := range []struct {
+		at      int64
+		used    float64
+		resetAt int64
+		tokens  int64
+		cost    float64
+	}{
+		{stamp(14, 0, 7), 3, oldReset, 100, 1},
+		{stamp(14, 0, 32), 6, oldReset, 200, 2},
+		{stamp(17, 10, 50), 6, correctedReset, 300, 3},
+		{stamp(18, 16, 59), 7, correctedReset, 400, 4},
+	} {
+		if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,model,total_tokens,cost_usd,failed,used_percent,reset_at,window_minutes,plan_type,quota_scope) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+			row.at, row.at, account, "gpt-5.3-codex-spark", row.tokens, row.cost, 0, row.used, row.resetAt, 10080, "pro", sparkQuotaScope); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cycles, err := s.quotaScopeCycles(ctx, account, sparkQuotaScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 || cycles[0].ResetAt != correctedReset || cycles[0].StartedAt != stamp(13, 18, 10) || cycles[0].PeakPercent != 7 || !cycles[0].Current {
+		t.Fatalf("Spark corrected cycles = %#v", cycles)
+	}
+	series, err := s.latestQuotaScopeSeries(ctx, account, sparkQuotaScope, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if series.ObservationCount != 4 || series.UsedPercent != 7 || len(series.Points) != 3 || series.Points[len(series.Points)-1].WindowTokens != 1000 || series.Points[len(series.Points)-1].Requests != 4 {
+		t.Fatalf("Spark corrected series = %#v", series)
+	}
+	monthly, err := s.monthlyQuotaScope(ctx, account, sparkQuotaScope, "2026-08")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if monthly.CycleCount != 1 || monthly.ResetCount != 0 || monthly.ActualTokens != 1000 || monthly.Requests != 4 || monthly.Cycles[0].MonthTokens != 1000 || monthly.Cycles[0].MonthRequests != 4 || monthly.ConsumedQuotaPercent != 7 {
+		t.Fatalf("Spark corrected monthly = %#v", monthly)
+	}
+}
+
+func TestSparkMonthlySummaryUsesIndependentCyclesAndCapacity(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "spark-monthly.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	location := shanghaiLocation()
+	stamp := func(day int) int64 { return time.Date(2026, time.January, day, 12, 0, 0, 0, location).Unix() }
+	account := "spark-monthly-account"
+	if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,model,total_tokens,cost_usd,quota_scope) VALUES(?,?,?,?,?,?,?)`, stamp(5), stamp(5), account, "gpt-5.6-sol", 999, 99, mainQuotaScope); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		at      int64
+		used    float64
+		resetAt int64
+		tokens  int64
+		cost    float64
+	}{
+		{stamp(1), 10, stamp(8), 100, 1},
+		{stamp(7), 50, stamp(8), 200, 2},
+		{stamp(8), 5, stamp(15), 300, 3},
+		{stamp(14), 25, stamp(15), 400, 4},
+	} {
+		if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,model,total_tokens,cost_usd,failed,used_percent,reset_at,window_minutes,plan_type,quota_scope) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+			row.at, row.at, account, "gpt-5.3-codex-spark", row.tokens, row.cost, 0, row.used, row.resetAt, 10080, "pro", sparkQuotaScope); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mainMonthly, err := s.monthly(ctx, account, "2026-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mainMonthly.ActualTokens != 999 || mainMonthly.ActualCostUSD != 99 || mainMonthly.Requests != 1 {
+		t.Fatalf("main monthly includes Spark = %#v", mainMonthly)
+	}
+	summary, err := s.monthlyQuotaScope(ctx, account, sparkQuotaScope, "2026-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.ActualTokens != 1000 || summary.ActualCostUSD != 10 || summary.Requests != 4 {
+		t.Fatalf("Spark actual usage = %#v", summary)
+	}
+	if summary.CycleCount != 2 || summary.ResetCount != 1 || summary.EarlyResetCount != 0 || summary.ConsumedQuotaPercent != 75 || summary.ConsumedQuotaEquivalent != .75 {
+		t.Fatalf("Spark cycles = %#v", summary)
+	}
+	if summary.AllocatedCycleCount != 2 || summary.EstimatedCycleCount != 2 || summary.EstimatedTokens != 2500 || summary.EstimatedCostUSD != 25 || len(summary.Cycles) != 2 {
+		t.Fatalf("Spark capacity = %#v", summary)
+	}
+	if summary.Cycles[0].MonthTokens != 700 || summary.Cycles[1].MonthTokens != 300 {
+		t.Fatalf("Spark cycle usage = %#v", summary.Cycles)
 	}
 }
 
@@ -476,7 +772,7 @@ func TestMonthlySummaryIncludesEarlyResetAcrossMonthBoundary(t *testing.T) {
 		at     int64
 		used   float64
 		tokens int64
-	}{{stamp(time.January, 31, 12, 0), 40, 100}, {stamp(time.February, 1, 1, 0), 0, 200}, {stamp(time.February, 1, 1, 1), 1, 300}} {
+	}{{stamp(time.January, 31, 12, 0), 40, 100}, {stamp(time.February, 1, 1, 0), 0, 200}, {stamp(time.February, 1, 1, 1), 1, 300}, {stamp(time.February, 1, 1, 2), 2, 400}} {
 		e := event{RequestedAt: item.at, Account: account, Provider: "openai", Model: "gpt", TotalTokens: item.tokens, UsedPercent: &item.used, ResetAt: resetAt, WindowMinutes: 10080, PlanType: "pro"}
 		if err = s.insertEvent(ctx, e, time.Minute); err != nil {
 			t.Fatal(err)
@@ -489,7 +785,7 @@ func TestMonthlySummaryIncludesEarlyResetAcrossMonthBoundary(t *testing.T) {
 	if summary.CycleCount != 2 || summary.ResetCount != 1 || summary.EarlyResetCount != 1 {
 		t.Fatalf("monthly cycles = %#v", summary)
 	}
-	if summary.ActualTokens != 500 || summary.Requests != 2 || summary.ConsumedQuotaPercent != 1 || !summary.QuotaCoverageComplete {
+	if summary.ActualTokens != 900 || summary.Requests != 3 || summary.ConsumedQuotaPercent != 2 || !summary.QuotaCoverageComplete {
 		t.Fatalf("monthly usage = %#v", summary)
 	}
 	if summary.UnusedQuotaAtReset != 60 {

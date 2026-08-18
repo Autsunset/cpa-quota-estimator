@@ -39,6 +39,13 @@ func TestPublicReleaseDefaults(t *testing.T) {
 		[]byte("localStorage.setItem(persistentKeyStorageKey"),
 		[]byte("MutationObserver"),
 		[]byte("Auto (follow panel)"),
+		[]byte("cqe-show-spark-quota"),
+		[]byte("include_spark"),
+		[]byte("renderSparkQuota"),
+		[]byte("显示 Spark 额度"),
+		[]byte("Spark 月度额度汇总"),
+		[]byte("spark_summary"),
+		[]byte("不计入主额度"),
 	} {
 		if !bytes.Contains(dashboardHTML, marker) {
 			t.Fatalf("dashboard is missing public-host fallback marker %q", marker)

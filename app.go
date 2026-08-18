@@ -80,6 +80,8 @@ func managementRegistration() any {
 			{"Method": "GET", "Path": base + "/summary"},
 			{"Method": "GET", "Path": base + "/series"},
 			{"Method": "GET", "Path": base + "/monthly"},
+			{"Method": "GET", "Path": base + "/repair/early-resets"},
+			{"Method": "POST", "Path": base + "/repair/early-resets"},
 			{"Method": "GET", "Path": base + "/prices"},
 			{"Method": "POST", "Path": base + "/prices/sync"},
 		},
@@ -216,6 +218,16 @@ func (a *app) recordUsage(r usageRecord) error {
 	if r.RequestedAt.IsZero() {
 		requested = time.Now().Unix()
 	}
+	observed := requested
+	if !r.RequestedAt.IsZero() {
+		delay := time.Duration(r.TTFT)
+		if delay <= 0 {
+			delay = time.Duration(r.Latency)
+		}
+		if delay > 0 && delay <= 24*time.Hour {
+			observed = r.RequestedAt.Add(delay).Unix()
+		}
+	}
 	total := r.Detail.TotalTokens
 	if total == 0 {
 		total = r.Detail.InputTokens + r.Detail.OutputTokens
@@ -240,7 +252,7 @@ func (a *app) recordUsage(r usageRecord) error {
 	if account == "" {
 		account = "unknown"
 	}
-	e := event{RequestedAt: requested, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type")}
+	e := event{RequestedAt: requested, ObservedAt: observed, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type"), QuotaScope: quotaScopeForUsage(r.Model, r.Alias)}
 	return a.store.insertEvent(ctx, e, time.Duration(a.cfg.SampleIntervalMinutes)*time.Minute)
 }
 

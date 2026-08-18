@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.4.5"
+var pluginVersion = "0.4.6"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -129,6 +129,7 @@ type price struct {
 
 type event struct {
 	RequestedAt      int64
+	ObservedAt       int64
 	Account          string
 	Provider         string
 	Model            string
@@ -147,6 +148,7 @@ type event struct {
 	ResetAt          int64
 	WindowMinutes    int64
 	PlanType         string
+	QuotaScope       string
 }
 
 type quotaPoint struct {
@@ -159,6 +161,30 @@ type quotaPoint struct {
 	WindowTokens  int64   `json:"window_tokens"`
 	WindowCostUSD float64 `json:"window_cost_usd"`
 	Requests      int64   `json:"requests"`
+}
+
+type scopedQuotaPoint struct {
+	Time          int64   `json:"time"`
+	UsedPercent   float64 `json:"used_percent"`
+	ResetAt       int64   `json:"reset_at"`
+	WindowMinutes int64   `json:"window_minutes"`
+	PlanType      string  `json:"plan_type"`
+	WindowTokens  int64   `json:"window_tokens"`
+	WindowCostUSD float64 `json:"window_cost_usd"`
+	Requests      int64   `json:"requests"`
+}
+
+type scopedQuotaSeries struct {
+	Scope            string             `json:"scope"`
+	StartedAt        int64              `json:"started_at"`
+	ResetAt          int64              `json:"reset_at"`
+	WindowMinutes    int64              `json:"window_minutes"`
+	PlanType         string             `json:"plan_type"`
+	UsedPercent      float64            `json:"used_percent"`
+	ObservationCount int64              `json:"observation_count"`
+	Points           []scopedQuotaPoint `json:"points"`
+	CapacityPoints   []capacityPoint    `json:"capacity_points"`
+	Estimate         estimate           `json:"estimate"`
 }
 
 type quotaCycle struct {

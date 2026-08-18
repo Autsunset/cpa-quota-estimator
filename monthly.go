@@ -57,7 +57,7 @@ func (s *store) monthly(ctx context.Context, account, rawMonth string) (monthlyS
 		return monthlySummary{}, err
 	}
 	result := monthlySummary{Month: month, Timezone: "Asia/Shanghai", StartAt: startAt, EndAt: endAt, QuotaCoverageComplete: true}
-	if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND requested_at>=? AND requested_at<?`, account, startAt, endAt).
+	if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<?`, account, mainQuotaScope, startAt, endAt).
 		Scan(&result.ActualTokens, &result.ActualCostUSD, &result.Requests); err != nil {
 		return result, err
 	}
@@ -80,7 +80,7 @@ func (s *store) monthly(ctx context.Context, account, rawMonth string) (monthlyS
 			continue
 		}
 		item := monthlyCycle{quotaCycle: cycle}
-		if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE cycle_id=? AND requested_at>=? AND requested_at<?`, cycle.ID, startAt, endAt).
+		if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE cycle_id=? AND quota_scope=? AND requested_at>=? AND requested_at<?`, cycle.ID, mainQuotaScope, startAt, endAt).
 			Scan(&item.MonthTokens, &item.MonthCostUSD, &item.MonthRequests); err != nil {
 			return result, err
 		}
