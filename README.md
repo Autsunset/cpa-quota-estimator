@@ -33,7 +33,9 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 - Estimates full-cycle and remaining-quota Token/USD-equivalent capacity with interquartile ranges and confidence levels.
 - Shows actual quota usage, a sustainable baseline, cumulative-average projection, recent-rate projection, predicted exhaustion, planned reset time, and countdown.
 - Maintains an independent ledger for every confirmed quota cycle. Historical cycles remain available in the selector after a reset.
-- Detects normal resets from schedule transitions and confirms same-`reset_at` early resets only after two consecutive low-usage observations, reducing false splits from a single stale header.
+- Treats `gpt-5.3-codex-spark` headers as a separate quota scope and cycle. Spark actual Tokens, requests, cost, quota equivalents, cycle capacity, and monthly summaries are all accounted for separately; they never create, split, estimate, or add to the primary quota. An optional switch at the top of the dashboard displays the complete Spark statistics below all primary-quota content.
+- Orders quota headers by their response observation time, confirms scheduled transitions with two consistent successful observations, and confirms same-`reset_at` early resets only after three stable successful low-usage observations spanning at least 60 seconds.
+- Provides an explicit preview/apply repair API for historical false early-reset chains. It preserves raw usage rows and leaves confirmed normal cycles unchanged.
 - Adds calendar-month reporting for actual Tokens, estimated request cost, requests, involved cycles, confirmed resets, early resets, cumulative quota-consumption equivalents, unconsumed quota at reset, and estimated capacity allocated by cycles starting in that month.
 - Automatically follows the official CPA or CPAMP panel language, supports Chinese/English manual switching, and remembers the selected mode in the browser.
 - Includes a responsive embedded dashboard with dark/light themes and mobile layouts.
@@ -65,7 +67,11 @@ The green line is the pace that reaches exactly 100% at reset. Purple is the cum
 
 ### Cycle and monthly accounting
 
-`reset_at` is treated as the upstream planned reset time, not by itself as proof that a reset has already occurred. A normal schedule transition closes the preceding cycle. If the planned time remains unchanged but used quota abruptly returns near 0%, the plugin waits for a second consistent observation before confirming an early reset; it then assigns the first low observation and subsequent requests to the new cycle.
+`reset_at` is treated as the upstream planned reset time, not by itself as proof that a reset has already occurred. A scheduled transition is accepted only after two successful observations consistently describe the new window at the old boundary. If the planned time remains unchanged but used quota abruptly returns near 0%, the plugin requires three successful low readings in the same quota regime, in nondecreasing order, spanning at least 60 seconds. Failed, stale, out-of-order, or quickly rebounding readings do not create a new cycle.
+
+Quota evidence is ordered by when its response headers were observed: request time plus TTFT for streaming requests, or total latency when TTFT is unavailable. Actual Tokens and monthly request attribution continue to use the original request timestamp.
+
+Spark has a model-specific quota scope and reset schedule that are independent of the primary Codex allowance. Spark requests are excluded from the primary monthly actual Tokens, requests, estimated cost, cycle ledger, charts, consumed-quota equivalent, and capacity estimates. If Spark's planned reset time is corrected before the old boundary while usage continues to rise, the plugin updates the current Spark cycle instead of creating overlapping cycles or counting the same requests twice. The dashboard hides Spark quota by default; enable **Show Spark quota** at the top to display, below all primary-quota content, the latest Spark cycle curve, full-cycle and remaining Token/USD-equivalent capacity, sample quality, monthly summary, and cycle details. Every Spark figure is calculated only from Spark headers and Spark requests.
 
 Calendar-month totals use Asia/Shanghai boundaries:
 
@@ -122,7 +128,7 @@ Open **额度容量预测 / Quota Estimator** from CPAMP. The dashboard first tr
 
 > **Cold start:** Installing the plugin does not immediately show your quota. The plugin is completely passive — it only records requests that actually flow through CPA and cannot reconstruct usage that happened before installation. The current quota percentage and reset time appear only after the first real Codex request, and capacity estimates start only once quota usage actually grows between recorded samples (Δquota_percent > 0). Because quota headers report integer percentages, the first usable estimate may take several requests, and results stabilize as consumption accumulates.
 
-Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
+Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history. Upgrading does not automatically rewrite historical cycles. Historical false early resets are changed only through the explicit repair POST described below. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
 
 ## Token and cost rules
 
@@ -149,11 +155,17 @@ All management routes are protected by CPA Management Key:
 | GET | `/v0/management/cpa-quota-estimator/summary` | Selected quota-cycle and forecast summary |
 | GET | `/v0/management/cpa-quota-estimator/series` | Selected quota-cycle chart samples |
 | GET | `/v0/management/cpa-quota-estimator/monthly` | Calendar-month usage, reset, and capacity summary |
+| GET | `/v0/management/cpa-quota-estimator/repair/early-resets` | Preview historical false early-reset candidates without changing data |
+| POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | Transactionally merge all currently detected candidates |
 | GET | `/v0/management/cpa-quota-estimator/prices` | Synced prices and Fast policy |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | Trigger an immediate models.dev sync |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | Embedded dashboard resource |
 
 Use `?account=<AuthID>` to select a credential, `?cycle_id=<ID>` on `summary` or `series` to select the forecast cycle, and `?month=YYYY-MM` on `monthly` to select a month. On `series`, pass Unix-second `?start_at=<timestamp>&end_at=<timestamp>` values to return chart samples and capacity trajectories across every quota cycle overlapping that range.
+
+Pass `include_spark=1` on `series` to include the latest independent Spark quota cycle, its scoped cumulative Token/cost points, sample quality, and capacity estimate. Pass the same parameter on `monthly` to return a separate `spark_summary`, whose actual usage, quota equivalents, capacity, and cycle details never mix with the primary quota. The dashboard sends this only when its Spark display switch is enabled.
+
+Historical repair requires `?account=<AuthID>`. Always call GET first and inspect the returned cycle IDs. A candidate must be part of a chain containing at least two adjacent suspicious `early_reset` boundaries and keep the same primary reset schedule across each boundary. Each boundary must either be caused by a separately scoped Spark low reading followed within 10 minutes by the primary quota continuing near its preceding peak, or begin with a primary low reading that fails the new confirmation rule and quickly rebounds. Isolated early resets are deliberately left unchanged. POST revalidates every boundary and applies the full candidate set in one transaction; any failure rolls back all merges. Raw `usage_events` and overall Token, cost, and request totals are preserved. Spark rows are detached from the primary cycle ledger, and only their erroneous primary-quota samples and artificial boundaries are removed. Take an online SQLite backup before POST.
 
 ## Build
 
@@ -162,7 +174,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.4.5
+make package VERSION=0.4.6
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

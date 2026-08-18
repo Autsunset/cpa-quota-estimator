@@ -33,7 +33,9 @@
 - 估计完整周期与剩余额度的 Token/美元等效容量，并提供四分位数区间和置信度。
 - 展示实际额度轨迹、可持续基准、累计平均预测、近期速率预测、预计耗尽时间、计划重置时间和倒计时。
 - 为每个已确认的额度周期建立独立账本；重置后，旧周期仍可在下拉框中选择和回看。
-- 依据计划时间变化识别正常重置；当 `reset_at` 不变时，只有连续两个低用量观测一致，才确认发生提前重置，从而降低单个陈旧响应头造成的误分段。
+- 将 `gpt-5.3-codex-spark` 响应头视为独立额度口径和周期。Spark 的实际 Token、请求数、费用、额度消耗当量、周期容量及月度汇总均单独统计，不会创建、拆分、估算或累加到主额度；仪表盘可通过页面顶部的可选开关在主额度内容下方显示完整 Spark 统计。
+- 按响应头实际观察时间排序额度证据；计划周期切换需连续两个成功观测一致，当 `reset_at` 不变时则需三个成功、稳定且跨越至少 60 秒的低用量观测，才确认提前重置。
+- 提供显式的历史伪提前重置预览/修复接口；原始用量记录保持不变，已确认的正常周期不会被合并。
 - 增加自然月统计：实际 Token、请求估算费用、请求数、涉及周期数、已确认重置数、提前重置数、累计额度消耗当量、重置时未消耗额度，以及本月开始周期的估计总容量。
 - 自动跟随官方 CPA 或 CPAMP 面板语言，支持中英文手动切换，并在浏览器中保存选择。
 - 提供响应式嵌入式仪表盘，支持深色、浅色主题和移动端布局。
@@ -65,7 +67,11 @@
 
 ### 周期识别与月度统计口径
 
-`reset_at` 表示上游计划的未来重置时间，本身不等同于“已经发生重置”。正常计划时间切换会结束上一周期；如果计划时间不变，但额度使用率突然回到接近 0%，插件会等待第二个一致观测，确认后再把首次低用量观测及其后的请求归入新周期。
+`reset_at` 表示上游计划的未来重置时间，本身不等同于“已经发生重置”。计划周期切换只有在两个成功观测都一致指向旧周期边界后的新窗口时才会确认。如果计划时间不变，但额度使用率突然回到接近 0%，插件要求同一额度口径下出现三个成功、非递减的低用量读数，且首尾至少跨越 60 秒。失败、陈旧、乱序或很快回弹的读数都不会创建新周期。
+
+额度证据按响应头被观察到的时间排序：流式请求使用“请求时间 + TTFT”，没有 TTFT 时使用总延迟。实际 Token 和自然月请求归属仍按原始请求发生时间计算。
+
+Spark 使用与 Codex 主额度相互独立的模型专属额度口径和重置计划。Spark 请求不会进入主额度的自然月实际 Token、请求数、估算费用、周期账本、曲线、额度消耗当量或容量估算。Spark 的计划重置时间如果在旧边界到达前发生修正，而使用率仍连续增长，只会更新当前 Spark 周期，不会制造重叠周期或重复累计请求。仪表盘默认隐藏 Spark 额度；勾选页面顶部的**显示 Spark 额度**后，会在全部主额度内容下方展示按 Spark 自身时间划分的最新周期曲线、完整周期与剩余额度 Token/USD 等效容量、采样质量、月度汇总及周期明细。所有 Spark 数值只使用 Spark 响应头与 Spark 请求计算。
 
 自然月统计以 Asia/Shanghai 为边界：
 
@@ -122,7 +128,7 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 > **冷启动说明：** 安装插件后并不会立即看到额度。插件完全被动，只记录真实流经 CPA 的请求，也无法回补安装之前的历史用量。首次真实的 Codex 请求之后，才会出现当前额度百分比和重置时间；只有当记录样本之间的额度百分比确实增长（Δ额度百分比 > 0）时，才开始计算容量估算。由于额度响应头只提供整数百分比，首个可用估算可能需要多次请求才会出现，并随着消耗累积逐渐稳定。
 
-插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
+插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量，也不会自动改写历史周期。历史伪提前重置只有在显式调用下述修复 POST 后才会变更。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
 
 ## Token 与费用计算规则
 
@@ -149,11 +155,17 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | GET | `/v0/management/cpa-quota-estimator/summary` | 所选额度周期与预测摘要 |
 | GET | `/v0/management/cpa-quota-estimator/series` | 所选额度周期图表采样数据 |
 | GET | `/v0/management/cpa-quota-estimator/monthly` | 自然月用量、重置与容量汇总 |
+| GET | `/v0/management/cpa-quota-estimator/repair/early-resets` | 只读预览历史伪提前重置候选 |
+| POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | 在单个事务中合并当前全部候选 |
 | GET | `/v0/management/cpa-quota-estimator/prices` | 已同步价格与 Fast 策略 |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即触发 models.dev 价格同步 |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | 嵌入式仪表盘资源 |
 
 使用 `?account=<AuthID>` 可选择指定凭证；在 `summary` 或 `series` 中使用 `?cycle_id=<ID>` 可选择预测周期；在 `monthly` 中使用 `?month=YYYY-MM` 可选择月份。`series` 还可传入 Unix 秒级的 `?start_at=<时间戳>&end_at=<时间戳>`，返回该范围内所有重叠额度周期的曲线采样点和容量估计轨迹。
+
+在 `series` 中传入 `include_spark=1` 可同时返回最新的独立 Spark 额度周期、仅属于 Spark 的累计 Token/费用采样点、采样质量及容量估算。在 `monthly` 中传入同一参数会返回独立的 `spark_summary`，其中实际消耗、额度当量、容量和周期明细均不与主额度混合。仪表盘只会在用户启用 Spark 显示开关时传入该参数。
+
+历史修复必须传入 `?account=<AuthID>`。应先调用 GET 并核对返回的周期 ID。候选必须属于至少两个相邻可疑 `early_reset` 边界组成的链，并且边界两侧的主额度重置计划一致。每个边界还必须满足以下证据之一：由独立口径的 Spark 低位读数触发，随后 10 分钟内主额度继续保持在前一峰值附近；或主额度低位读数不满足新确认规则并迅速回弹。孤立的提前重置会被刻意保留。POST 会重新校验每个边界，并在单个事务内应用全部候选；任何一步失败都会整体回滚。修复会保留原始 `usage_events` 以及总体 Token、费用和请求数；Spark 记录只会脱离主周期账本，同时移除其错误生成的主额度采样点和伪周期边界。调用 POST 前请先在线备份 SQLite 数据库。
 
 ## 构建
 
@@ -162,7 +174,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.4.5
+make package VERSION=0.4.6
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
