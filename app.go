@@ -67,6 +67,8 @@ func pluginRegistration() any {
 				{"Name": "sample_interval_minutes", "Type": "integer", "Description": "额度未变化时的最小采样间隔"},
 				{"Name": "fast_pricing_mode", "Type": "enum", "EnumValues": []string{"multiplier", "source"}, "Description": "Fast 按倍率或价格源显式价格计费"},
 				{"Name": "fast_multiplier", "Type": "number", "Description": "Fast 倍率，默认 2.5"},
+				{"Name": "apply_fast_pricing", "Type": "boolean", "Description": "是否应用 Fast 加价，默认开启；仪表盘保存值会覆盖此初始值"},
+				{"Name": "apply_long_context_pricing", "Type": "boolean", "Description": "是否应用长上下文加价，默认关闭；仪表盘保存值会覆盖此初始值"},
 			},
 		},
 		"capabilities": map[string]any{"usage_plugin": true, "management_api": true},
@@ -84,6 +86,8 @@ func managementRegistration() any {
 			{"Method": "POST", "Path": base + "/repair/early-resets"},
 			{"Method": "GET", "Path": base + "/prices"},
 			{"Method": "POST", "Path": base + "/prices/sync"},
+			{"Method": "GET", "Path": base + "/pricing-settings"},
+			{"Method": "POST", "Path": base + "/pricing-settings"},
 		},
 		"resources": []map[string]any{{"Path": "/dashboard", "Menu": "额度容量预测", "Description": "按额度增长反推周 Token 与美元等效容量，并绘制趋势曲线。"}},
 	}
@@ -131,6 +135,11 @@ func (a *app) configure(raw []byte) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.store != nil && a.cfg.DataPath == cfg.DataPath {
+		settings, errLoad := a.store.loadPricingSettings(context.Background(), cfg.pricingSettings())
+		if errLoad != nil {
+			return errLoad
+		}
+		cfg = cfg.withPricingSettings(settings)
 		a.cfg = cfg
 		if a.cancel != nil {
 			a.cancel()
@@ -156,6 +165,12 @@ func (a *app) configure(raw []byte) error {
 		_ = s.close()
 		return err
 	}
+	settings, err := s.loadPricingSettings(context.Background(), cfg.pricingSettings())
+	if err != nil {
+		_ = s.close()
+		return err
+	}
+	cfg = cfg.withPricingSettings(settings)
 	a.cfg, a.store = cfg, s
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel

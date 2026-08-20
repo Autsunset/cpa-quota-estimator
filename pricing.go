@@ -134,10 +134,10 @@ func seedPrices(ctx context.Context, s *store) error {
 
 func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float64 {
 	in, out, read, write := p.Input, p.Output, p.CacheRead, p.CacheWrite
-	if d.InputTokens > cfg.LongContextThreshold && p.LongInput > 0 {
+	if cfg.ApplyLongContextPricing && d.InputTokens > cfg.LongContextThreshold && p.LongInput > 0 {
 		in, out, read, write = p.LongInput, p.LongOutput, p.LongRead, p.LongWrite
 	}
-	if isFastTier(serviceTier) {
+	if cfg.ApplyFastPricing && isFastTier(serviceTier) {
 		if strings.EqualFold(cfg.FastPricingMode, "source") && p.FastInput > 0 {
 			in, out, read, write = p.FastInput, p.FastOutput, p.FastRead, p.FastWrite
 		} else {

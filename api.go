@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +17,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	if strings.HasSuffix(req.Path, "/dashboard") {
 		return managementResponse{StatusCode: 200, Headers: map[string][]string{"Content-Type": {"text/html; charset=utf-8"}, "Cache-Control": {"no-store"}}, Body: dashboardHTML}
 	}
-	if strings.HasSuffix(req.Path, "/repair/early-resets") && strings.EqualFold(req.Method, "POST") {
+	if (strings.HasSuffix(req.Path, "/repair/early-resets") || strings.HasSuffix(req.Path, "/pricing-settings")) && strings.EqualFold(req.Method, "POST") {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 	} else {
@@ -26,7 +27,11 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	if a.store == nil {
 		return textResponse(503, "plugin store is not ready")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	timeout := 30 * time.Second
+	if strings.HasSuffix(req.Path, "/pricing-settings") && strings.EqualFold(req.Method, "POST") {
+		timeout = 2 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	switch {
 	case strings.HasSuffix(req.Path, "/summary"):
@@ -38,7 +43,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if account == "" && len(accounts) > 0 {
 			account = accounts[0]
 		}
-		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": map[string]any{"fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "long_context_threshold": a.cfg.LongContextThreshold, "price_source_url": a.cfg.PriceSourceURL}}
+		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": map[string]any{"fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing, "price_source_url": a.cfg.PriceSourceURL}}
 		if account != "" {
 			cycles, err := a.store.cycles(ctx, account, 60)
 			if err != nil {
@@ -150,6 +155,28 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			return textResponse(500, err.Error())
 		}
 		return jsonResponse(200, report)
+	case strings.HasSuffix(req.Path, "/pricing-settings"):
+		if strings.EqualFold(req.Method, "GET") {
+			return jsonResponse(200, pricingSettingsResponse(a.cfg, 0))
+		}
+		if !strings.EqualFold(req.Method, "POST") {
+			return textResponse(405, "method not allowed")
+		}
+		var update pricingSettingsUpdate
+		if err := json.Unmarshal(req.Body, &update); err != nil {
+			return textResponse(400, "invalid pricing settings: "+err.Error())
+		}
+		if update.ApplyLongContext == nil || update.ApplyFast == nil {
+			return textResponse(400, "apply_long_context_pricing and apply_fast_pricing are required")
+		}
+		settings := pricingSettings{ApplyLongContext: *update.ApplyLongContext, ApplyFast: *update.ApplyFast}
+		cfg := a.cfg.withPricingSettings(settings)
+		recalculated, err := a.store.savePricingSettingsAndRecalculate(ctx, settings, cfg)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		a.cfg = cfg
+		return jsonResponse(200, pricingSettingsResponse(a.cfg, recalculated))
 	case strings.HasSuffix(req.Path, "/prices/sync"):
 		count, err := syncPrices(ctx, a.store, a.cfg)
 		if err != nil {
@@ -161,7 +188,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
-		return jsonResponse(200, map[string]any{"prices": prices, "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier})
+		return jsonResponse(200, map[string]any{"prices": prices, "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing})
 	default:
 		return textResponse(404, "not found")
 	}
@@ -200,4 +227,15 @@ func forecastReference(points []quotaPoint, isCurrent bool) int64 {
 		return time.Now().Unix()
 	}
 	return points[len(points)-1].Time
+}
+
+func pricingSettingsResponse(cfg config, recalculated int64) map[string]any {
+	return map[string]any{
+		"apply_long_context_pricing": cfg.ApplyLongContextPricing,
+		"apply_fast_pricing":         cfg.ApplyFastPricing,
+		"long_context_threshold":     cfg.LongContextThreshold,
+		"fast_pricing_mode":          cfg.FastPricingMode,
+		"fast_multiplier":            cfg.FastMultiplier,
+		"recalculated_events":        recalculated,
+	}
 }

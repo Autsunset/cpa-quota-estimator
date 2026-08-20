@@ -1,0 +1,155 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+)
+
+const pricingSettingsMetadataKey = "pricing_settings"
+
+type pricingSettings struct {
+	ApplyLongContext bool `json:"apply_long_context_pricing"`
+	ApplyFast        bool `json:"apply_fast_pricing"`
+}
+
+type pricingSettingsUpdate struct {
+	ApplyLongContext *bool `json:"apply_long_context_pricing"`
+	ApplyFast        *bool `json:"apply_fast_pricing"`
+}
+
+func (c config) pricingSettings() pricingSettings {
+	return pricingSettings{
+		ApplyLongContext: c.ApplyLongContextPricing,
+		ApplyFast:        c.ApplyFastPricing,
+	}
+}
+
+func (c config) withPricingSettings(settings pricingSettings) config {
+	c.ApplyLongContextPricing = settings.ApplyLongContext
+	c.ApplyFastPricing = settings.ApplyFast
+	return c
+}
+
+func (s *store) loadPricingSettings(ctx context.Context, fallback pricingSettings) (pricingSettings, error) {
+	var raw string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, pricingSettingsMetadataKey).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return fallback, nil
+	}
+	if err != nil {
+		return fallback, err
+	}
+	var settings pricingSettings
+	if err = json.Unmarshal([]byte(raw), &settings); err != nil {
+		return fallback, fmt.Errorf("decode saved pricing settings: %w", err)
+	}
+	return settings, nil
+}
+
+type costRecalculationEvent struct {
+	ID               int64
+	Model            string
+	ServiceTier      string
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+}
+
+func (s *store) savePricingSettingsAndRecalculate(ctx context.Context, settings pricingSettings, cfg config) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	prices := make(map[string]price)
+	priceRows, err := tx.QueryContext(ctx, `SELECT model,input,output,cache_read,cache_write,long_input,long_output,long_cache_read,long_cache_write,fast_input,fast_output,fast_cache_read,fast_cache_write,source,updated_at FROM model_prices`)
+	if err != nil {
+		return 0, err
+	}
+	for priceRows.Next() {
+		var p price
+		if err = priceRows.Scan(&p.Model, &p.Input, &p.Output, &p.CacheRead, &p.CacheWrite, &p.LongInput, &p.LongOutput, &p.LongRead, &p.LongWrite, &p.FastInput, &p.FastOutput, &p.FastRead, &p.FastWrite, &p.Source, &p.UpdatedAt); err != nil {
+			priceRows.Close()
+			return 0, err
+		}
+		prices[normalizeModel(p.Model)] = p
+	}
+	if err = priceRows.Err(); err != nil {
+		priceRows.Close()
+		return 0, err
+	}
+	if err = priceRows.Close(); err != nil {
+		return 0, err
+	}
+
+	eventRows, err := tx.QueryContext(ctx, `SELECT id,model,service_tier,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens FROM usage_events ORDER BY id`)
+	if err != nil {
+		return 0, err
+	}
+	var events []costRecalculationEvent
+	for eventRows.Next() {
+		var event costRecalculationEvent
+		if err = eventRows.Scan(&event.ID, &event.Model, &event.ServiceTier, &event.InputTokens, &event.OutputTokens, &event.CacheReadTokens, &event.CacheWriteTokens); err != nil {
+			eventRows.Close()
+			return 0, err
+		}
+		events = append(events, event)
+	}
+	if err = eventRows.Err(); err != nil {
+		eventRows.Close()
+		return 0, err
+	}
+	if err = eventRows.Close(); err != nil {
+		return 0, err
+	}
+
+	updateEvent, err := tx.PrepareContext(ctx, `UPDATE usage_events SET cost_usd=? WHERE id=?`)
+	if err != nil {
+		return 0, err
+	}
+	defer updateEvent.Close()
+	for _, event := range events {
+		cost := float64(0)
+		if p, ok := prices[normalizeModel(event.Model)]; ok {
+			cost = calculateCost(p, usageDetail{
+				InputTokens:         event.InputTokens,
+				OutputTokens:        event.OutputTokens,
+				CacheReadTokens:     event.CacheReadTokens,
+				CacheCreationTokens: event.CacheWriteTokens,
+			}, event.ServiceTier, cfg)
+		}
+		if _, err = updateEvent.ExecContext(ctx, cost, event.ID); err != nil {
+			return 0, err
+		}
+	}
+	if err = updateEvent.Close(); err != nil {
+		return 0, err
+	}
+
+	if _, err = tx.ExecContext(ctx, `UPDATE quota_samples
+SET window_cost_usd=COALESCE((
+ SELECT SUM(usage_events.cost_usd)
+ FROM usage_events
+ WHERE usage_events.cycle_id=quota_samples.cycle_id
+   AND usage_events.quota_scope=?
+   AND usage_events.requested_at<=quota_samples.sampled_at
+),0)`, mainQuotaScope); err != nil {
+		return 0, err
+	}
+
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, pricingSettingsMetadataKey, string(raw)); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return int64(len(events)), nil
+}

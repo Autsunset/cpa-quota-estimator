@@ -15,6 +15,15 @@ func TestPublicReleaseDefaults(t *testing.T) {
 	if cfg.HistoryDays != 365 {
 		t.Fatalf("history days = %d, want 365", cfg.HistoryDays)
 	}
+	if cfg.ApplyLongContextPricing || !cfg.ApplyFastPricing {
+		t.Fatalf("pricing defaults = long:%v fast:%v, want long disabled and fast enabled", cfg.ApplyLongContextPricing, cfg.ApplyFastPricing)
+	}
+	if bytes.Contains(dashboardHTML, []byte(`id="applyLongContextPricing" type="checkbox" checked`)) {
+		t.Fatal("long-context pricing checkbox must be unchecked by default")
+	}
+	if !bytes.Contains(dashboardHTML, []byte(`id="applyFastPricing" type="checkbox" checked`)) {
+		t.Fatal("Fast pricing checkbox must be checked by default")
+	}
 	for _, marker := range [][]byte{
 		[]byte("bridgeState"),
 		[]byte("directApi"),
@@ -46,6 +55,10 @@ func TestPublicReleaseDefaults(t *testing.T) {
 		[]byte("Spark 月度额度汇总"),
 		[]byte("spark_summary"),
 		[]byte("不计入主额度"),
+		[]byte("applyLongContextPricing"),
+		[]byte("applyFastPricing"),
+		[]byte("/pricing-settings"),
+		[]byte("保存并重算"),
 	} {
 		if !bytes.Contains(dashboardHTML, marker) {
 			t.Fatalf("dashboard is missing public-host fallback marker %q", marker)
@@ -162,6 +175,7 @@ func TestEstimateBurnRecentPace(t *testing.T) {
 func TestCalculateCostCacheLongAndFast(t *testing.T) {
 	p := price{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25, LongInput: 10, LongOutput: 45, LongRead: 1, LongWrite: 12.5, FastInput: 10, FastOutput: 60, FastRead: 1, FastWrite: 12.5}
 	cfg := defaultConfig()
+	cfg.ApplyLongContextPricing = true
 	detail := usageDetail{InputTokens: 300_000, OutputTokens: 10_000, CacheReadTokens: 200_000, CacheCreationTokens: 20_000}
 	got := calculateCost(p, detail, "priority", cfg)
 	want := (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*45) / 1_000_000 * 2.5
@@ -173,6 +187,18 @@ func TestCalculateCostCacheLongAndFast(t *testing.T) {
 	want = (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*60) / 1_000_000
 	if math.Abs(got-want) > 1e-9 {
 		t.Fatalf("source fast cost = %f, want %f", got, want)
+	}
+	cfg.ApplyFastPricing = false
+	got = calculateCost(p, detail, "priority", cfg)
+	want = (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*45) / 1_000_000
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("fast-disabled cost = %f, want %f", got, want)
+	}
+	cfg.ApplyLongContextPricing = false
+	got = calculateCost(p, detail, "priority", cfg)
+	want = (80_000.0*5 + 200_000.0*.5 + 20_000.0*6.25 + 10_000.0*30) / 1_000_000
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("all-surcharges-disabled cost = %f, want %f", got, want)
 	}
 }
 

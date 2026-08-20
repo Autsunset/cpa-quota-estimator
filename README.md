@@ -27,6 +27,7 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 - Persists Token counts, model, `service_tier`, estimated cost, and `X-Codex-Primary-*` quota metadata in a private SQLite database.
 - Syncs OpenAI model pricing from `https://models.dev/catalog.json` by default.
 - Accounts for cached reads/writes, output Tokens, and the context pricing tier above 272K input Tokens.
+- Provides two dashboard pricing switches, with an empirical default of long-context surcharge off and Fast surcharge on. Saving either switch persists it in SQLite and transactionally recalculates all historical request costs, quota samples, monthly totals, and USD-equivalent capacity estimates.
 - Supports configurable Fast pricing:
   - `multiplier`: multiply normal/long-context pricing, default **2.5×**;
   - `source`: use explicit `experimental.modes.fast.cost` pricing from models.dev.
@@ -111,7 +112,9 @@ plugins:
       price_sync_interval_minutes: 1440
       fast_pricing_mode: multiplier
       fast_multiplier: 2.5
+      apply_fast_pricing: true
       long_context_threshold: 272000
+      apply_long_context_pricing: false
       history_days: 365
   enabled: true
 ```
@@ -128,7 +131,7 @@ Open **额度容量预测 / Quota Estimator** from CPAMP. The dashboard first tr
 
 > **Cold start:** Installing the plugin does not immediately show your quota. The plugin is completely passive — it only records requests that actually flow through CPA and cannot reconstruct usage that happened before installation. The current quota percentage and reset time appear only after the first real Codex request, and capacity estimates start only once quota usage actually grows between recorded samples (Δquota_percent > 0). Because quota headers report integer percentages, the first usable estimate may take several requests, and results stabilize as consumption accumulates.
 
-Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history. Upgrading does not automatically rewrite historical cycles. Historical false early resets are changed only through the explicit repair POST described below. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
+Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history. Upgrading does not automatically rewrite historical cycles. Saving the dashboard pricing switches intentionally recalculates historical USD costs and derived capacity estimates, but does not alter Token counts or quota-cycle boundaries. Historical false early resets are changed only through the explicit repair POST described below. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
 
 ## Token and cost rules
 
@@ -144,7 +147,9 @@ cost = uncached input × input price
      + output × output price
 ```
 
-All prices are USD per one million Tokens. `ReasoningTokens` are already included in output Tokens and are not charged twice. Requests whose recorded `service_tier` is `priority` or `fast` use the configured Fast pricing policy; `auto` and `default` remain at 1×.
+All prices are USD per one million Tokens. `ReasoningTokens` are already included in output Tokens and are not charged twice. Requests whose recorded `service_tier` is `priority` or `fast` use the configured Fast pricing policy; `auto` and `default` remain at 1×. The long-context tier is selected when `InputTokens > long_context_threshold` (272,000 by default).
+
+The dashboard exposes **>272K long-context surcharge** and **Fast surcharge** checkboxes. The empirical defaults are **long-context surcharge off** and **Fast surcharge on**, based on observed Codex quota-percentage consumption; both remain user-configurable. These defaults target ChatGPT/Codex quota-percentage accounting, not API invoice pricing: OpenAI API requests above the model's long-context threshold can still use the published long-context price tier, so users who want strict API-price-equivalent accounting can enable the long-context switch. **Save and recalculate** stores the selection in the plugin SQLite database and recalculates every retained `usage_events.cost_usd` row plus cumulative quota-sample costs in one transaction, so historical charts, monthly summaries, and USD-equivalent capacity estimates update immediately. Saved dashboard values take precedence over the `apply_fast_pricing` and `apply_long_context_pricing` YAML initial values for the same database. Disabling a switch removes only that surcharge; it does not change recorded Tokens, quota percentages, or cycle boundaries.
 
 ## Management API
 
@@ -159,6 +164,8 @@ All management routes are protected by CPA Management Key:
 | POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | Transactionally merge all currently detected candidates |
 | GET | `/v0/management/cpa-quota-estimator/prices` | Synced prices and Fast policy |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | Trigger an immediate models.dev sync |
+| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | Read the saved long-context and Fast surcharge switches |
+| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | Save both switches and transactionally recalculate retained historical costs |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | Embedded dashboard resource |
 
 Use `?account=<AuthID>` to select a credential, `?cycle_id=<ID>` on `summary` or `series` to select the forecast cycle, and `?month=YYYY-MM` on `monthly` to select a month. On `series`, pass Unix-second `?start_at=<timestamp>&end_at=<timestamp>` values to return chart samples and capacity trajectories across every quota cycle overlapping that range.
@@ -174,7 +181,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.4.6
+make package VERSION=0.5.1
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

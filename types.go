@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.4.6"
+var pluginVersion = "0.5.1"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -91,7 +91,9 @@ type config struct {
 	PriceSyncIntervalMinutes int     `yaml:"price_sync_interval_minutes"`
 	FastPricingMode          string  `yaml:"fast_pricing_mode"`
 	FastMultiplier           float64 `yaml:"fast_multiplier"`
+	ApplyFastPricing         bool    `yaml:"apply_fast_pricing"`
 	LongContextThreshold     int64   `yaml:"long_context_threshold"`
+	ApplyLongContextPricing  bool    `yaml:"apply_long_context_pricing"`
 	HistoryDays              int     `yaml:"history_days"`
 }
 
@@ -104,7 +106,9 @@ func defaultConfig() config {
 		PriceSyncIntervalMinutes: 1440,
 		FastPricingMode:          "multiplier",
 		FastMultiplier:           2.5,
+		ApplyFastPricing:         true,
 		LongContextThreshold:     272000,
+		ApplyLongContextPricing:  false,
 		HistoryDays:              365,
 	}
 }

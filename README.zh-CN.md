@@ -27,6 +27,7 @@
 - 将 Token 数、模型、`service_tier`、估算费用和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
+- 仪表盘提供两个可保存的费用开关：>272K 长上下文加价默认关闭，Fast 加价默认开启。保存后会持久化到 SQLite，并在单个事务中重算全部历史请求费用、额度采样、月度汇总和美元等效容量估计。
 - 支持两种可配置的 Fast 定价方式：
   - `multiplier`：在普通或长上下文价格上应用倍数，默认 **2.5×**；
   - `source`：使用 models.dev 中明确提供的 `experimental.modes.fast.cost` 价格。
@@ -111,7 +112,9 @@ plugins:
       price_sync_interval_minutes: 1440
       fast_pricing_mode: multiplier
       fast_multiplier: 2.5
+      apply_fast_pricing: true
       long_context_threshold: 272000
+      apply_long_context_pricing: false
       history_days: 365
   enabled: true
 ```
@@ -128,7 +131,7 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 > **冷启动说明：** 安装插件后并不会立即看到额度。插件完全被动，只记录真实流经 CPA 的请求，也无法回补安装之前的历史用量。首次真实的 Codex 请求之后，才会出现当前额度百分比和重置时间；只有当记录样本之间的额度百分比确实增长（Δ额度百分比 > 0）时，才开始计算容量估算。由于额度响应头只提供整数百分比，首个可用估算可能需要多次请求才会出现，并随着消耗累积逐渐稳定。
 
-插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量，也不会自动改写历史周期。历史伪提前重置只有在显式调用下述修复 POST 后才会变更。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
+插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量，也不会自动改写历史周期。在仪表盘保存费用开关时，会有意重算历史美元费用及派生容量估计，但不会修改 Token 数或额度周期边界。历史伪提前重置只有在显式调用下述修复 POST 后才会变更。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
 
 ## Token 与费用计算规则
 
@@ -144,7 +147,9 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
      + 输出 × 输出价格
 ```
 
-所有价格单位均为每一百万 Token 的美元价格。`ReasoningTokens` 已包含在输出 Token 中，不会重复计费。记录的 `service_tier` 为 `priority` 或 `fast` 时使用配置的 Fast 定价策略；`auto` 和 `default` 保持 1×。
+所有价格单位均为每一百万 Token 的美元价格。`ReasoningTokens` 已包含在输出 Token 中，不会重复计费。记录的 `service_tier` 为 `priority` 或 `fast` 时使用配置的 Fast 定价策略；`auto` 和 `default` 保持 1×。当 `InputTokens > long_context_threshold` 时使用长上下文价格档位，默认阈值为 272,000。
+
+仪表盘提供 **>272K 长上下文加价** 和 **Fast 加价** 两个勾选项。基于实际 Codex 额度百分比消耗的经验默认值为：**长上下文加价关闭、Fast 加价开启**；用户仍可随时修改。该默认值针对 ChatGPT/Codex 套餐额度百分比扣减，而不是 API 财务账单：OpenAI API 中超过模型长上下文阈值的请求仍可能使用官方公布的长上下文价格档位；如果希望严格按 API 价格等效口径估算，可以手动开启长上下文开关。点击**保存并重算**后，选择会保存到插件 SQLite 数据库，并在单个事务中重算保留期内所有 `usage_events.cost_usd` 以及额度采样累计费用，因此历史图表、月度汇总和美元等效容量估计会立即更新。对于同一个数据库，仪表盘已保存的值优先于 YAML 中的 `apply_fast_pricing` 和 `apply_long_context_pricing` 初始值。关闭某个开关只会移除对应加价，不会修改已记录的 Token、额度百分比或周期边界。
 
 ## Management API
 
@@ -159,6 +164,8 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | 在单个事务中合并当前全部候选 |
 | GET | `/v0/management/cpa-quota-estimator/prices` | 已同步价格与 Fast 策略 |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即触发 models.dev 价格同步 |
+| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | 读取已保存的长上下文与 Fast 加价开关 |
+| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 保存两个开关并在事务中重算保留期内的历史费用 |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | 嵌入式仪表盘资源 |
 
 使用 `?account=<AuthID>` 可选择指定凭证；在 `summary` 或 `series` 中使用 `?cycle_id=<ID>` 可选择预测周期；在 `monthly` 中使用 `?month=YYYY-MM` 可选择月份。`series` 还可传入 Unix 秒级的 `?start_at=<时间戳>&end_at=<时间戳>`，返回该范围内所有重叠额度周期的曲线采样点和容量估计轨迹。
@@ -174,7 +181,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.4.6
+make package VERSION=0.5.1
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
