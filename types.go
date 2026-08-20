@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.4.6"
+var pluginVersion = "0.5.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -273,6 +273,24 @@ type burnForecast struct {
 	RecentEstimatedExhaustAt int64   `json:"recent_estimated_exhaust_at,omitempty"`
 	RecentWillExhaustBefore  bool    `json:"recent_will_exhaust_before_reset"`
 	Status                   string  `json:"status"`
+}
+
+type accountOverview struct {
+	Account          string       `json:"account"`
+	PlanType         string       `json:"plan_type"`
+	SelectedCycleID  int64        `json:"selected_cycle_id,omitempty"`
+	WindowStart      int64        `json:"window_start,omitempty"`
+	IsCurrent        bool         `json:"is_current"`
+	RemainingPercent float64      `json:"remaining_percent"`
+	QuotaStatus      string       `json:"quota_status"`
+	Latest           *quotaPoint  `json:"latest,omitempty"`
+	Estimate         estimate     `json:"estimate"`
+	BurnForecast     burnForecast `json:"burn_forecast"`
+}
+
+type overviewResponse struct {
+	PluginVersion string            `json:"plugin_version"`
+	Accounts      []accountOverview `json:"accounts"`
 }
 
 type monthlyCycle struct {

@@ -22,7 +22,7 @@ CPA 插件资源运行在 iframe 中，默认无法继承 CPAMP 内存中的 Man
 - 响应消息类型：`cpamp:plugin-api-response`
 - 只接受当前插件 iframe 的 `event.source` 和相同 `origin`。
 - 只允许 `GET`、`POST`。
-- 路径必须以 `/v0/management/<当前 pluginID>/` 开头。
+- 常规路径必须以 `/v0/management/<当前 pluginID>/` 开头。额度预测插件还可只读请求精确路径 `GET /v0/management/auth-files`，父页面必须先把响应裁剪为 `id`、`name`、`type/provider`、`account_type`、`disabled` 和 `unavailable`，不得把 ID Token、邮箱、项目 ID 或其他凭证元数据传入 iframe。
 - 父页面调用 `apiClient.get` 或 `apiClient.post` 时，要去掉路径开头的 `/v0/management`，因为 `apiClient` 的 `baseURL` 已包含该前缀。否则会请求到重复路径 `/v0/management/v0/management/...`。
 - 返回状态码与 JSON 数据，不返回或传递管理员密钥。
 

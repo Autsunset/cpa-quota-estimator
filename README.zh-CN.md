@@ -126,7 +126,7 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 在 CPAMP 中打开**额度容量预测 / Quota Estimator**。仪表盘会优先复用已认证的插件桥接；同源部署且桥接不可用时，也会自动复用 CPAMP 通过**记住密码**选项持久保存的 Management Key。跨域部署或 CPAMP 未持久保存登录态时，才回退到 CPA Management Key 登录。此时勾选**在此浏览器记住密钥**后，兜底密钥会保存在当前浏览器的 `localStorage` 中；不勾选则仍只保存在当前标签页的 `sessionStorage` 中。共享设备请勿开启持久保存。
 
-> **冷启动说明：** 安装插件后并不会立即看到额度。插件完全被动，只记录真实流经 CPA 的请求，也无法回补安装之前的历史用量。首次真实的 Codex 请求之后，才会出现当前额度百分比和重置时间；只有当记录样本之间的额度百分比确实增长（Δ额度百分比 > 0）时，才开始计算容量估算。由于额度响应头只提供整数百分比，首个可用估算可能需要多次请求才会出现，并随着消耗累积逐渐稳定。
+> **冷启动说明：** 安装插件后并不会立即看到额度。插件完全被动，只记录真实流经 CPA 的请求，也无法回补安装之前的历史用量。全部账号概览会尝试从受保护的 CPA `auth-files` 管理接口合并已配置的 Codex OAuth；尚未流经 CPA 的账号会显示为“等待首次经 CPA 调用”，而不是被误判为凭证丢失。首次真实的 Codex 请求之后，才会出现当前剩余额度和重置时间；只有当记录样本之间的已使用额度百分比确实增长（Δ已使用百分比 > 0）时，才开始计算容量估算。由于额度响应头只提供整数百分比，首个可用估算可能需要多次请求才会出现，并随着消耗累积逐渐稳定。
 
 插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量，也不会自动改写历史周期。历史伪提前重置只有在显式调用下述修复 POST 后才会变更。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
 
@@ -152,6 +152,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
+| GET | `/v0/management/cpa-quota-estimator/overview` | 所有已记录账号的当前主额度预测概览 |
 | GET | `/v0/management/cpa-quota-estimator/summary` | 所选额度周期与预测摘要 |
 | GET | `/v0/management/cpa-quota-estimator/series` | 所选额度周期图表采样数据 |
 | GET | `/v0/management/cpa-quota-estimator/monthly` | 自然月用量、重置与容量汇总 |
@@ -160,6 +161,8 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | GET | `/v0/management/cpa-quota-estimator/prices` | 已同步价格与 Fast 策略 |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即触发 models.dev 价格同步 |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | 嵌入式仪表盘资源 |
+
+`overview` 为每个已采样账号返回一条轻量的当前周期记录，包括计划类型、当前剩余额度、请求数、Token、美元等价费用、完整周期 Token/USD 容量估计、置信度和消耗预测。仪表盘还会只读查询 CPA 的 Codex OAuth 清单，把未采样账号合并进同一张表格。概览支持折叠；每一列都有独立的浏览器端筛选框，点击列名可按字段类型切换升序/降序。拖动表头列边界可在 `40px` 技术下限至 `2000px` 之间调整列宽，双击拖动手柄可恢复该列默认宽度；键盘用户可聚焦分隔条后使用方向键调整（按住 `Shift` 增大步长），或按 `Home` 重置。数字和时间筛选支持 `>`、`>=`、`<`、`<=`、`=` 比较符，显示偏好和列宽会保存在当前浏览器。点击有样本的账号行即可进入现有详情视图，整个过程不会发起 AI 请求。若父面板未提供受限桥接且浏览器没有可复用的 Management Key，仪表盘仍会正常展示已采样账号，并明确提示 OAuth 清单暂不可读。
 
 使用 `?account=<AuthID>` 可选择指定凭证；在 `summary` 或 `series` 中使用 `?cycle_id=<ID>` 可选择预测周期；在 `monthly` 中使用 `?month=YYYY-MM` 可选择月份。`series` 还可传入 Unix 秒级的 `?start_at=<时间戳>&end_at=<时间戳>`，返回该范围内所有重叠额度周期的曲线采样点和容量估计轨迹。
 
@@ -174,7 +177,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.4.6
+make package VERSION=0.5.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
