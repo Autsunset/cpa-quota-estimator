@@ -1,11 +1,33 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestDashboardShowsRemainingQuotaAndExhaustedState(t *testing.T) {
+	for _, expected := range [][]byte{
+		[]byte("当前剩余额度"),
+		[]byte("overviewExhausted"),
+		[]byte("overviewAwaitingFirstSample"),
+		[]byte("loadConfiguredCodexAccounts"),
+		[]byte("overviewCapacityCost"),
+		[]byte("overviewToggle"),
+		[]byte("data-overview-filter"),
+		[]byte("compareOverviewRows"),
+		[]byte("cqe-overview-preferences-v1"),
+		[]byte("setupOverviewColumnResizers"),
+		[]byte("overview-column-resizer"),
+		[]byte("overview-toggle-icon"),
+	} {
+		if !bytes.Contains(dashboardHTML, expected) {
+			t.Fatalf("dashboard is missing %q", expected)
+		}
+	}
+}
 
 func TestManagementRegistrationIncludesAllHandledRoutes(t *testing.T) {
 	registration := managementRegistration().(map[string]any)
@@ -16,6 +38,7 @@ func TestManagementRegistrationIncludesAllHandledRoutes(t *testing.T) {
 	}
 
 	for _, expected := range []string{
+		"GET /cpa-quota-estimator/overview",
 		"GET /cpa-quota-estimator/summary",
 		"GET /cpa-quota-estimator/series",
 		"GET /cpa-quota-estimator/monthly",

@@ -71,6 +71,34 @@ func TestEstimateCapacity(t *testing.T) {
 	}
 }
 
+func TestEstimateCapacityUsesDeltaAfterFirstObservation(t *testing.T) {
+	points := []quotaPoint{
+		{Time: 1000, UsedPercent: 20, WindowTokens: 1_000_000, WindowCostUSD: 1},
+		{Time: 2000, UsedPercent: 50, WindowTokens: 4_000_000, WindowCostUSD: 4},
+	}
+	estimate := estimateCapacity(points)
+	if estimate.PercentSpan != 30 || estimate.FullWindowTokens != 10_000_000 || estimate.FullWindowCostUSD != 10 {
+		t.Fatalf("delta-based estimate = %#v", estimate)
+	}
+	if estimate.RemainingTokens != 5_000_000 || estimate.RemainingCostUSD != 5 {
+		t.Fatalf("remaining estimate = %#v", estimate)
+	}
+}
+
+func TestEstimateCapacityIsLowerWhenUntrackedUsageExpandsQuotaDelta(t *testing.T) {
+	trackedOnly := estimateCapacity([]quotaPoint{
+		{Time: 1000, UsedPercent: 20, WindowTokens: 1_000_000},
+		{Time: 2000, UsedPercent: 50, WindowTokens: 4_000_000},
+	})
+	withUntrackedUsage := estimateCapacity([]quotaPoint{
+		{Time: 1000, UsedPercent: 20, WindowTokens: 1_000_000},
+		{Time: 2000, UsedPercent: 80, WindowTokens: 4_000_000},
+	})
+	if trackedOnly.FullWindowTokens != 10_000_000 || withUntrackedUsage.FullWindowTokens != 5_000_000 {
+		t.Fatalf("tracked=%#v with untracked usage=%#v", trackedOnly, withUntrackedUsage)
+	}
+}
+
 func TestEstimateCapacityUsesFirstMonotonicCrossings(t *testing.T) {
 	points := []quotaPoint{
 		{Time: 1000, UsedPercent: 10, ResetAt: 9000, WindowTokens: 100, WindowCostUSD: 10},

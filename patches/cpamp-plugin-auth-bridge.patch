@@ -56,7 +56,13 @@ index 051f035..149fb5c 100644
 +        return;
 +      }
 +      const allowedPrefix = `/v0/management/${pluginID}/`;
-+      if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith(allowedPrefix)) {
++      const isPluginRoute = parsed.pathname.startsWith(allowedPrefix);
++      const isQuotaAuthInventory =
++        pluginID === 'cpa-quota-estimator' &&
++        method === 'GET' &&
++        parsed.pathname === '/v0/management/auth-files' &&
++        parsed.search === '';
++      if (parsed.origin !== window.location.origin || (!isPluginRoute && !isQuotaAuthInventory)) {
 +        frameWindow.postMessage(
 +          { type: PLUGIN_API_RESPONSE, id, status: 403, data: { error: 'plugin route denied' } },
 +          event.origin
@@ -66,10 +72,28 @@ index 051f035..149fb5c 100644
 +
 +      try {
 +        const managementPath = `${parsed.pathname.slice('/v0/management'.length)}${parsed.search}`;
-+        const data =
-+          method === 'POST'
-+            ? await apiClient.post(managementPath, event.data.body)
-+            : await apiClient.get(managementPath);
++        let data;
++        if (isQuotaAuthInventory) {
++          const inventory = (await apiClient.get(managementPath)) as {
++            files?: Array<Record<string, unknown>>;
++          };
++          data = {
++            files: (inventory.files || []).map((file) => ({
++              id: file.id,
++              name: file.name,
++              type: file.type,
++              provider: file.provider,
++              account_type: file.account_type,
++              disabled: file.disabled,
++              unavailable: file.unavailable,
++            })),
++          };
++        } else {
++          data =
++            method === 'POST'
++              ? await apiClient.post(managementPath, event.data.body)
++              : await apiClient.get(managementPath);
++        }
 +        frameWindow.postMessage({ type: PLUGIN_API_RESPONSE, id, status: 200, data }, event.origin);
 +      } catch (error) {
 +        frameWindow.postMessage(

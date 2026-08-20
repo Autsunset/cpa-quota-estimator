@@ -29,6 +29,42 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	switch {
+	case strings.HasSuffix(req.Path, "/overview"):
+		accounts, err := a.store.accounts(ctx)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		items := make([]accountOverview, 0, len(accounts))
+		now := time.Now().Unix()
+		for _, account := range accounts {
+			item := accountOverview{Account: account}
+			cycles, errCycles := a.store.cycles(ctx, account, 1)
+			if errCycles != nil {
+				return textResponse(500, errCycles.Error())
+			}
+			if len(cycles) == 0 {
+				items = append(items, item)
+				continue
+			}
+			selected := cycles[0]
+			points, plan, errPoints := a.store.pointsForCycle(ctx, account, selected.ID, 5000)
+			if errPoints != nil && errPoints != sql.ErrNoRows {
+				return textResponse(500, errPoints.Error())
+			}
+			item.PlanType = plan
+			item.SelectedCycleID = selected.ID
+			item.WindowStart = selected.StartedAt
+			item.IsCurrent = selected.Current
+			item.Estimate = estimateCapacity(points)
+			item.BurnForecast = estimateBurn(points, forecastReference(points, selected.Current))
+			if len(points) > 0 {
+				latest := points[len(points)-1]
+				item.RemainingPercent, item.QuotaStatus = quotaSnapshotState(latest, now)
+				item.Latest = &latest
+			}
+			items = append(items, item)
+		}
+		return jsonResponse(200, overviewResponse{PluginVersion: pluginVersion, Accounts: items})
 	case strings.HasSuffix(req.Path, "/summary"):
 		account := req.Query.Get("account")
 		accounts, err := a.store.accounts(ctx)
@@ -62,7 +98,9 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			resp["estimate"] = estimateCapacity(points)
 			resp["burn_forecast"] = estimateBurn(points, forecastReference(points, isCurrent))
 			if len(points) > 0 {
-				resp["latest"] = points[len(points)-1]
+				latest := points[len(points)-1]
+				resp["latest"] = latest
+				resp["remaining_percent"], resp["quota_status"] = quotaSnapshotState(latest, time.Now().Unix())
 				resp["window_start"] = selected.StartedAt
 			}
 		}
@@ -200,4 +238,16 @@ func forecastReference(points []quotaPoint, isCurrent bool) int64 {
 		return time.Now().Unix()
 	}
 	return points[len(points)-1].Time
+}
+
+func quotaSnapshotState(point quotaPoint, now int64) (float64, string) {
+	used := max(float64(0), min(float64(100), point.UsedPercent))
+	remaining := 100 - used
+	if remaining <= 0.5 {
+		return remaining, "exhausted"
+	}
+	if point.ResetAt > 0 && now >= point.ResetAt {
+		return remaining, "awaiting_refresh"
+	}
+	return remaining, "active"
 }
