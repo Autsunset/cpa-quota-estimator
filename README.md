@@ -72,7 +72,7 @@ The green line is the pace that reaches exactly 100% at reset. Purple is the cum
 
 Quota evidence is ordered by when its response headers were observed: request time plus TTFT for streaming requests, or total latency when TTFT is unavailable. Actual Tokens and monthly request attribution continue to use the original request timestamp.
 
-Spark has a model-specific quota scope and reset schedule that are independent of the primary Codex allowance. Spark requests are excluded from the primary monthly actual Tokens, requests, estimated cost, cycle ledger, charts, consumed-quota equivalent, and capacity estimates. If Spark's planned reset time is corrected before the old boundary while usage continues to rise, the plugin updates the current Spark cycle instead of creating overlapping cycles or counting the same requests twice. The dashboard hides Spark quota by default; enable **Show Spark quota** at the top to display, below all primary-quota content, the latest Spark cycle curve, full-cycle and remaining Token/USD-equivalent capacity, sample quality, monthly summary, and cycle details. Every Spark figure is calculated only from Spark headers and Spark requests.
+Spark has a model-specific quota scope and reset schedule that are independent of the primary Codex allowance. Spark requests are excluded from the primary monthly actual Tokens, requests, estimated cost, cycle ledger, charts, consumed-quota equivalent, and capacity estimates. If Spark's planned reset time is corrected before the old boundary while usage continues to rise, the plugin updates the current Spark cycle instead of creating overlapping cycles or counting the same requests twice. The dashboard hides Spark quota by default; enable **Show Spark quota** at the top to display, below all primary-quota content, the latest Spark cycle curve, full-cycle and remaining Token/USD-equivalent capacity, sample quality, monthly summary, and cycle details. Every Spark figure is calculated only from Spark headers and Spark requests. The plugin does not actively poll upstream quota, and the dashboard's **Refresh** button only reloads stored observations. If a scheduled Spark reset passes without another Spark request, the expired cycle is closed at its scheduled boundary and the current window/next reset are projected from the prior schedule. Current usage remains **Awaiting sample** until a successful Spark request returns fresh headers; two consistent successful observations are still required to confirm the new scheduled window.
 
 Calendar-month totals use Asia/Shanghai boundaries:
 
@@ -181,7 +181,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.5.1
+make package VERSION=0.5.2
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
