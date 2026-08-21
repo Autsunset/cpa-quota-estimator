@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.5.1"
+var pluginVersion = "0.5.2"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -186,6 +186,8 @@ type scopedQuotaSeries struct {
 	PlanType         string             `json:"plan_type"`
 	UsedPercent      float64            `json:"used_percent"`
 	ObservationCount int64              `json:"observation_count"`
+	LastObservedAt   int64              `json:"last_observed_at,omitempty"`
+	ScheduleInferred bool               `json:"schedule_inferred,omitempty"`
 	Points           []scopedQuotaPoint `json:"points"`
 	CapacityPoints   []capacityPoint    `json:"capacity_points"`
 	Estimate         estimate           `json:"estimate"`
@@ -209,6 +211,7 @@ type quotaCycle struct {
 	Requests         int64   `json:"requests"`
 	Current          bool    `json:"current"`
 	ObservedComplete bool    `json:"observed_complete"`
+	ScheduleInferred bool    `json:"schedule_inferred,omitempty"`
 }
 
 type quotaWindow struct {

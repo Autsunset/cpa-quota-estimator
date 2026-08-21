@@ -54,6 +54,8 @@ func TestPublicReleaseDefaults(t *testing.T) {
 		[]byte("显示 Spark 额度"),
 		[]byte("Spark 月度额度汇总"),
 		[]byte("spark_summary"),
+		[]byte("schedule_inferred"),
+		[]byte("待请求确认"),
 		[]byte("不计入主额度"),
 		[]byte("applyLongContextPricing"),
 		[]byte("applyFastPricing"),

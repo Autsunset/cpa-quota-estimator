@@ -214,7 +214,12 @@ const messages = {
     chartWaitGrowth: '等待额度增长',
     chartNeedTwoGrowth: '至少需要两个额度增长区间',
     sparkNoSamples: '当前 Spark 额度周期暂无成功观测样本',
+    sparkInferredNoSamples: '上次计划重置已到，当前周期按上一窗口推算；发送一次 Spark 请求后即可确认当前使用率和重置时间。上次成功观测：{time}',
     sparkSampleCount: '{count} 个成功观测',
+    sparkAwaitingSample: '待采样',
+    sparkAwaitingConfirmation: '待请求确认',
+    sparkPendingConfirmation: '{count} 个观测 · 待确认',
+    sparkLastObservedAt: '上次成功观测：{time}',
     quotaSeries: '额度使用率',
     tokenUsageSeries: 'Token 用量',
     costUsageSeries: '估算费用',
@@ -246,6 +251,7 @@ const messages = {
     coverageComplete: '完整',
     coveragePartial: '部分覆盖',
     cycleCurrent: '进行中',
+    cycleInferred: '待请求确认',
     cycleScheduledReset: '定时重置',
     cycleEarlyReset: '提前重置',
     cycleScheduleChange: '窗口变更',
@@ -327,7 +333,12 @@ const messages = {
     chartWaitGrowth: 'Waiting for quota growth',
     chartNeedTwoGrowth: 'At least two quota-growth intervals are required',
     sparkNoSamples: 'No successful observations in the current Spark quota cycle',
+    sparkInferredNoSamples: 'The previous scheduled reset has passed, so the current cycle is projected from the prior window. Send one Spark request to confirm current usage and reset time. Last successful observation: {time}',
     sparkSampleCount: '{count} successful observations',
+    sparkAwaitingSample: 'Awaiting sample',
+    sparkAwaitingConfirmation: 'Awaiting request',
+    sparkPendingConfirmation: '{count} observed · pending confirmation',
+    sparkLastObservedAt: 'Last successful observation: {time}',
     quotaSeries: 'Quota used',
     tokenUsageSeries: 'Token usage',
     costUsageSeries: 'Estimated cost',
@@ -359,6 +370,7 @@ const messages = {
     coverageComplete: 'Complete',
     coveragePartial: 'Partial coverage',
     cycleCurrent: 'Active',
+    cycleInferred: 'Awaiting request',
     cycleScheduledReset: 'Scheduled reset',
     cycleEarlyReset: 'Early reset',
     cycleScheduleChange: 'Window changed',
@@ -945,6 +957,7 @@ function renderPeriods(summary) {
 }
 
 function cycleReason(cycle) {
+  if (cycle.schedule_inferred) return [tr('cycleInferred'), 'early'];
   if (cycle.current) return [tr('cycleCurrent'), ''];
   if (cycle.close_reason === 'early_reset') return [tr('cycleEarlyReset'), 'early'];
   if (cycle.close_reason === 'scheduled_reset') return [tr('cycleScheduledReset'), 'closed'];
@@ -1029,7 +1042,7 @@ function renderMonthlySummary(summary, ids, noteKey) {
     return '<tr>' +
       '<td>' + period + '</td>' +
       '<td><span class="cycle-state ' + reason[1] + '">' + reason[0] + '</span></td>' +
-      '<td>' + Number(cycle.peak_percent || 0).toFixed(0) + '%</td>' +
+      '<td>' + (cycle.schedule_inferred ? '—' : Number(cycle.peak_percent || 0).toFixed(0) + '%') + '</td>' +
       '<td>' + fmt(cycle.month_tokens) + '</td>' +
       '<td>' + usd(cycle.month_cost_usd) + '</td>' +
       '<td>' + fmt(cycle.month_requests) + '</td>' +
@@ -1461,9 +1474,20 @@ function renderSparkQuota(seriesData) {
   let spark = seriesData && seriesData.spark_quota || {};
   let points = spark.points || [];
   let estimate = spark.estimate || {};
-  $('#sparkUsed').textContent = spark.reset_at ? Number(spark.used_percent || 0).toFixed(0) + '%' : '—';
+  let inferred = !!spark.schedule_inferred;
+  let observationCount = spark.observation_count || points.length;
+  let awaitingSample = inferred && !observationCount;
+  $('#sparkUsed').textContent = awaitingSample ? tr('sparkAwaitingSample')
+    : (spark.reset_at ? Number(spark.used_percent || 0).toFixed(0) + '%' : '—');
   $('#sparkReset').textContent = spark.reset_at ? dt(spark.reset_at) : '—';
-  $('#sparkObservations').textContent = tr('sparkSampleCount', {count: spark.observation_count || points.length});
+  let observationNode = $('#sparkObservations');
+  observationNode.textContent = inferred
+    ? (observationCount
+      ? tr('sparkPendingConfirmation', {count: observationCount})
+      : tr('sparkAwaitingConfirmation'))
+    : tr('sparkSampleCount', {count: observationCount});
+  observationNode.title = inferred && spark.last_observed_at
+    ? tr('sparkLastObservedAt', {time: dt(spark.last_observed_at)}) : '';
   $('#sparkConfidence').textContent = estimate.available ? confidenceLabel(estimate.confidence) : tr('insufficientSamples');
   $('#sparkFullTokens').textContent = estimate.available ? fmt(estimate.full_window_tokens) : '—';
   $('#sparkRemainTokens').textContent = estimate.available ? fmt(estimate.remaining_tokens) : '—';
@@ -1476,7 +1500,10 @@ function renderSparkQuota(seriesData) {
   $('#sparkCostRange').textContent = estimate.available
     ? usd(estimate.cost_low) + ' — ' + usd(estimate.cost_high) : '—';
   if (!points.length || !spark.started_at || !spark.reset_at || spark.reset_at <= spark.started_at) {
-    $('#sparkCurve').innerHTML = '<div class="empty">' + tr('sparkNoSamples') + '</div>';
+    let message = inferred
+      ? tr('sparkInferredNoSamples', {time: dt(spark.last_observed_at)})
+      : tr('sparkNoSamples');
+    $('#sparkCurve').innerHTML = '<div class="empty">' + message + '</div>';
     return;
   }
 

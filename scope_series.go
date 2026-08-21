@@ -23,11 +23,27 @@ type scopedCycleDefinition struct {
 }
 
 func (s *store) latestQuotaScopeSeries(ctx context.Context, account, scope string, limit int) (scopedQuotaSeries, error) {
+	return s.latestQuotaScopeSeriesAt(ctx, account, scope, limit, time.Now().Unix())
+}
+
+func (s *store) latestQuotaScopeSeriesAt(ctx context.Context, account, scope string, limit int, now int64) (scopedQuotaSeries, error) {
 	definitions, err := s.quotaScopeCycleDefinitions(ctx, account, scope)
 	if err != nil || len(definitions) == 0 {
-		return scopedQuotaSeries{Scope: scope, Points: []scopedQuotaPoint{}}, err
+		return scopedQuotaSeries{Scope: scope, Points: []scopedQuotaPoint{}, CapacityPoints: []capacityPoint{}}, err
 	}
-	return s.quotaScopeSeriesForCycle(ctx, account, scope, definitions[0], limit)
+	lastObservedAt := definitions[0].Cycle.LastSampleAt
+	definitions = advanceExpiredScopedSchedule(definitions, now)
+	series, err := s.quotaScopeSeriesForCycle(ctx, account, scope, definitions[0], limit)
+	if err != nil {
+		return series, err
+	}
+	if series.ScheduleInferred {
+		series.LastObservedAt = lastObservedAt
+		if len(series.Points) > 0 {
+			series.LastObservedAt = series.Points[len(series.Points)-1].Time
+		}
+	}
+	return series, nil
 }
 
 func (s *store) quotaScopeSeries(ctx context.Context, account, scope string, selectedResetAt int64, limit int) (scopedQuotaSeries, error) {
@@ -46,12 +62,15 @@ func (s *store) quotaScopeSeries(ctx context.Context, account, scope string, sel
 func (s *store) quotaScopeSeriesForCycle(ctx context.Context, account, scope string, definition scopedCycleDefinition, limit int) (scopedQuotaSeries, error) {
 	cycle := definition.Cycle
 	series := scopedQuotaSeries{
-		Scope:         scope,
-		StartedAt:     cycle.StartedAt,
-		ResetAt:       cycle.ResetAt,
-		WindowMinutes: cycle.WindowMinutes,
-		PlanType:      cycle.PlanType,
-		Points:        []scopedQuotaPoint{},
+		Scope:            scope,
+		StartedAt:        cycle.StartedAt,
+		ResetAt:          cycle.ResetAt,
+		WindowMinutes:    cycle.WindowMinutes,
+		PlanType:         cycle.PlanType,
+		LastObservedAt:   cycle.LastSampleAt,
+		ScheduleInferred: cycle.ScheduleInferred,
+		Points:           []scopedQuotaPoint{},
+		CapacityPoints:   []capacityPoint{},
 	}
 	if account == "" || scope == "" || cycle.ID == 0 {
 		return series, nil
@@ -257,6 +276,46 @@ func (s *store) quotaScopeCycleDefinitions(ctx context.Context, account, scope s
 	return definitions, nil
 }
 
+// Scoped quotas are passively observed from model responses. When no request
+// follows a scheduled reset, close the expired observed cycle and expose only
+// the current schedule inferred from the last declared window. The synthetic
+// cycle deliberately carries no usage observation or capacity estimate.
+func advanceExpiredScopedSchedule(definitions []scopedCycleDefinition, now int64) []scopedCycleDefinition {
+	if len(definitions) == 0 {
+		return definitions
+	}
+	latest := definitions[0]
+	cycle := latest.Cycle
+	if !cycle.Current || cycle.ResetAt <= 0 || cycle.WindowMinutes <= 0 || now < cycle.ResetAt {
+		return definitions
+	}
+	windowSeconds := cycle.WindowMinutes * 60
+	if windowSeconds <= 0 {
+		return definitions
+	}
+	periodsSinceReset := (now - cycle.ResetAt) / windowSeconds
+	startedAt := cycle.ResetAt + periodsSinceReset*windowSeconds
+	resetAt := startedAt + windowSeconds
+	if startedAt < cycle.ResetAt || resetAt <= startedAt {
+		return definitions
+	}
+
+	advanced := append([]scopedCycleDefinition(nil), definitions...)
+	advanced[0].Cycle.Current = false
+	advanced[0].Cycle.EndedAt = cycle.ResetAt
+	advanced[0].Cycle.CloseReason = "scheduled_reset"
+	inferred := scopedCycleDefinition{Cycle: quotaCycle{
+		ID:               -resetAt,
+		StartedAt:        startedAt,
+		ResetAt:          resetAt,
+		WindowMinutes:    cycle.WindowMinutes,
+		PlanType:         cycle.PlanType,
+		Current:          true,
+		ScheduleInferred: true,
+	}}
+	return append([]scopedCycleDefinition{inferred}, advanced...)
+}
+
 func (s *store) quotaScopeObservations(ctx context.Context, account, scope string) ([]scopedQuotaObservation, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,requested_at,
 	CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,
@@ -352,6 +411,10 @@ func scopedCycleEnd(cycle quotaCycle) int64 {
 }
 
 func (s *store) monthlyQuotaScope(ctx context.Context, account, scope, rawMonth string) (monthlySummary, error) {
+	return s.monthlyQuotaScopeAt(ctx, account, scope, rawMonth, time.Now().Unix())
+}
+
+func (s *store) monthlyQuotaScopeAt(ctx context.Context, account, scope, rawMonth string, now int64) (monthlySummary, error) {
 	month, startAt, endAt, err := monthRange(rawMonth)
 	if err != nil {
 		return monthlySummary{}, err
@@ -367,7 +430,7 @@ WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<?`, accou
 	if err != nil {
 		return result, err
 	}
-	now := time.Now().Unix()
+	definitions = advanceExpiredScopedSchedule(definitions, now)
 	for _, definition := range definitions {
 		cycle := definition.Cycle
 		cycleEnd := scopedCycleEnd(cycle)

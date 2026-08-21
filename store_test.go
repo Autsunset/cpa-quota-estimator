@@ -377,7 +377,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?)`, 230, 230, account, "openai", "gpt-5.6-sol", mainUs
 		t.Fatal(err)
 	}
 
-	series, err := s.latestQuotaScopeSeries(ctx, account, sparkQuotaScope, 100)
+	series, err := s.latestQuotaScopeSeriesAt(ctx, account, sparkQuotaScope, 100, 450)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, row.at, row.at, account, "openai", "gpt-5.3-co
 			t.Fatal(err)
 		}
 	}
-	series, err = s.latestQuotaScopeSeries(ctx, account, sparkQuotaScope, 100)
+	series, err = s.latestQuotaScopeSeriesAt(ctx, account, sparkQuotaScope, 100, 450)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,6 +407,68 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, row.at, row.at, account, "openai", "gpt-5.3-co
 	}
 	if !series.Estimate.Available || series.Estimate.FullWindowTokens != 30000 || series.Estimate.FullWindowCostUSD != 300 || series.Estimate.RemainingTokens != 29100 || series.Estimate.RemainingCostUSD != 291 {
 		t.Fatalf("Spark estimate = %#v", series.Estimate)
+	}
+}
+
+func TestExpiredSparkScheduleAdvancesWithoutInventingCurrentUsage(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "spark-expired-schedule.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	location := shanghaiLocation()
+	stamp := func(day, hour, minute int) int64 {
+		return time.Date(2026, time.August, day, hour, minute, 0, 0, location).Unix()
+	}
+	account := "spark-expired-schedule-account"
+	oldReset := stamp(20, 18, 10)
+	lastObserved := stamp(18, 20, 37)
+	used := 8.0
+	if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,model,total_tokens,cost_usd,failed,used_percent,reset_at,window_minutes,plan_type,quota_scope) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		lastObserved-1, lastObserved, account, "gpt-5.3-codex-spark", 100, 1, 0, used, oldReset, 10080, "pro", sparkQuotaScope); err != nil {
+		t.Fatal(err)
+	}
+
+	now := stamp(21, 14, 0)
+	series, err := s.latestQuotaScopeSeriesAt(ctx, account, sparkQuotaScope, 100, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !series.ScheduleInferred || series.StartedAt != oldReset || series.ResetAt != stamp(27, 18, 10) || series.LastObservedAt != lastObserved {
+		t.Fatalf("advanced Spark series = %#v", series)
+	}
+	if series.ObservationCount != 0 || series.UsedPercent != 0 || len(series.Points) != 0 || len(series.CapacityPoints) != 0 || series.Estimate.Available {
+		t.Fatalf("inferred series invented current usage = %#v", series)
+	}
+
+	monthly, err := s.monthlyQuotaScopeAt(ctx, account, sparkQuotaScope, "2026-08", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if monthly.CycleCount != 2 || monthly.ResetCount != 1 || monthly.AllocatedCycleCount != 2 || monthly.ActualTokens != 100 || monthly.Requests != 1 {
+		t.Fatalf("advanced Spark monthly summary = %#v", monthly)
+	}
+	if len(monthly.Cycles) != 2 || !monthly.Cycles[0].Current || !monthly.Cycles[0].ScheduleInferred || monthly.Cycles[0].StartedAt != oldReset || monthly.Cycles[0].ResetAt != stamp(27, 18, 10) || monthly.Cycles[0].MonthRequests != 0 {
+		t.Fatalf("inferred current Spark cycle = %#v", monthly.Cycles)
+	}
+	previous := monthly.Cycles[1]
+	if previous.Current || previous.EndedAt != oldReset || previous.CloseReason != "scheduled_reset" || previous.PeakPercent != 8 || previous.MonthRequests != 1 {
+		t.Fatalf("expired Spark cycle was not closed = %#v", previous)
+	}
+
+	firstCurrentObservation := stamp(21, 14, 5)
+	currentUsed := 0.0
+	if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,model,total_tokens,cost_usd,failed,used_percent,reset_at,window_minutes,plan_type,quota_scope) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		firstCurrentObservation-1, firstCurrentObservation, account, "gpt-5.3-codex-spark", 200, 2, 0, currentUsed, stamp(27, 18, 10), 10080, "pro", sparkQuotaScope); err != nil {
+		t.Fatal(err)
+	}
+	series, err = s.latestQuotaScopeSeriesAt(ctx, account, sparkQuotaScope, 100, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !series.ScheduleInferred || series.ObservationCount != 1 || series.UsedPercent != 0 || len(series.Points) != 1 || series.LastObservedAt != firstCurrentObservation || series.Points[0].WindowTokens != 200 {
+		t.Fatalf("single unconfirmed current observation = %#v", series)
 	}
 }
 
@@ -448,14 +510,14 @@ func TestSparkScheduleCorrectionDoesNotCreateOverlappingCycle(t *testing.T) {
 	if len(cycles) != 1 || cycles[0].ResetAt != correctedReset || cycles[0].StartedAt != stamp(13, 18, 10) || cycles[0].PeakPercent != 7 || !cycles[0].Current {
 		t.Fatalf("Spark corrected cycles = %#v", cycles)
 	}
-	series, err := s.latestQuotaScopeSeries(ctx, account, sparkQuotaScope, 100)
+	series, err := s.latestQuotaScopeSeriesAt(ctx, account, sparkQuotaScope, 100, stamp(18, 17, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if series.ObservationCount != 4 || series.UsedPercent != 7 || len(series.Points) != 3 || series.Points[len(series.Points)-1].WindowTokens != 1000 || series.Points[len(series.Points)-1].Requests != 4 {
 		t.Fatalf("Spark corrected series = %#v", series)
 	}
-	monthly, err := s.monthlyQuotaScope(ctx, account, sparkQuotaScope, "2026-08")
+	monthly, err := s.monthlyQuotaScopeAt(ctx, account, sparkQuotaScope, "2026-08", stamp(18, 17, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +563,7 @@ func TestSparkMonthlySummaryUsesIndependentCyclesAndCapacity(t *testing.T) {
 	if mainMonthly.ActualTokens != 999 || mainMonthly.ActualCostUSD != 99 || mainMonthly.Requests != 1 {
 		t.Fatalf("main monthly includes Spark = %#v", mainMonthly)
 	}
-	summary, err := s.monthlyQuotaScope(ctx, account, sparkQuotaScope, "2026-01")
+	summary, err := s.monthlyQuotaScopeAt(ctx, account, sparkQuotaScope, "2026-01", stamp(14)+60)
 	if err != nil {
 		t.Fatal(err)
 	}
