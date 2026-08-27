@@ -14,6 +14,7 @@ const (
 	resetConfirmationSamples    = 3
 	resetConfirmationMinSeconds = 60
 	scheduledResetTolerance     = 300
+	quotaExhaustedPercent       = 100.0
 )
 
 type recordedQuotaEvent struct {
@@ -167,6 +168,56 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 	resetAtChanged := current.ResetAt != e.ResetAt
 	regimeChanged := (current.WindowMinutes > 0 && current.WindowMinutes != e.WindowMinutes) ||
 		(current.PlanType != "" && e.PlanType != "" && current.PlanType != e.PlanType)
+
+	// A newly allocated window can temporarily keep reporting the exhausted
+	// percentage from the preceding window while its reset_at moves forward
+	// with each request. Such a pending cycle has deliberately not accepted a
+	// quota sample yet. Keep its schedule current, but do not let the stale
+	// 100% reading become the new cycle peak.
+	if current.FirstSampleAt == 0 && !regimeChanged {
+		if resetAtChanged {
+			if e.ResetAt+scheduledResetTolerance < current.ResetAt {
+				return current, false, nil
+			}
+			startedAt := pendingCycleStart(current, e)
+			if _, err = tx.ExecContext(ctx, `UPDATE quota_cycles SET started_at=?,reset_at=?,window_minutes=?,plan_type=CASE WHEN ?='' THEN plan_type ELSE ? END WHERE id=?`, startedAt, e.ResetAt, e.WindowMinutes, e.PlanType, e.PlanType, current.ID); err != nil {
+				return quotaCycle{}, false, err
+			}
+			current.StartedAt = startedAt
+			current.ResetAt = e.ResetAt
+			current.WindowMinutes = e.WindowMinutes
+			if e.PlanType != "" {
+				current.PlanType = e.PlanType
+			}
+		}
+		if e.Failed || *e.UsedPercent >= quotaExhaustedPercent {
+			return current, false, nil
+		}
+		return current, true, nil
+	}
+
+	// Repair a cycle already contaminated by the old behavior. The raw event
+	// history still contains the expired reset boundary even if quota_cycles
+	// was later extended in place. A lower reading after an exhausted boundary
+	// is the first trustworthy sample of the replacement window.
+	if current.PeakPercent >= quotaExhaustedPercent && !e.Failed && *e.UsedPercent < quotaExhaustedPercent {
+		oldResetAt, found, errFind := findExhaustedScheduleAdvance(ctx, tx, current, e)
+		if errFind != nil {
+			return quotaCycle{}, false, errFind
+		}
+		if found {
+			return repairExhaustedScheduleCarryover(ctx, tx, current, oldResetAt, e)
+		}
+	}
+
+	// Once an exhausted window has actually expired, one forward reset_at is
+	// enough to establish the next cycle. Waiting for two identical reset_at
+	// values fails for unstarted 5-hour windows because that timestamp slides
+	// forward until a fresh window is activated.
+	if resetAtChanged && current.PeakPercent >= quotaExhaustedPercent && expiredScheduleAdvance(current, e) {
+		return startAdvancedCycle(ctx, tx, current, e)
+	}
+
 	if resetAtChanged && scheduledResetObservation(current, e) {
 		confirmed, errConfirm := confirmScheduledReset(ctx, tx, current, e)
 		if errConfirm != nil {
@@ -233,6 +284,119 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 		}
 	}
 	return current, true, nil
+}
+
+func pendingCycleStart(current quotaCycle, e event) int64 {
+	startedAt := eventCycleStart(e, 0)
+	if startedAt < current.StartedAt {
+		return current.StartedAt
+	}
+	return startedAt
+}
+
+func expiredScheduleAdvance(current quotaCycle, e event) bool {
+	if current.ResetAt <= 0 || e.ResetAt <= current.ResetAt+scheduledResetTolerance || e.WindowMinutes <= 0 {
+		return false
+	}
+	if current.WindowMinutes > 0 && current.WindowMinutes != e.WindowMinutes || !compatiblePlan(current.PlanType, e.PlanType) {
+		return false
+	}
+	observedAt := eventObservationTime(e)
+	if observedAt < current.ResetAt {
+		return false
+	}
+	declaredStart := e.ResetAt - e.WindowMinutes*60
+	return declaredStart >= current.ResetAt-scheduledResetTolerance && declaredStart <= observedAt+scheduledResetTolerance
+}
+
+func startAdvancedCycle(ctx context.Context, tx *sql.Tx, current quotaCycle, e event) (quotaCycle, bool, error) {
+	oldResetAt := current.ResetAt
+	startedAt := eventCycleStart(e, current.StartedAt)
+	if startedAt < oldResetAt {
+		startedAt = oldResetAt
+	}
+	if err := closeCycle(ctx, tx, current.ID, oldResetAt, "scheduled_reset"); err != nil {
+		return quotaCycle{}, false, err
+	}
+	created, err := createCycle(ctx, tx, e.Account, startedAt, e)
+	if err != nil {
+		return quotaCycle{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND quota_scope=? AND requested_at>=?`, created.ID, current.ID, mainQuotaScope, oldResetAt); err != nil {
+		return quotaCycle{}, false, err
+	}
+	acceptSample := !e.Failed && !(current.PeakPercent >= quotaExhaustedPercent && *e.UsedPercent >= quotaExhaustedPercent)
+	return created, acceptSample, nil
+}
+
+func findExhaustedScheduleAdvance(ctx context.Context, tx *sql.Tx, current quotaCycle, e event) (int64, bool, error) {
+	events, err := quotaEventsAscending(ctx, tx, current.ID)
+	if err != nil {
+		return 0, false, err
+	}
+	observedAt := eventObservationTime(e)
+	for index := 1; index < len(events); index++ {
+		previous, next := events[index-1], events[index]
+		if previous.Failed || previous.UsedPercent < quotaExhaustedPercent || next.ResetAt <= previous.ResetAt+scheduledResetTolerance {
+			continue
+		}
+		if previous.WindowMinutes <= 0 || previous.WindowMinutes != next.WindowMinutes || !compatiblePlan(previous.PlanType, next.PlanType) {
+			continue
+		}
+		declaredStart := next.ResetAt - next.WindowMinutes*60
+		if next.ObservedAt < previous.ResetAt || declaredStart < previous.ResetAt-scheduledResetTolerance || declaredStart > next.ObservedAt+scheduledResetTolerance {
+			continue
+		}
+		if observedAt < previous.ResetAt || e.ResetAt <= previous.ResetAt || e.WindowMinutes != next.WindowMinutes || !compatiblePlan(e.PlanType, next.PlanType) {
+			continue
+		}
+		return previous.ResetAt, true, nil
+	}
+	return 0, false, nil
+}
+
+func quotaEventsAscending(ctx context.Context, tx *sql.Tx, cycleID int64) ([]recordedQuotaEvent, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id,requested_at,CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent,reset_at,window_minutes,plan_type,failed
+FROM usage_events
+WHERE cycle_id=? AND quota_scope=? AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0
+ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END ASC,id ASC`, cycleID, mainQuotaScope)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var events []recordedQuotaEvent
+	for rows.Next() {
+		var item recordedQuotaEvent
+		if err = rows.Scan(&item.ID, &item.RequestedAt, &item.ObservedAt, &item.UsedPercent, &item.ResetAt, &item.WindowMinutes, &item.PlanType, &item.Failed); err != nil {
+			return nil, err
+		}
+		events = append(events, item)
+	}
+	return events, rows.Err()
+}
+
+func repairExhaustedScheduleCarryover(ctx context.Context, tx *sql.Tx, current quotaCycle, oldResetAt int64, e event) (quotaCycle, bool, error) {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM quota_samples WHERE cycle_id=? AND sampled_at>=?`, current.ID, oldResetAt); err != nil {
+		return quotaCycle{}, false, err
+	}
+	if err := refreshCycleSampleSummary(ctx, tx, current.ID); err != nil {
+		return quotaCycle{}, false, err
+	}
+	if err := closeCycle(ctx, tx, current.ID, oldResetAt, "scheduled_reset"); err != nil {
+		return quotaCycle{}, false, err
+	}
+	startedAt := eventCycleStart(e, current.StartedAt)
+	if startedAt < oldResetAt {
+		startedAt = oldResetAt
+	}
+	created, err := createCycle(ctx, tx, e.Account, startedAt, e)
+	if err != nil {
+		return quotaCycle{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND quota_scope=? AND requested_at>=?`, created.ID, current.ID, mainQuotaScope, oldResetAt); err != nil {
+		return quotaCycle{}, false, err
+	}
+	return created, true, nil
 }
 
 func eventObservationTime(e event) int64 {

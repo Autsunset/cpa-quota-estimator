@@ -3,8 +3,33 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 )
+
+type scopedQuotaSource struct {
+	EventScope  string
+	EventFilter string
+	UsedExpr    string
+	ResetExpr   string
+	WindowExpr  string
+}
+
+func quotaScopeSource(scope string) scopedQuotaSource {
+	if scope == weeklyQuotaScope {
+		primaryCondition := fmt.Sprintf("window_minutes BETWEEN %d AND %d", fiveHourWindowMinutes-fiveHourWindowSlack, fiveHourWindowMinutes+fiveHourWindowSlack)
+		secondaryCondition := fmt.Sprintf("secondary_window_minutes BETWEEN %d AND %d", weeklyWindowMinutes-weeklyWindowSlack, weeklyWindowMinutes+weeklyWindowSlack)
+		quotaCondition := primaryCondition + " AND " + secondaryCondition
+		return scopedQuotaSource{
+			EventScope:  mainQuotaScope,
+			EventFilter: primaryCondition,
+			UsedExpr:    "CASE WHEN " + quotaCondition + " THEN secondary_used_percent END",
+			ResetExpr:   "CASE WHEN " + quotaCondition + " THEN secondary_reset_at ELSE 0 END",
+			WindowExpr:  "CASE WHEN " + quotaCondition + " THEN secondary_window_minutes ELSE 0 END",
+		}
+	}
+	return scopedQuotaSource{EventScope: scope, EventFilter: "1=1", UsedExpr: "used_percent", ResetExpr: "reset_at", WindowExpr: "window_minutes"}
+}
 
 type scopedQuotaObservation struct {
 	ID            int64
@@ -82,22 +107,23 @@ func (s *store) quotaScopeSeriesForCycle(ctx context.Context, account, scope str
 	if endAt <= cycle.StartedAt {
 		return series, nil
 	}
+	source := quotaScopeSource(scope)
 	pointTime := `CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END`
-	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(used_percent),0),COUNT(*)
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(`+source.UsedExpr+`),0),COUNT(`+source.UsedExpr+`)
 FROM usage_events
-WHERE account=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL
-	AND `+pointTime+`>=? AND `+pointTime+`<?`, account, scope, cycle.StartedAt, endAt).
+WHERE account=? AND quota_scope=? AND `+source.EventFilter+` AND failed=0 AND `+source.UsedExpr+` IS NOT NULL
+	AND `+pointTime+`>=? AND `+pointTime+`<?`, account, source.EventScope, cycle.StartedAt, endAt).
 		Scan(&series.UsedPercent, &series.ObservationCount); err != nil {
 		return series, err
 	}
 	rows, err := s.db.QueryContext(ctx, `WITH scoped AS (
 	SELECT id,requested_at,CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END AS point_time,
-		used_percent,failed,
+		`+source.UsedExpr+` AS used_percent,failed,
 		SUM(total_tokens) OVER (ORDER BY requested_at,id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS window_tokens,
 		SUM(cost_usd) OVER (ORDER BY requested_at,id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS window_cost_usd,
 		COUNT(*) OVER (ORDER BY requested_at,id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS requests
 	FROM usage_events
-	WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<?
+	WHERE account=? AND quota_scope=? AND `+source.EventFilter+` AND requested_at>=? AND requested_at<?
 ), quota_points AS (
 	SELECT *,
 		MAX(used_percent) OVER (ORDER BY point_time,id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prior_peak,
@@ -109,7 +135,7 @@ SELECT point_time,used_percent,window_tokens,window_cost_usd,requests
 FROM quota_points
 WHERE prior_peak IS NULL OR used_percent>prior_peak OR newest=1
 ORDER BY point_time,id
-LIMIT ?`, account, scope, cycle.StartedAt, endAt, cycle.StartedAt, endAt, limit)
+LIMIT ?`, account, source.EventScope, cycle.StartedAt, endAt, cycle.StartedAt, endAt, limit)
 	if err != nil {
 		return series, err
 	}
@@ -317,13 +343,14 @@ func advanceExpiredScopedSchedule(definitions []scopedCycleDefinition, now int64
 }
 
 func (s *store) quotaScopeObservations(ctx context.Context, account, scope string) ([]scopedQuotaObservation, error) {
+	source := quotaScopeSource(scope)
 	rows, err := s.db.QueryContext(ctx, `SELECT id,requested_at,
 	CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,
-	used_percent,reset_at,window_minutes,plan_type
+	`+source.UsedExpr+`,`+source.ResetExpr+`,`+source.WindowExpr+`,plan_type
 FROM usage_events
-WHERE account=? AND quota_scope=? AND failed=0
-	AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0
-ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,id`, account, scope)
+WHERE account=? AND quota_scope=? AND `+source.EventFilter+` AND failed=0
+	AND `+source.UsedExpr+` IS NOT NULL AND `+source.ResetExpr+`>0 AND `+source.WindowExpr+`>0
+ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,id`, account, source.EventScope)
 	if err != nil {
 		return nil, err
 	}
@@ -420,9 +447,10 @@ func (s *store) monthlyQuotaScopeAt(ctx context.Context, account, scope, rawMont
 		return monthlySummary{}, err
 	}
 	result := monthlySummary{Month: month, Timezone: "Asia/Shanghai", StartAt: startAt, EndAt: endAt, QuotaCoverageComplete: true}
+	source := quotaScopeSource(scope)
 	if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*)
 FROM usage_events
-WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<?`, account, scope, startAt, endAt).
+WHERE account=? AND quota_scope=? AND `+source.EventFilter+` AND requested_at>=? AND requested_at<?`, account, source.EventScope, startAt, endAt).
 		Scan(&result.ActualTokens, &result.ActualCostUSD, &result.Requests); err != nil {
 		return result, err
 	}
@@ -444,8 +472,8 @@ WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<?`, accou
 		usageEnd := scopedCycleEnd(cycle)
 		if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*)
 FROM usage_events
-WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<? AND requested_at>=? AND requested_at<?`,
-			account, scope, cycle.StartedAt, usageEnd, startAt, endAt).
+WHERE account=? AND quota_scope=? AND `+source.EventFilter+` AND requested_at>=? AND requested_at<? AND requested_at>=? AND requested_at<?`,
+			account, source.EventScope, cycle.StartedAt, usageEnd, startAt, endAt).
 			Scan(&item.MonthTokens, &item.MonthCostUSD, &item.MonthRequests); err != nil {
 			return result, err
 		}
@@ -494,13 +522,14 @@ WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<? AND req
 }
 
 func (s *store) quotaScopeCycleGrowth(ctx context.Context, account, scope string, cycle quotaCycle, startAt, endAt int64) (float64, bool, error) {
+	source := quotaScopeSource(scope)
 	pointTime := `CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END`
 	cycleEnd := scopedCycleEnd(cycle)
 	var endPeak sql.NullFloat64
-	query := `SELECT MAX(used_percent) FROM usage_events
-WHERE account=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL
+	query := `SELECT MAX(` + source.UsedExpr + `) FROM usage_events
+WHERE account=? AND quota_scope=? AND ` + source.EventFilter + ` AND failed=0 AND ` + source.UsedExpr + ` IS NOT NULL
 	AND ` + pointTime + `>=? AND ` + pointTime + `<? AND ` + pointTime + `<?`
-	if err := s.db.QueryRowContext(ctx, query, account, scope, cycle.StartedAt, endAt, cycleEnd).Scan(&endPeak); err != nil {
+	if err := s.db.QueryRowContext(ctx, query, account, source.EventScope, cycle.StartedAt, endAt, cycleEnd).Scan(&endPeak); err != nil {
 		return 0, false, err
 	}
 	if !endPeak.Valid {
@@ -510,21 +539,38 @@ WHERE account=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL
 		return maxFloat(0, endPeak.Float64), true, nil
 	}
 	var baseline sql.NullFloat64
-	if err := s.db.QueryRowContext(ctx, query, account, scope, cycle.StartedAt, startAt, cycleEnd).Scan(&baseline); err != nil {
+	if err := s.db.QueryRowContext(ctx, query, account, source.EventScope, cycle.StartedAt, startAt, cycleEnd).Scan(&baseline); err != nil {
 		return 0, false, err
 	}
 	if baseline.Valid {
 		return maxFloat(0, endPeak.Float64-baseline.Float64), true, nil
 	}
 	var firstInMonth sql.NullFloat64
-	firstQuery := `SELECT used_percent FROM usage_events
-WHERE account=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL
+	firstQuery := `SELECT ` + source.UsedExpr + ` FROM usage_events
+WHERE account=? AND quota_scope=? AND ` + source.EventFilter + ` AND failed=0 AND ` + source.UsedExpr + ` IS NOT NULL
 	AND ` + pointTime + `>=? AND ` + pointTime + `<? AND ` + pointTime + `<? ORDER BY ` + pointTime + `,id LIMIT 1`
-	if err := s.db.QueryRowContext(ctx, firstQuery, account, scope, startAt, endAt, cycleEnd).Scan(&firstInMonth); err != nil && err != sql.ErrNoRows {
+	if err := s.db.QueryRowContext(ctx, firstQuery, account, source.EventScope, startAt, endAt, cycleEnd).Scan(&firstInMonth); err != nil && err != sql.ErrNoRows {
 		return 0, false, err
 	}
 	if firstInMonth.Valid {
 		return maxFloat(0, endPeak.Float64-firstInMonth.Float64), false, nil
 	}
 	return 0, false, nil
+}
+
+func (s *store) hasFiveHourWeeklyQuota(ctx context.Context, account string) (bool, error) {
+	var primaryWindow, secondaryReset, secondaryWindow int64
+	var secondaryUsed sql.NullFloat64
+	err := s.db.QueryRowContext(ctx, `SELECT window_minutes,secondary_used_percent,secondary_reset_at,secondary_window_minutes
+FROM usage_events
+WHERE account=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0
+ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END DESC,id DESC
+LIMIT 1`, account, mainQuotaScope).Scan(&primaryWindow, &secondaryUsed, &secondaryReset, &secondaryWindow)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return isFiveHourWindow(primaryWindow) && secondaryUsed.Valid && secondaryReset > 0 && isWeeklyWindow(secondaryWindow), nil
 }

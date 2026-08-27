@@ -45,6 +45,11 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		}
 		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": map[string]any{"fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing, "price_source_url": a.cfg.PriceSourceURL}}
 		if account != "" {
+			hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
+			if errWeekly != nil {
+				return textResponse(500, errWeekly.Error())
+			}
+			resp["five_hour_quota_detected"] = hasWeeklyQuota
 			cycles, err := a.store.cycles(ctx, account, 60)
 			if err != nil {
 				return textResponse(500, err.Error())
@@ -104,6 +109,18 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			}
 		}
 		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "estimate": estimateCapacity(points), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))}
+		hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
+		if errWeekly != nil {
+			return textResponse(500, errWeekly.Error())
+		}
+		response["five_hour_quota_detected"] = hasWeeklyQuota
+		if hasWeeklyQuota {
+			weeklySeries, errQuota := a.store.latestQuotaScopeSeries(ctx, account, weeklyQuotaScope, limit)
+			if errQuota != nil {
+				return textResponse(500, errQuota.Error())
+			}
+			response["weekly_quota"] = weeklySeries
+		}
 		if req.Query.Get("include_spark") == "1" {
 			sparkSeries, errSpark := a.store.latestQuotaScopeSeries(ctx, account, sparkQuotaScope, limit)
 			if errSpark != nil {
@@ -136,6 +153,18 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			return textResponse(500, err.Error())
 		}
 		response := map[string]any{"account": account, "months": months, "summary": monthly}
+		hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
+		if errWeekly != nil {
+			return textResponse(500, errWeekly.Error())
+		}
+		response["five_hour_quota_detected"] = hasWeeklyQuota
+		if hasWeeklyQuota {
+			weeklyMonthly, errQuota := a.store.monthlyQuotaScope(ctx, account, weeklyQuotaScope, selectedMonth)
+			if errQuota != nil {
+				return textResponse(500, errQuota.Error())
+			}
+			response["weekly_summary"] = weeklyMonthly
+		}
 		if req.Query.Get("include_spark") == "1" {
 			sparkMonthly, errSpark := a.store.monthlyQuotaScope(ctx, account, sparkQuotaScope, selectedMonth)
 			if errSpark != nil {

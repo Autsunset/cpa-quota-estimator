@@ -334,7 +334,7 @@ func TestSparkQuotaDoesNotAffectMainCycle(t *testing.T) {
 	if monthly.ActualTokens != 400 || monthly.ActualCostUSD != 4 || monthly.Requests != 2 || len(monthly.Cycles) != 1 || monthly.Cycles[0].MonthTokens != 400 || monthly.Cycles[0].MonthCostUSD != 4 || monthly.Cycles[0].MonthRequests != 2 {
 		t.Fatalf("monthly = %#v", monthly)
 	}
-	sparkMonthly, err := s.monthlyQuotaScope(ctx, account, sparkQuotaScope, "2026-08")
+	sparkMonthly, err := s.monthlyQuotaScopeAt(ctx, account, sparkQuotaScope, "2026-08", base+20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -880,5 +880,247 @@ func TestMonthlyQuotaEquivalentMarksMissingBaselinePartial(t *testing.T) {
 	}
 	if summary.QuotaCoverageComplete || summary.ConsumedQuotaPercent != 0 {
 		t.Fatalf("monthly summary = %#v", summary)
+	}
+}
+
+func TestExhaustedFiveHourCycleStartsFreshWindowWithoutCarryingPeak(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "five-hour-exhausted.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	const (
+		account       = "five-hour-exhausted-account"
+		windowMinutes = int64(300)
+		oldResetAt    = int64(19_000)
+	)
+	insert := func(at int64, used float64, resetAt int64, tokens int64) {
+		t.Helper()
+		e := event{RequestedAt: at, Account: account, Provider: "openai", Model: "gpt", TotalTokens: tokens, UsedPercent: &used, ResetAt: resetAt, WindowMinutes: windowMinutes, PlanType: "plus"}
+		if err := s.insertEvent(ctx, e, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	insert(18_000, 99, oldResetAt, 100)
+	insert(18_900, 100, oldResetAt, 200)
+
+	// An unstarted replacement window initially carries the exhausted 100%
+	// value and reports a reset exactly five hours after this observation.
+	insert(19_010, 100, 37_010, 300)
+	cycles, err := s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 2 {
+		t.Fatalf("cycles after first advanced reset = %#v", cycles)
+	}
+	current, previous := cycles[0], cycles[1]
+	if !current.Current || current.StartedAt != 19_010 || current.ResetAt != 37_010 || current.FirstSampleAt != 0 || current.PeakPercent != 0 {
+		t.Fatalf("pending current cycle = %#v", current)
+	}
+	if previous.Current || previous.EndedAt != oldResetAt || previous.CloseReason != "scheduled_reset" || previous.PeakPercent != 100 {
+		t.Fatalf("previous exhausted cycle = %#v", previous)
+	}
+
+	// Until the new window is really activated, reset_at can keep sliding.
+	// The carried 100% must remain untrusted and must not become a sample.
+	insert(19_380, 100, 37_380, 400)
+	insert(19_390, 12, 37_380, 500)
+
+	cycles, err = s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 2 {
+		t.Fatalf("cycles after fresh sample = %#v", cycles)
+	}
+	current = cycles[0]
+	if current.StartedAt != 19_380 || current.ResetAt != 37_380 || current.StartPercent != 12 || current.EndPercent != 12 || current.PeakPercent != 12 {
+		t.Fatalf("fresh current cycle = %#v", current)
+	}
+	points, _, err := s.pointsForCycle(ctx, account, current.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 1 || points[0].UsedPercent != 12 {
+		t.Fatalf("fresh cycle points = %#v", points)
+	}
+}
+
+func TestExistingExhaustedScheduleCarryoverRepairsOnFreshReading(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "five-hour-carryover-repair.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	const (
+		account       = "five-hour-carryover-repair-account"
+		windowMinutes = int64(300)
+		oldResetAt    = int64(19_000)
+		newResetAt    = int64(37_380)
+	)
+	result, err := s.db.ExecContext(ctx, `INSERT INTO quota_cycles(account,started_at,reset_at,window_minutes,plan_type,first_sample_at,last_sample_at,start_used_percent,end_used_percent,peak_used_percent) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		account, 1_000, newResetAt, windowMinutes, "plus", 18_000, 19_380, 99, 100, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cycleID, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		at      int64
+		used    float64
+		resetAt int64
+		tokens  int64
+	}{{18_000, 99, oldResetAt, 100}, {18_900, 100, oldResetAt, 200}, {19_010, 100, 37_010, 300}, {19_380, 100, newResetAt, 400}} {
+		if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(cycle_id,requested_at,observed_at,account,provider,model,total_tokens,used_percent,reset_at,window_minutes,plan_type,quota_scope) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+			cycleID, row.at, row.at, account, "openai", "gpt", row.tokens, row.used, row.resetAt, windowMinutes, "plus", mainQuotaScope); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, row := range []struct {
+		at      int64
+		used    float64
+		resetAt int64
+		tokens  int64
+	}{{18_000, 99, oldResetAt, 100}, {18_900, 100, oldResetAt, 300}, {19_380, 100, newResetAt, 1_000}} {
+		if _, err = s.db.ExecContext(ctx, `INSERT INTO quota_samples(cycle_id,sampled_at,account,used_percent,reset_at,window_minutes,plan_type,window_tokens,requests) VALUES(?,?,?,?,?,?,?,?,?)`,
+			cycleID, row.at, account, row.used, row.resetAt, windowMinutes, "plus", row.tokens, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	freshUsed := 12.0
+	if err = s.insertEvent(ctx, event{RequestedAt: 19_390, Account: account, Provider: "openai", Model: "gpt", TotalTokens: 500, UsedPercent: &freshUsed, ResetAt: newResetAt, WindowMinutes: windowMinutes, PlanType: "plus"}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	cycles, err := s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 2 {
+		t.Fatalf("repaired cycles = %#v", cycles)
+	}
+	current, previous := cycles[0], cycles[1]
+	if !current.Current || current.StartedAt != 19_380 || current.ResetAt != newResetAt || current.StartPercent != 12 || current.PeakPercent != 12 {
+		t.Fatalf("repaired current cycle = %#v", current)
+	}
+	if previous.Current || previous.EndedAt != oldResetAt || previous.CloseReason != "scheduled_reset" || previous.LastSampleAt != 18_900 || previous.PeakPercent != 100 {
+		t.Fatalf("repaired previous cycle = %#v", previous)
+	}
+	var staleSamples int
+	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quota_samples WHERE cycle_id=? AND sampled_at>=?`, previous.ID, oldResetAt).Scan(&staleSamples); err != nil {
+		t.Fatal(err)
+	}
+	if staleSamples != 0 {
+		t.Fatalf("previous cycle kept %d post-reset samples", staleSamples)
+	}
+}
+
+func TestFiveHourAndWeeklyQuotaAreCalculatedIndependently(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "five-hour-weekly.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	location := shanghaiLocation()
+	base := time.Date(2026, time.August, 1, 0, 0, 0, 0, location).Unix()
+	primaryReset := base + 300*60
+	weeklyReset := base + 10080*60
+	account := "five-hour-weekly-account"
+
+	for index, row := range []struct {
+		primary   float64
+		secondary float64
+		tokens    int64
+		cost      float64
+	}{{10, 2, 100, 1}, {20, 3, 200, 2}, {30, 4, 300, 3}} {
+		at := base + int64(index+1)*100
+		primary, secondary := row.primary, row.secondary
+		e := event{
+			RequestedAt: at, Account: account, Provider: "openai", Model: "gpt",
+			TotalTokens: row.tokens, CostUSD: row.cost,
+			UsedPercent: &primary, ResetAt: primaryReset, WindowMinutes: 300,
+			SecondaryUsedPercent: &secondary, SecondaryResetAt: weeklyReset, SecondaryWindowMinutes: 10080,
+			PlanType: "plus",
+		}
+		if err = s.insertEvent(ctx, e, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A historical Pro-style weekly-primary row in the same month must not be
+	// counted in the Plus secondary weekly scope.
+	if _, err = s.db.ExecContext(ctx, `INSERT INTO usage_events(requested_at,observed_at,account,provider,model,total_tokens,cost_usd,used_percent,reset_at,window_minutes,plan_type,quota_scope) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		base+50, base+50, account, "openai", "gpt", 999, 99, 50, weeklyReset, 10080, "pro", mainQuotaScope); err != nil {
+		t.Fatal(err)
+	}
+
+	detected, err := s.hasFiveHourWeeklyQuota(ctx, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detected {
+		t.Fatal("five-hour primary plus weekly secondary quota was not detected")
+	}
+	cycles, err := s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 || cycles[0].WindowMinutes != 300 || cycles[0].ResetAt != primaryReset || cycles[0].PeakPercent != 30 {
+		t.Fatalf("primary five-hour cycles = %#v", cycles)
+	}
+	weekly, err := s.latestQuotaScopeSeriesAt(ctx, account, weeklyQuotaScope, 100, base+400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if weekly.Scope != weeklyQuotaScope || weekly.WindowMinutes != 10080 || weekly.ResetAt != weeklyReset || weekly.UsedPercent != 4 || weekly.ObservationCount != 3 {
+		t.Fatalf("weekly quota series = %#v", weekly)
+	}
+	if len(weekly.Points) != 3 {
+		t.Fatalf("weekly points = %#v", weekly.Points)
+	}
+	last := weekly.Points[len(weekly.Points)-1]
+	if last.WindowTokens != 600 || last.WindowCostUSD != 6 || last.Requests != 3 {
+		t.Fatalf("weekly cumulative usage = %#v", last)
+	}
+	monthly, err := s.monthlyQuotaScopeAt(ctx, account, weeklyQuotaScope, "2026-08", base+400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if monthly.ActualTokens != 600 || monthly.ActualCostUSD != 6 || monthly.Requests != 3 || monthly.CycleCount != 1 || monthly.ConsumedQuotaPercent != 4 {
+		t.Fatalf("weekly monthly summary = %#v", monthly)
+	}
+}
+
+func TestWeeklyQuotaStaysDisabledWithoutFiveHourPrimary(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "no-five-hour-weekly.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	used, secondary := 10.0, 20.0
+	e := event{
+		RequestedAt: 1_000, Account: "weekly-only-account", Provider: "openai", Model: "gpt", TotalTokens: 100,
+		UsedPercent: &used, ResetAt: 605_800, WindowMinutes: 10080,
+		SecondaryUsedPercent: &secondary, SecondaryResetAt: 1_210_600, SecondaryWindowMinutes: 10080,
+		PlanType: "plus",
+	}
+	if err = s.insertEvent(ctx, e, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	detected, err := s.hasFiveHourWeeklyQuota(ctx, e.Account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detected {
+		t.Fatal("weekly scope must stay disabled when the primary window is not five hours")
 	}
 }

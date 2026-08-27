@@ -132,27 +132,30 @@ type price struct {
 }
 
 type event struct {
-	RequestedAt      int64
-	ObservedAt       int64
-	Account          string
-	Provider         string
-	Model            string
-	Alias            string
-	ServiceTier      string
-	InputTokens      int64
-	OutputTokens     int64
-	ReasoningTokens  int64
-	CacheReadTokens  int64
-	CacheWriteTokens int64
-	TotalTokens      int64
-	CostUSD          float64
-	Failed           bool
-	StatusCode       int
-	UsedPercent      *float64
-	ResetAt          int64
-	WindowMinutes    int64
-	PlanType         string
-	QuotaScope       string
+	RequestedAt            int64
+	ObservedAt             int64
+	Account                string
+	Provider               string
+	Model                  string
+	Alias                  string
+	ServiceTier            string
+	InputTokens            int64
+	OutputTokens           int64
+	ReasoningTokens        int64
+	CacheReadTokens        int64
+	CacheWriteTokens       int64
+	TotalTokens            int64
+	CostUSD                float64
+	Failed                 bool
+	StatusCode             int
+	UsedPercent            *float64
+	ResetAt                int64
+	WindowMinutes          int64
+	SecondaryUsedPercent   *float64
+	SecondaryResetAt       int64
+	SecondaryWindowMinutes int64
+	PlanType               string
+	QuotaScope             string
 }
 
 type quotaPoint struct {

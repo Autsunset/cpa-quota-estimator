@@ -89,7 +89,7 @@ func managementRegistration() any {
 			{"Method": "GET", "Path": base + "/pricing-settings"},
 			{"Method": "POST", "Path": base + "/pricing-settings"},
 		},
-		"resources": []map[string]any{{"Path": "/dashboard", "Menu": "额度容量预测", "Description": "按额度增长反推周 Token 与美元等效容量，并绘制趋势曲线。"}},
+		"resources": []map[string]any{{"Path": "/dashboard", "Menu": "额度容量预测", "Description": "按额度增长反推周期 Token 与美元等效容量，并绘制趋势曲线。"}},
 	}
 }
 
@@ -252,13 +252,27 @@ func (a *app) recordUsage(r usageRecord) error {
 	// reset_at is occasionally off by a few seconds between concurrent
 	// responses because some upstreams derive it from reset_after_seconds.
 	// Canonicalize to a minute so one quota cycle is not split into many.
-	if reset > 0 {
-		reset = ((reset + 30) / 60) * 60
-	}
+	reset = canonicalResetAt(reset)
 	window, _ := headerInt(r.ResponseHeaders, "X-Codex-Primary-Window-Minutes")
 	var usedPtr *float64
 	if hasUsed {
 		usedPtr = &used
+	}
+
+	// Plus accounts can expose a 5-hour primary window and an independent
+	// weekly secondary window. Persist the secondary quota only when the
+	// primary header actually identifies a 5-hour window, so accounts with a
+	// single weekly quota keep the existing one-window behavior.
+	secondaryUsed, hasSecondaryUsed := headerFloat(r.ResponseHeaders, "X-Codex-Secondary-Used-Percent")
+	secondaryReset, hasSecondaryReset := headerInt(r.ResponseHeaders, "X-Codex-Secondary-Reset-At")
+	secondaryWindow, hasSecondaryWindow := headerInt(r.ResponseHeaders, "X-Codex-Secondary-Window-Minutes")
+	var secondaryUsedPtr *float64
+	if isFiveHourWindow(window) && hasSecondaryUsed && hasSecondaryReset && hasSecondaryWindow && secondaryReset > 0 && isWeeklyWindow(secondaryWindow) {
+		secondaryUsedPtr = &secondaryUsed
+		secondaryReset = canonicalResetAt(secondaryReset)
+	} else {
+		secondaryReset = 0
+		secondaryWindow = 0
 	}
 	account := strings.TrimSpace(r.AuthID)
 	if account == "" {
@@ -267,8 +281,15 @@ func (a *app) recordUsage(r usageRecord) error {
 	if account == "" {
 		account = "unknown"
 	}
-	e := event{RequestedAt: requested, ObservedAt: observed, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type"), QuotaScope: quotaScopeForUsage(r.Model, r.Alias)}
+	e := event{RequestedAt: requested, ObservedAt: observed, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, SecondaryUsedPercent: secondaryUsedPtr, SecondaryResetAt: secondaryReset, SecondaryWindowMinutes: secondaryWindow, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type"), QuotaScope: quotaScopeForUsage(r.Model, r.Alias)}
 	return a.store.insertEvent(ctx, e, time.Duration(a.cfg.SampleIntervalMinutes)*time.Minute)
+}
+
+func canonicalResetAt(resetAt int64) int64 {
+	if resetAt <= 0 {
+		return 0
+	}
+	return ((resetAt + 30) / 60) * 60
 }
 
 func header(h map[string][]string, key string) string {
