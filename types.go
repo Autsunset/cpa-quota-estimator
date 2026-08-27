@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.5.2"
+var pluginVersion = "0.6.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
