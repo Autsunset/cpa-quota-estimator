@@ -90,6 +90,9 @@ func TestPricingSettingsManagementSavesBothSwitches(t *testing.T) {
 	if a.cfg.ApplyLongContextPricing || a.cfg.ApplyFastPricing {
 		t.Fatalf("app settings = long:%v fast:%v, want both disabled", a.cfg.ApplyLongContextPricing, a.cfg.ApplyFastPricing)
 	}
+	if a.cfg.PricingMode != pricingModeCurrentAPI {
+		t.Fatalf("pricing mode = %q, want current API", a.cfg.PricingMode)
+	}
 	settings, err := s.loadPricingSettings(context.Background(), pricingSettings{ApplyLongContext: true, ApplyFast: true})
 	if err != nil {
 		t.Fatal(err)
@@ -206,4 +209,50 @@ func TestManagementExposesWeeklyQuotaOnlyForDetectedFiveHourAccount(t *testing.T
 	}
 	check(plus.Account, true)
 	check(pro.Account, false)
+}
+
+func TestPricingSettingsManagementSwitchesPricingMode(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "pricing-mode-api.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	a := &app{cfg: defaultConfig(), store: s}
+
+	response := a.handleManagement(managementRequest{
+		Method: "POST",
+		Path:   "/cpa-quota-estimator/pricing-settings",
+		Body:   []byte(`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"credits"}`),
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode, response.Body)
+	}
+	if a.cfg.PricingMode != pricingModeCredits {
+		t.Fatalf("app pricing mode = %q", a.cfg.PricingMode)
+	}
+	var payload map[string]any
+	if err = json.Unmarshal(response.Body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["pricing_mode"] != pricingModeCredits || payload["value_unit"] != "credits" {
+		t.Fatalf("pricing response = %#v", payload)
+	}
+
+	response = a.handleManagement(managementRequest{
+		Method: "POST",
+		Path:   "/cpa-quota-estimator/pricing-settings",
+		Body:   []byte(`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"legacy_api"}`),
+	})
+	if response.StatusCode != http.StatusOK || a.cfg.PricingMode != pricingModeLegacyAPI {
+		t.Fatalf("switch back status=%d mode=%q body=%s", response.StatusCode, a.cfg.PricingMode, response.Body)
+	}
+
+	response = a.handleManagement(managementRequest{
+		Method: "POST",
+		Path:   "/cpa-quota-estimator/pricing-settings",
+		Body:   []byte(`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"discounted"}`),
+	})
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid mode status=%d body=%s", response.StatusCode, response.Body)
+	}
 }

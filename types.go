@@ -91,6 +91,7 @@ type config struct {
 	PriceSyncIntervalMinutes int     `yaml:"price_sync_interval_minutes"`
 	FastPricingMode          string  `yaml:"fast_pricing_mode"`
 	FastMultiplier           float64 `yaml:"fast_multiplier"`
+	PricingMode              string  `yaml:"pricing_mode"`
 	ApplyFastPricing         bool    `yaml:"apply_fast_pricing"`
 	LongContextThreshold     int64   `yaml:"long_context_threshold"`
 	ApplyLongContextPricing  bool    `yaml:"apply_long_context_pricing"`
@@ -106,6 +107,7 @@ func defaultConfig() config {
 		PriceSyncIntervalMinutes: 1440,
 		FastPricingMode:          "multiplier",
 		FastMultiplier:           2.5,
+		PricingMode:              pricingModeCurrentAPI,
 		ApplyFastPricing:         true,
 		LongContextThreshold:     272000,
 		ApplyLongContextPricing:  false,
@@ -194,6 +196,7 @@ type scopedQuotaSeries struct {
 	Points           []scopedQuotaPoint `json:"points"`
 	CapacityPoints   []capacityPoint    `json:"capacity_points"`
 	Estimate         estimate           `json:"estimate"`
+	RemainingByModel []modelAllowance   `json:"remaining_by_model,omitempty"`
 }
 
 type quotaCycle struct {
@@ -246,6 +249,18 @@ type estimate struct {
 	EstimatedExhaustAt int64   `json:"estimated_exhaust_at,omitempty"`
 	Confidence         string  `json:"confidence"`
 	Explanation        string  `json:"explanation"`
+}
+
+type modelAllowance struct {
+	Model           string  `json:"model"`
+	PricingMode     string  `json:"pricing_mode"`
+	ValueUnit       string  `json:"value_unit"`
+	InputRate       float64 `json:"input_rate"`
+	OutputRate      float64 `json:"output_rate"`
+	CacheReadRate   float64 `json:"cache_read_rate"`
+	InputTokens     float64 `json:"input_tokens"`
+	OutputTokens    float64 `json:"output_tokens"`
+	CacheReadTokens float64 `json:"cache_read_tokens"`
 }
 
 type capacityPoint struct {

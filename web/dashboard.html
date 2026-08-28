@@ -10,31 +10,32 @@
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% -10%,var(--glow) 0,transparent 35%),var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"PingFang SC",sans-serif}.wrap{max-width:1380px;margin:auto;padding:28px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}h1{font-size:24px;margin:0}h1 span{display:block;font-size:13px;color:var(--muted);font-weight:400;margin-top:3px}.actions{display:flex;gap:10px;align-items:center}button,select,input{border:1px solid var(--line);background:var(--control);color:var(--text);border-radius:9px;padding:9px 12px}button{cursor:pointer}button:hover{border-color:var(--blue)}.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-bg);font-weight:650}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}.card,.chart{background:linear-gradient(150deg,var(--panel-start),var(--panel-end));border:1px solid var(--line);border-radius:14px}.card{padding:17px;min-height:124px}.label{color:var(--muted);font-size:12px}.value{font-size:29px;letter-spacing:-.8px;font-weight:680;margin:6px 0}.sub{color:var(--muted);font-size:12px}.good{color:var(--green)}.warn{color:var(--amber)}.charts{display:grid;grid-template-columns:2fr 1fr;gap:13px;margin-top:13px}.chart{padding:18px}.chart h2{font-size:14px;margin:0 0 14px}.chart svg{display:block;width:100%;height:300px;overflow:visible}#curve svg{height:520px}.capacity-history{margin-top:13px}#capacityCurve svg{height:390px}.legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:8px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:13px}.rows{padding:5px 18px}.row{display:flex;justify-content:space-between;gap:20px;padding:12px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}.row span:first-child{color:var(--muted)}.note{margin-top:13px;color:var(--muted);border:1px dashed var(--line);padding:12px 15px;border-radius:11px}.empty{height:300px;display:grid;place-items:center;color:var(--muted)}.login{position:fixed;inset:0;display:none;place-items:center;background:var(--overlay);backdrop-filter:blur(12px);z-index:9}.login.show{display:grid}.loginbox{width:min(420px,calc(100vw - 32px));background:var(--login-bg);border:1px solid var(--line);border-radius:16px;padding:24px}.loginbox h2{margin-top:0}.loginbox input{width:100%;margin:8px 0 12px}.error{color:var(--red);min-height:21px;font-size:12px}@media(max-width:900px){.top{align-items:flex-start;flex-direction:column}.actions{width:100%;flex-wrap:wrap}.grid{grid-template-columns:1fr 1fr}.charts,.details{grid-template-columns:1fr}.wrap{padding:16px}}@media(max-width:600px){.wrap{padding:10px}.top{gap:12px;margin-bottom:14px}h1{font-size:20px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.actions>#account,.actions>#period,.actions>#language{grid-column:1/-1;width:100%}.actions button{width:100%}.grid{gap:8px}.card{padding:12px;min-height:105px}.value{font-size:22px}.charts{gap:8px;margin-top:8px}.chart{padding:12px}.capacity-history,.details,.note{margin-top:8px}#curve,#capacityCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#curve svg{height:440px;min-width:720px}#capacityCurve svg{height:340px;min-width:760px}.legend{gap:8px 14px}.row{font-size:12px;gap:8px}.row b{text-align:right}}@media(max-width:370px){.grid{grid-template-columns:1fr}.actions{grid-template-columns:1fr}.actions>*{grid-column:1!important}}
 .pace-section{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:13px;margin-top:13px}.pace-chart{min-width:0}.pace-stats{padding:5px 18px}.pace-stats .row b{max-width:62%;text-align:right}.pace-status{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;background:color-mix(in srgb,var(--green) 15%,transparent);color:var(--green)}.pace-status.fast{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}.pace-status.slow{background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue)}#paceCurve svg{height:360px}@media(max-width:900px){.pace-section{grid-template-columns:1fr}}@media(max-width:600px){.pace-section{gap:8px;margin-top:8px}.pace-chart{padding:12px}#paceCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#paceCurve svg{height:320px;min-width:760px}.pace-stats{padding:4px 12px}}
 .charts>.chart{min-width:0}#capacity svg{height:245px}.capacity-bar{height:7px;border-radius:999px;background:var(--grid);overflow:hidden;margin:0 2px 14px}.capacity-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--green),var(--blue))}.capacity-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}.capacity-item{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:10px;padding:9px 10px}.capacity-item span{display:block;color:var(--muted);font-size:11px}.capacity-item b{display:block;margin-top:3px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(max-width:600px){#capacity svg{height:220px}.capacity-meta{gap:6px}.capacity-item{padding:8px}.capacity-item b{font-size:14px}}
-.monthly{margin-top:13px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.section-head h2{margin-bottom:3px}.section-head select{min-width:130px}.monthly-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.monthly-item{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:11px;padding:11px 12px}.monthly-item span{display:block;color:var(--muted);font-size:11px}.monthly-item b{display:block;margin-top:4px;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.monthly-item small{display:block;color:var(--muted);font-size:10px;margin-top:2px;min-height:15px}.coverage-note{color:var(--muted);font-size:11px;margin:10px 1px}.cycle-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}.cycle-table{width:100%;border-collapse:collapse;min-width:900px}.cycle-table th,.cycle-table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.cycle-table th{color:var(--muted);font-size:11px;font-weight:550;background:color-mix(in srgb,var(--control) 70%,transparent)}.cycle-table td{font-size:12px}.cycle-table tr:last-child td{border-bottom:0}.cycle-state{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:10px;background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue)}.cycle-state.early{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}.cycle-state.closed{background:color-mix(in srgb,var(--muted) 13%,transparent);color:var(--muted)}@media(max-width:900px){.monthly-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.monthly{margin-top:8px}.section-head{align-items:stretch;flex-direction:column}.section-head select{width:100%}.monthly-grid{gap:6px}.monthly-item{padding:9px}.monthly-item b{font-size:16px}}
+.model-allowances{margin-top:13px}.allowance-table{min-width:1060px}.monthly{margin-top:13px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.section-head h2{margin-bottom:3px}.section-head select{min-width:130px}.monthly-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.monthly-item{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:11px;padding:11px 12px}.monthly-item span{display:block;color:var(--muted);font-size:11px}.monthly-item b{display:block;margin-top:4px;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.monthly-item small{display:block;color:var(--muted);font-size:10px;margin-top:2px;min-height:15px}.coverage-note{color:var(--muted);font-size:11px;margin:10px 1px}.cycle-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}.cycle-table{width:100%;border-collapse:collapse;min-width:900px}.cycle-table th,.cycle-table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.cycle-table th{color:var(--muted);font-size:11px;font-weight:550;background:color-mix(in srgb,var(--control) 70%,transparent)}.cycle-table td{font-size:12px}.cycle-table tr:last-child td{border-bottom:0}.cycle-state{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:10px;background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue)}.cycle-state.early{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}.cycle-state.closed{background:color-mix(in srgb,var(--muted) 13%,transparent);color:var(--muted)}@media(max-width:900px){.monthly-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.monthly{margin-top:8px}.section-head{align-items:stretch;flex-direction:column}.section-head select{width:100%}.monthly-grid{gap:6px}.monthly-item{padding:9px}.monthly-item b{font-size:16px}}
 .loginbox .remember-key{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;cursor:pointer;margin-bottom:8px}.loginbox .remember-key input{width:16px;height:16px;margin:0;padding:0;flex:0 0 auto;accent-color:var(--blue)}
 .chart-range{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 13px;color:var(--muted);font-size:12px}.chart-range input{min-width:185px}.chart-range .error{min-height:0;margin-left:4px}@media(max-width:760px){.chart-range{align-items:stretch;display:grid;grid-template-columns:auto 1fr}.chart-range input{min-width:0;width:100%}.chart-range button{grid-column:2}.chart-range .error{grid-column:1/-1;margin:0}}
-.pricing-settings{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:-9px 0 13px;padding:12px 14px;background:color-mix(in srgb,var(--control) 62%,transparent);border:1px solid var(--line);border-radius:12px}.pricing-settings-copy{display:flex;flex-direction:column;gap:2px;min-width:210px}.pricing-settings-copy span,.pricing-save-status{color:var(--muted);font-size:12px}.pricing-controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.pricing-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--line);background:var(--control);border-radius:9px;padding:8px 11px;font-weight:600;white-space:nowrap}.pricing-toggle:hover{border-color:var(--blue)}.pricing-toggle input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--blue)}.pricing-save-status{min-width:120px}@media(max-width:900px){.pricing-settings{align-items:flex-start;flex-direction:column}.pricing-controls{justify-content:flex-start;width:100%}}@media(max-width:600px){.pricing-settings{margin-top:-3px;padding:11px}.pricing-controls{display:grid;grid-template-columns:1fr;width:100%}.pricing-toggle{justify-content:flex-start}.pricing-controls button{width:100%}.pricing-save-status{min-width:0}}
+.pricing-settings{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:-9px 0 13px;padding:12px 14px;background:color-mix(in srgb,var(--control) 62%,transparent);border:1px solid var(--line);border-radius:12px}.pricing-settings-copy{display:flex;flex-direction:column;gap:2px;min-width:210px}.pricing-settings-copy span,.pricing-save-status{color:var(--muted);font-size:12px}.pricing-controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.pricing-mode-control{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--control);border-radius:9px;padding:4px 6px 4px 11px;font-weight:600;white-space:nowrap}.pricing-mode-control span{color:var(--muted);font-size:11px}.pricing-mode-control select{border:0;padding:4px 6px;background:transparent}.pricing-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--line);background:var(--control);border-radius:9px;padding:8px 11px;font-weight:600;white-space:nowrap}.pricing-toggle:hover{border-color:var(--blue)}.pricing-toggle input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--blue)}.pricing-save-status{min-width:120px}@media(max-width:900px){.pricing-settings{align-items:flex-start;flex-direction:column}.pricing-controls{justify-content:flex-start;width:100%}}@media(max-width:600px){.pricing-settings{margin-top:-3px;padding:11px}.pricing-controls{display:grid;grid-template-columns:1fr;width:100%}.pricing-toggle{justify-content:flex-start}.pricing-controls button{width:100%}.pricing-save-status{min-width:0}}
 .spark-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:var(--text)}.spark-toggle input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--purple)}.spark-toggle-top{border:1px solid color-mix(in srgb,var(--purple) 55%,var(--line));background:color-mix(in srgb,var(--purple) 11%,var(--control));border-radius:9px;padding:8px 11px;font-weight:600;white-space:nowrap}.spark-toggle-top:hover{border-color:var(--purple)}.spark-section{margin-top:18px;padding-top:18px;border-top:2px solid color-mix(in srgb,var(--purple) 52%,var(--line))}.spark-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:10px}.spark-section-head h2{font-size:18px;margin:0 0 3px}.spark-quota{margin-top:9px}.spark-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.spark-stats{display:grid;grid-template-columns:repeat(4,minmax(118px,1fr));gap:9px;margin-top:14px}.spark-stat{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:10px;padding:8px 10px}.spark-stat span{display:block;color:var(--muted);font-size:10px}.spark-stat b{display:block;margin-top:2px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#sparkCurve svg,#weeklyCurve svg{height:500px}.weekly-section{border-top-color:color-mix(in srgb,var(--blue) 52%,var(--line))}@media(max-width:900px){.spark-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.spark-section-head,.spark-head{flex-direction:column}#sparkCurve,#weeklyCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#sparkCurve svg,#weeklyCurve svg{height:440px;min-width:760px}}@media(max-width:600px){.actions>.spark-toggle-top{grid-column:1/-1;justify-content:center;width:100%}}
 </style>
 </head>
 <body><main class="wrap">
-<div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与美元等效容量</span></h1><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="预测周期"><option value="">当前预测</option></select><select id="language" aria-label="界面语言"></select><label class="spark-toggle spark-toggle-top"><input id="showSpark" type="checkbox"><span>显示 Spark 额度</span></label><button id="sync">同步价格</button><button id="refresh" class="primary">刷新</button></div></div>
-<section class="pricing-settings"><div class="pricing-settings-copy"><b>费用计算规则</b><span>实测默认：长上下文关闭、Fast 开启；保存后会自动重算全部历史费用与容量估计</span></div><div class="pricing-controls"><label class="pricing-toggle"><input id="applyLongContextPricing" type="checkbox"><span id="longContextPricingLabel">&gt;272K 长上下文加价</span></label><label class="pricing-toggle"><input id="applyFastPricing" type="checkbox" checked><span id="fastPricingLabel">Fast 加价（2.5×）</span></label><button id="savePricingSettings" class="primary">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" aria-live="polite"></span></div></section>
+<div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与所选计价口径的等效容量</span></h1><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="预测周期"><option value="">当前预测</option></select><select id="language" aria-label="界面语言"></select><label class="spark-toggle spark-toggle-top"><input id="showSpark" type="checkbox"><span>显示 Spark 额度</span></label><button id="sync">同步价格</button><button id="refresh" class="primary">刷新</button></div></div>
+<section class="pricing-settings"><div class="pricing-settings-copy"><b>费用计算规则</b><span>默认使用当前 API 价格；可切换优惠前价格或订阅无优惠 Credits，保存后重算全部历史周期</span></div><div class="pricing-controls"><label class="pricing-mode-control"><span>计价方式</span><select id="pricingMode" aria-label="计价方式"></select></label><label class="pricing-toggle"><input id="applyLongContextPricing" type="checkbox"><span id="longContextPricingLabel">&gt;272K 长上下文加价</span></label><label class="pricing-toggle"><input id="applyFastPricing" type="checkbox" checked><span id="fastPricingLabel">Fast 加价（2.5×）</span></label><button id="savePricingSettings" class="primary">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" aria-live="polite"></span></div></section>
 <section class="grid">
  <div class="card"><div class="label">所选周期额度使用率</div><div class="value" id="used">—</div><div class="sub" id="window">等待额度样本</div></div>
  <div class="card"><div class="label">所选周期累计 Token</div><div class="value" id="tokens">—</div><div class="sub" id="requests">—</div></div>
- <div class="card"><div class="label">所选周期累计估算费用</div><div class="value" id="cost">—</div><div class="sub" id="pricing">—</div></div>
+ <div class="card"><div class="label">所选周期累计计价值</div><div class="value" id="cost">—</div><div class="sub" id="pricing">—</div></div>
  <div class="card"><div class="label">预计额度耗尽</div><div class="value" id="exhaust">—</div><div class="sub" id="confidence">尚无预测</div></div>
 </section>
 <div class="chart-range"><span>曲线范围</span><input id="rangeStart" type="datetime-local"><span>至</span><input id="rangeEnd" type="datetime-local"><button id="resetRange">恢复本周期</button><span class="error" id="rangeError"></span></div>
 <section class="pace-section"><div class="chart pace-chart"><h2>额度周期进度预测</h2><div id="paceCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>实际额度轨迹</span><span><i class="dot" style="background:var(--green)"></i>可持续基准线（周期内匀速消耗）</span><span><i class="dot" style="background:var(--purple)"></i>累计平均预测（周期开始至预测时点）</span><span><i class="dot" style="background:var(--amber)"></i>近期速率预测（近期采样区间）</span></div></div><div class="chart pace-stats"><h2>所选周期消耗节奏</h2><div class="row"><span>当前状态</span><b id="paceState">—</b></div><div class="row"><span>周期时间进度</span><b id="timeProgress">—</b></div><div class="row"><span>实际用量 / 基准用量（同期）</span><b id="usageVsAverage">—</b></div><div class="row"><span>累计平均速率 / 可持续速率</span><b id="dailyRate">—</b></div><div class="row"><span>近期消耗速率（采样区间）</span><b id="recentRate">—</b></div><div class="row"><span>累计平均模型预计耗尽时间</span><b id="averageEnd">—</b></div><div class="row"><span>近期速率模型预计耗尽时间</span><b id="paceEnd">—</b></div><div class="row"><span>近期速率模型期末预计用量</span><b id="projectedUsage">—</b></div><div class="row"><span>周期计划重置时间</span><b id="nextReset">—</b></div><div class="row"><span>预测时点至重置的剩余时间</span><b id="resetCountdown">—</b></div></div></section>
-<section class="charts"><div class="chart"><h2>额度周期累计曲线</h2><div id="curve"></div><div class="legend"><span><i class="dot" style="background:var(--green)"></i>额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>累计 Token（Token）</span><span><i class="dot" style="background:var(--amber)"></i>累计估算费用（USD）</span><span><i class="dot" style="background:var(--purple)"></i>额度周期边界</span></div></div><div class="chart"><h2>周期等效容量</h2><div id="capacity"></div></div></section>
-<section class="chart capacity-history"><h2>周期等效容量估计轨迹</h2><div id="capacityCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>完整周期等效 Token 容量（Token）</span><span><i class="dot" style="background:var(--amber)"></i>完整周期美元等效容量（USD）</span><span><i class="dot" style="background:var(--purple)"></i>额度周期边界</span></div></section>
-<section class="details"><div class="chart rows"><h2>主额度等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="fullTokens">—</b></div><div class="row"><span>完整周期美元等效容量（100% 额度；USD 中位数）</span><b id="fullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="remainTokens">—</b></div><div class="row"><span>剩余额度的美元等效容量（USD 估计值）</span><b id="remainCost">—</b></div></div><div class="chart rows"><h2>主额度采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="samples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="span">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="tokenRange">—</b></div><div class="row"><span>完整周期美元等效容量的四分位数区间（Q1–Q3；USD）</span><b id="costRange">—</b></div></div></section>
-<section class="chart monthly"><div class="section-head"><div><h2>主额度月度汇总</h2><div class="sub">仅统计主额度请求；按自然月汇总，并以每次确认的官方重置划分周期</div></div><select id="month" aria-label="统计月份"></select></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="monthTokens">—</b><small id="monthRequests">—</small></div><div class="monthly-item"><span>本月请求估算费用</span><b id="monthCost">—</b><small>USD · models.dev</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="monthCycles">—</b><small id="monthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="monthQuotaEquivalent">—</b><small id="monthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="monthCapacity">—</b><small id="monthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="monthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="monthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="monthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="monthlyNote">仅统计主额度请求；检测到 5 小时额度时，周限额在下方自动独立汇总；Spark 可按需显示。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月估算费用</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="cycleRows"></tbody></table></div></section>
-<div class="spark-section weekly-section" id="weeklyQuota" hidden><div class="spark-section-head"><div><h2>Plus 周限额（自动检测）</h2><div class="sub">仅在检测到 5 小时主额度时启用；5 小时和周限额使用各自的响应头、周期与容量估算</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>周限额变化与容量估算</h2><div class="sub">按 Secondary 周限额响应头和周重置时间独立估算；同一主额度请求同时计入 5 小时与周限额</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="weeklyUsed">—</b></div><div class="spark-stat"><span>周限额重置时间</span><b id="weeklyReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="weeklyObservations">—</b></div><div class="spark-stat"><span>估算置信度</span><b id="weeklyConfidence">—</b></div></div><div id="weeklyCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>周限额使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>周限额周期累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>周限额周期累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>周限额等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="weeklyFullTokens">—</b></div><div class="row"><span>完整周期美元等效容量（100% 额度；USD 中位数）</span><b id="weeklyFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="weeklyRemainTokens">—</b></div><div class="row"><span>剩余额度的美元等效容量（USD 估计值）</span><b id="weeklyRemainCost">—</b></div></div><div class="chart rows"><h2>周限额采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="weeklyGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="weeklySpan">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="weeklyTokenRange">—</b></div><div class="row"><span>完整周期美元等效容量的四分位数区间（Q1–Q3；USD）</span><b id="weeklyCostRange">—</b></div></div></section><section class="chart monthly"><div class="section-head"><div><h2>周限额月度汇总</h2><div class="sub">统计会消耗周限额的主额度请求，并按 Secondary 周限额自己的重置时间划分周期</div></div><b id="weeklyMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="weeklyMonthTokens">—</b><small id="weeklyMonthRequests">—</small></div><div class="monthly-item"><span>本月请求估算费用</span><b id="weeklyMonthCost">—</b><small>USD · models.dev</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="weeklyMonthCycles">—</b><small id="weeklyMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="weeklyMonthQuotaEquivalent">—</b><small id="weeklyMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="weeklyMonthCapacity">—</b><small id="weeklyMonthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="weeklyMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="weeklyMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="weeklyMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="weeklyMonthlyNote">周限额容量、消耗当量与周期均独立于 5 小时额度计算；实际 Token 和费用来自同一批主额度请求。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月估算费用</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="weeklyCycleRows"></tbody></table></div></section></div>
-<div class="spark-section" id="sparkQuota" hidden><div class="spark-section-head"><div><h2>Spark 独立额度</h2><div class="sub">Spark 的容量、消耗当量、周期和月度统计均单独计算，不计入主额度</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>Spark 额度变化与容量估算</h2><div class="sub">按 Spark 自身响应头、重置时间和请求负载独立估算</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="sparkUsed">—</b></div><div class="spark-stat"><span>Spark 重置时间</span><b id="sparkReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="sparkObservations">—</b></div><div class="spark-stat"><span>估算置信度</span><b id="sparkConfidence">—</b></div></div><div id="sparkCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>Spark 额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>Spark 累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>Spark 累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>Spark 等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="sparkFullTokens">—</b></div><div class="row"><span>完整周期美元等效容量（100% 额度；USD 中位数）</span><b id="sparkFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="sparkRemainTokens">—</b></div><div class="row"><span>剩余额度的美元等效容量（USD 估计值）</span><b id="sparkRemainCost">—</b></div></div><div class="chart rows"><h2>Spark 采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="sparkGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="sparkSpan">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="sparkTokenRange">—</b></div><div class="row"><span>完整周期美元等效容量的四分位数区间（Q1–Q3；USD）</span><b id="sparkCostRange">—</b></div></div></section><section class="chart monthly"><div class="section-head"><div><h2>Spark 月度额度汇总</h2><div class="sub">仅统计 Spark 请求，并按 Spark 自己的重置时间划分额度周期</div></div><b id="sparkMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="sparkMonthTokens">—</b><small id="sparkMonthRequests">—</small></div><div class="monthly-item"><span>本月请求估算费用</span><b id="sparkMonthCost">—</b><small>USD · models.dev</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="sparkMonthCycles">—</b><small id="sparkMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="sparkMonthQuotaEquivalent">—</b><small id="sparkMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="sparkMonthCapacity">—</b><small id="sparkMonthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="sparkMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="sparkMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="sparkMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="sparkMonthlyNote">仅统计 Spark 请求；所有容量和额度当量均与主额度分开。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月估算费用</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="sparkCycleRows"></tbody></table></div></section></div>
-<div class="note" id="note">额度百分比来自上游响应头，美元来自 models.dev 价格；预测不是 OpenAI 官方标称额度。</div>
+<section class="charts"><div class="chart"><h2>额度周期累计曲线</h2><div id="curve"></div><div class="legend"><span><i class="dot" style="background:var(--green)"></i>额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>累计 Token（Token）</span><span><i class="dot" style="background:var(--amber)"></i>累计计价值（按所选口径）</span><span><i class="dot" style="background:var(--purple)"></i>额度周期边界</span></div></div><div class="chart"><h2>周期等效容量</h2><div id="capacity"></div></div></section>
+<section class="chart capacity-history"><h2>周期等效容量估计轨迹</h2><div id="capacityCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>完整周期等效 Token 容量（Token）</span><span><i class="dot" style="background:var(--amber)"></i>完整周期计价等效容量</span><span><i class="dot" style="background:var(--purple)"></i>额度周期边界</span></div></section>
+<section class="details"><div class="chart rows"><h2>主额度等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="fullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="fullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="remainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="remainCost">—</b></div></div><div class="chart rows"><h2>主额度采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="samples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="span">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="tokenRange">—</b></div><div class="row"><span>完整周期计价等效容量的四分位数区间（Q1–Q3）</span><b id="costRange">—</b></div></div></section>
+<section class="chart model-allowances"><div class="section-head"><div><h2>按模型估算剩余 Token</h2><div class="sub">每一列分别假设剩余计价值全部用于该模型的未缓存输入、输出或缓存命中；Standard、基础上下文口径</div></div><b id="allowanceMode">—</b></div><div class="cycle-table-wrap"><table class="cycle-table allowance-table"><thead><tr><th>模型</th><th>输入单价</th><th>剩余输入 Token</th><th>输出单价</th><th>剩余输出 Token</th><th>缓存命中单价</th><th>剩余缓存命中 Token</th></tr></thead><tbody id="allowanceRows"></tbody></table></div></section>
+<section class="chart monthly"><div class="section-head"><div><h2>主额度月度汇总</h2><div class="sub">仅统计主额度请求；按自然月汇总，并以每次确认的官方重置划分周期</div></div><select id="month" aria-label="统计月份"></select></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="monthTokens">—</b><small id="monthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="monthCost">—</b><small id="monthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="monthCycles">—</b><small id="monthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="monthQuotaEquivalent">—</b><small id="monthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="monthCapacity">—</b><small id="monthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="monthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="monthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="monthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="monthlyNote">仅统计主额度请求；检测到 5 小时额度时，周限额在下方自动独立汇总；Spark 可按需显示。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="cycleRows"></tbody></table></div></section>
+<div class="spark-section weekly-section" id="weeklyQuota" hidden><div class="spark-section-head"><div><h2>Plus 周限额（自动检测）</h2><div class="sub">仅在检测到 5 小时主额度时启用；5 小时和周限额使用各自的响应头、周期与容量估算</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>周限额变化与容量估算</h2><div class="sub">按 Secondary 周限额响应头和周重置时间独立估算；同一主额度请求同时计入 5 小时与周限额</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="weeklyUsed">—</b></div><div class="spark-stat"><span>周限额重置时间</span><b id="weeklyReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="weeklyObservations">—</b></div><div class="spark-stat"><span>估算置信度</span><b id="weeklyConfidence">—</b></div></div><div id="weeklyCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>周限额使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>周限额周期累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>周限额周期累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>周限额等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="weeklyFullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="weeklyFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="weeklyRemainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="weeklyRemainCost">—</b></div></div><div class="chart rows"><h2>周限额采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="weeklyGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="weeklySpan">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="weeklyTokenRange">—</b></div><div class="row"><span>完整周期计价等效容量的四分位数区间（Q1–Q3）</span><b id="weeklyCostRange">—</b></div></div></section><section class="chart model-allowances"><div class="section-head"><div><h2>周限额按模型估算剩余 Token</h2><div class="sub">按当前周限额剩余计价值，分别换算各模型的未缓存输入、输出和缓存命中 Token</div></div><b id="weeklyAllowanceMode">—</b></div><div class="cycle-table-wrap"><table class="cycle-table allowance-table"><thead><tr><th>模型</th><th>输入单价</th><th>剩余输入 Token</th><th>输出单价</th><th>剩余输出 Token</th><th>缓存命中单价</th><th>剩余缓存命中 Token</th></tr></thead><tbody id="weeklyAllowanceRows"></tbody></table></div></section><section class="chart monthly"><div class="section-head"><div><h2>周限额月度汇总</h2><div class="sub">统计会消耗周限额的主额度请求，并按 Secondary 周限额自己的重置时间划分周期</div></div><b id="weeklyMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="weeklyMonthTokens">—</b><small id="weeklyMonthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="weeklyMonthCost">—</b><small id="weeklyMonthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="weeklyMonthCycles">—</b><small id="weeklyMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="weeklyMonthQuotaEquivalent">—</b><small id="weeklyMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="weeklyMonthCapacity">—</b><small id="weeklyMonthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="weeklyMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="weeklyMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="weeklyMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="weeklyMonthlyNote">周限额容量、消耗当量与周期均独立于 5 小时额度计算；实际 Token 和费用来自同一批主额度请求。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="weeklyCycleRows"></tbody></table></div></section></div>
+<div class="spark-section" id="sparkQuota" hidden><div class="spark-section-head"><div><h2>Spark 独立额度</h2><div class="sub">Spark 的容量、消耗当量、周期和月度统计均单独计算，不计入主额度</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>Spark 额度变化与容量估算</h2><div class="sub">按 Spark 自身响应头、重置时间和请求负载独立估算</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="sparkUsed">—</b></div><div class="spark-stat"><span>Spark 重置时间</span><b id="sparkReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="sparkObservations">—</b></div><div class="spark-stat"><span>估算置信度</span><b id="sparkConfidence">—</b></div></div><div id="sparkCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>Spark 额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>Spark 累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>Spark 累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>Spark 等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="sparkFullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="sparkFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="sparkRemainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="sparkRemainCost">—</b></div></div><div class="chart rows"><h2>Spark 采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="sparkGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="sparkSpan">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="sparkTokenRange">—</b></div><div class="row"><span>完整周期计价等效容量的四分位数区间（Q1–Q3）</span><b id="sparkCostRange">—</b></div></div></section><section class="chart monthly"><div class="section-head"><div><h2>Spark 月度额度汇总</h2><div class="sub">仅统计 Spark 请求，并按 Spark 自己的重置时间划分额度周期</div></div><b id="sparkMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="sparkMonthTokens">—</b><small id="sparkMonthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="sparkMonthCost">—</b><small id="sparkMonthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="sparkMonthCycles">—</b><small id="sparkMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="sparkMonthQuotaEquivalent">—</b><small id="sparkMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="sparkMonthCapacity">—</b><small id="sparkMonthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="sparkMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="sparkMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="sparkMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="sparkMonthlyNote">仅统计 Spark 请求；所有容量和额度当量均与主额度分开。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="sparkCycleRows"></tbody></table></div></section></div>
+<div class="note" id="note">额度百分比来自上游响应头；计价值按所选口径换算，预测不是 OpenAI 官方标称额度。</div>
 </main>
 <div class="login" id="login"><div class="loginbox"><h2>连接 Management API</h2><div class="sub">请输入 CPA Management Key；可选择在此浏览器中记住。</div><input id="key" type="password" placeholder="CPA Management Key" autocomplete="current-password"><label class="remember-key"><input id="rememberKey" type="checkbox"><span>在此浏览器记住密钥</span></label><div class="sub">共享设备请勿勾选；未勾选时只保留在当前标签页。</div><div class="error" id="loginError"></div><button id="loginBtn" class="primary" style="width:100%">进入仪表盘</button></div></div>
 <script>
@@ -172,6 +173,12 @@ const messages = {
     pricingSettingsSaving: '正在保存并重算…',
     pricingSettingsSaved: '已保存，重算 {count} 条历史请求。',
     pricingSettingsFailed: '保存失败：{message}',
+    pricingModeCurrent: '当前 API 价格',
+    pricingModeLegacy: '优惠前 API 价格',
+    pricingModeCredits: 'Credits（订阅无优惠）',
+    pricingModeLabel: '计价：{mode}',
+    pricingUnitCaption: '{mode} · {unit}',
+    allowanceNoData: '暂无可用的模型价格',
     longContextPricingLabel: '>{threshold}K 长上下文加价',
     fastPricingMultiplierLabel: 'Fast 加价（{multiplier}×）',
     fastPricingSourceLabel: 'Fast 加价（models.dev）',
@@ -191,7 +198,7 @@ const messages = {
     insufficientGrowth: '至少等待一次额度增长',
     historyLastPrediction: '历史末次预测 · ',
     historyReview: '历史周期回看 · ',
-    estimateExplanation: '每个相邻额度增长区间都会折算出一组完整周期 Token 与美元等效容量；主预测取各区间估计的中位数，四分位数区间（Q1–Q3）表示估计值分布的中间 50%。官方额度并非固定美元或 Token，结果仅表示当前请求结构下的等效容量。',
+    estimateExplanation: '每个相邻额度增长区间都会折算出一组完整周期 Token 与计价等效容量；主预测取各区间估计的中位数，四分位数区间（Q1–Q3）表示估计值分布的中间 50%。官方额度并非固定金额、Credits 或 Token，结果仅表示当前请求结构与所选计价口径下的等效容量。',
     estimateInsufficient: '至少需要一个有效额度增长区间（即两个递增的额度样本）后才能估算。',
     waitQuotaReset: '等待额度周期与计划重置时间样本',
     selectedCycleOutsideRange: '所选预测周期不在当前曲线范围内',
@@ -241,8 +248,8 @@ const messages = {
     usedConfidence: '已使用 · {confidence}置信度',
     remainingQuota: '剩余额度',
     forecastTokens: '完整周期 Token 等效容量',
-    currentCost: '当前累计估算费用（USD）',
-    forecastCost: '完整周期美元等效容量（USD）',
+    currentCost: '当前累计计价值',
+    forecastCost: '完整周期计价等效容量',
     remainingTokens: '剩余额度等效 Token 容量',
     remainingCost: '剩余额度美元等效容量（USD）',
     forecastTokenSeries: '完整周期等效 Token',
@@ -299,6 +306,12 @@ const messages = {
     pricingSettingsSaving: 'Saving and recalculating…',
     pricingSettingsSaved: 'Saved and recalculated {count} historical requests.',
     pricingSettingsFailed: 'Failed to save: {message}',
+    pricingModeCurrent: 'Current API prices',
+    pricingModeLegacy: 'Pre-discount API prices',
+    pricingModeCredits: 'Credits (subscription, no promotion)',
+    pricingModeLabel: 'Pricing: {mode}',
+    pricingUnitCaption: '{mode} · {unit}',
+    allowanceNoData: 'No model pricing is available',
     longContextPricingLabel: '>{threshold}K long-context surcharge',
     fastPricingMultiplierLabel: 'Fast surcharge ({multiplier}×)',
     fastPricingSourceLabel: 'Fast surcharge (models.dev)',
@@ -318,7 +331,7 @@ const messages = {
     insufficientGrowth: 'Waiting for at least one quota increase',
     historyLastPrediction: 'Last historical forecast · ',
     historyReview: 'Historical cycle · ',
-    estimateExplanation: 'Each adjacent quota-growth interval produces a full-cycle Token and USD-equivalent capacity estimate. The main forecast is the median across intervals; the interquartile interval (Q1–Q3) is the middle 50% of that estimate distribution. Official quota is not a fixed USD or Token amount, so these values are equivalents for the current request mix.',
+    estimateExplanation: 'Each adjacent quota-growth interval produces a full-cycle Token and pricing-value-equivalent capacity estimate. The main forecast is the median across intervals; Q1–Q3 is the middle 50% of that distribution. Official quota is not a fixed currency, Credits, or Token amount, so these values reflect the current request mix and selected pricing basis.',
     estimateInsufficient: 'At least one valid quota-growth interval (two increasing quota samples) is required.',
     waitQuotaReset: 'Waiting for quota and reset-time samples',
     selectedCycleOutsideRange: 'The selected forecast cycle is outside the current chart range',
@@ -368,12 +381,12 @@ const messages = {
     usedConfidence: 'Used · {confidence} confidence',
     remainingQuota: 'Remaining quota',
     forecastTokens: 'Full-cycle Token-equivalent capacity',
-    currentCost: 'Current cumulative estimated cost (USD)',
-    forecastCost: 'Full-cycle USD-equivalent capacity',
+    currentCost: 'Current cumulative pricing value',
+    forecastCost: 'Full-cycle pricing-value-equivalent capacity',
     remainingTokens: 'Remaining-quota Token-equivalent capacity',
-    remainingCost: 'Remaining-quota USD-equivalent capacity',
+    remainingCost: 'Remaining-quota pricing-value-equivalent capacity',
     forecastTokenSeries: 'Full-cycle equivalent Tokens',
-    forecastCostSeries: 'Full-cycle USD-equivalent capacity',
+    forecastCostSeries: 'Full-cycle pricing-value-equivalent capacity',
     growthTimeAxis: 'Quota growth time (Asia/Shanghai)',
     dayUnit: 'd',
     hourUnit: 'h',
@@ -402,11 +415,35 @@ const messages = {
 };
 
 const staticEnglish = {
+  '把额度百分比变化映射为 Token 与所选计价口径的等效容量': 'Map quota percentage changes to Token and selected-pricing-basis equivalents',
+  '所选周期累计计价值': 'Selected-cycle cumulative pricing value',
+  '累计计价值（按所选口径）': 'Cumulative pricing value (selected basis)',
+  '完整周期计价等效容量': 'Full-cycle pricing-value-equivalent capacity',
+  '完整周期计价等效容量（100% 额度；中位数）': 'Full-cycle pricing-value-equivalent capacity (100% quota; median)',
+  '剩余额度的计价等效容量（估计值）': 'Remaining-quota pricing-value-equivalent capacity (estimate)',
+  '完整周期计价等效容量的四分位数区间（Q1–Q3）': 'Interquartile interval of full-cycle pricing-value-equivalent estimates (Q1–Q3)',
+  '本月请求计价值': 'Pricing value of this month’s requests',
+  '本月计价值': 'Monthly pricing value',
+  '额度百分比来自上游响应头；计价值按所选口径换算，预测不是 OpenAI 官方标称额度。': 'Quota percentages come from upstream headers. Pricing value uses the selected basis; forecasts are not official OpenAI quota values.',
+
   '额度容量预测': 'Quota Capacity Forecast',
-  '把额度百分比变化映射为 Token 与美元等效容量': 'Map quota percentage changes to Token and USD-equivalent capacity',
+  '把额度百分比变化映射为 Token 与所选计价口径的等效容量': 'Map quota percentage changes to Token and USD-equivalent capacity',
   '同步价格': 'Sync pricing',
+  '计价方式': 'Pricing basis',
+  '按模型估算剩余 Token': 'Remaining Tokens by model',
+  '每一列分别假设剩余计价值全部用于该模型的未缓存输入、输出或缓存命中；Standard、基础上下文口径': 'Each column assumes all remaining pricing value is spent only on that model’s uncached input, output, or cache hits; Standard mode and base context pricing.',
+  '周限额按模型估算剩余 Token': 'Weekly remaining Tokens by model',
+  '按当前周限额剩余计价值，分别换算各模型的未缓存输入、输出和缓存命中 Token': 'Converts the remaining weekly pricing value into uncached-input, output, and cache-hit Tokens for each model.',
+  '模型': 'Model',
+  '输入单价': 'Input rate',
+  '剩余输入 Token': 'Remaining input Tokens',
+  '输出单价': 'Output rate',
+  '剩余输出 Token': 'Remaining output Tokens',
+  '缓存命中单价': 'Cache-hit rate',
+  '剩余缓存命中 Token': 'Remaining cache-hit Tokens',
+  '默认使用当前 API 价格；可切换优惠前价格或订阅无优惠 Credits，保存后重算全部历史周期': 'Current API prices are the default. Switch to pre-discount prices or non-promotional subscription Credits; saving recalculates every historical cycle.',
   '费用计算规则': 'Cost calculation rules',
-  '实测默认：长上下文关闭、Fast 开启；保存后会自动重算全部历史费用与容量估计': 'Empirical default: long context off, Fast on; saving recalculates all historical costs and capacity estimates',
+  '默认使用当前 API 价格；可切换优惠前价格或订阅无优惠 Credits，保存后重算全部历史周期': 'Empirical default: long context off, Fast on; saving recalculates all historical costs and capacity estimates',
   '>272K 长上下文加价': '>272K long-context surcharge',
   'Fast 加价（2.5×）': 'Fast surcharge (2.5×)',
   '保存并重算': 'Save and recalculate',
@@ -421,7 +458,7 @@ const staticEnglish = {
   '所选周期额度使用率': 'Selected-cycle quota used',
   '等待额度样本': 'Waiting for quota samples',
   '所选周期累计 Token': 'Selected-cycle cumulative Tokens',
-  '所选周期累计估算费用': 'Selected-cycle cumulative estimated cost',
+  '所选周期累计计价值': 'Selected-cycle cumulative estimated cost',
   '预计额度耗尽': 'Estimated quota exhaustion',
   '尚无预测': 'No forecast yet',
   '额度周期进度预测': 'Quota-cycle progress forecast',
@@ -443,12 +480,12 @@ const staticEnglish = {
   '额度周期累计曲线': 'Quota-cycle cumulative curves',
   '额度使用率（%）': 'Quota used (%)',
   '累计 Token（Token）': 'Cumulative Tokens (Token)',
-  '累计估算费用（USD）': 'Cumulative estimated cost (USD)',
+  '累计计价值（按所选口径）': 'Cumulative estimated cost (USD)',
   '额度周期边界': 'Quota-cycle boundary',
   '周期等效容量': 'Cycle-equivalent capacity',
   '周期等效容量估计轨迹': 'Cycle-equivalent capacity estimate trajectory',
   '完整周期等效 Token 容量（Token）': 'Full-cycle equivalent Token capacity (Token)',
-  '完整周期美元等效容量（USD）': 'Full-cycle USD-equivalent capacity',
+  '完整周期计价等效容量': 'Full-cycle pricing-value-equivalent capacity',
   '显示 Spark 额度': 'Show Spark quota',
   '显示 Spark 额度变化': 'Show Spark quota changes',
   'Spark 使用独立额度周期和重置时间': 'Spark uses an independent quota cycle and reset time',
@@ -492,18 +529,18 @@ const staticEnglish = {
   '仅统计 Spark 请求；所有容量和额度当量均与主额度分开。': 'Only Spark requests are counted here. All capacity and quota-equivalent figures remain separate from the primary quota.',
   '等效容量估计（基于当前请求结构）': 'Equivalent-capacity estimates (based on the current request mix)',
   '完整周期 Token 等效容量（100% 额度；中位数）': 'Full-cycle Token-equivalent capacity (100% quota; median)',
-  '完整周期美元等效容量（100% 额度；USD 中位数）': 'Full-cycle USD-equivalent capacity (100% quota; median)',
+  '完整周期计价等效容量（100% 额度；中位数）': 'Full-cycle pricing-value-equivalent capacity (100% quota; median)',
   '剩余额度的 Token 等效容量（估计值）': 'Remaining-quota Token-equivalent capacity (estimate)',
-  '剩余额度的美元等效容量（USD 估计值）': 'Remaining-quota USD-equivalent capacity (estimate)',
+  '剩余额度的计价等效容量（估计值）': 'Remaining-quota pricing-value-equivalent capacity (estimate)',
   '采样质量': 'Sample quality',
   '可用于估计的增长区间数': 'Quota-growth intervals used for estimation',
   '有效样本覆盖的额度增量': 'Quota increase covered by valid samples',
   '完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）': 'Interquartile interval of full-cycle Token-equivalent estimates (Q1–Q3; middle 50%)',
-  '完整周期美元等效容量的四分位数区间（Q1–Q3；USD）': 'Interquartile interval of full-cycle USD-equivalent estimates (Q1–Q3)',
+  '完整周期计价等效容量的四分位数区间（Q1–Q3）': 'Interquartile interval of full-cycle USD-equivalent estimates (Q1–Q3)',
   '月度额度汇总': 'Monthly quota summary',
   '按自然月汇总实际消耗，并以每次确认的官方重置划分额度周期': 'Summarize actual usage by calendar month and delimit quota cycles at each confirmed official reset',
   '本月实际 Token': 'Actual Tokens this month',
-  '本月请求估算费用': 'Estimated cost of this month\'s requests',
+  '本月请求计价值': 'Estimated cost of this month\'s requests',
   '本月涉及的额度周期': 'Quota cycles overlapping this month',
   '本月额度消耗当量': 'Monthly quota-consumption equivalent',
   '本月新周期估计总容量': 'Estimated total capacity of cycles starting this month',
@@ -517,11 +554,11 @@ const staticEnglish = {
   '结束原因': 'End reason',
   '周期峰值使用率': 'Peak cycle quota used',
   '本月 Token': 'Monthly Tokens',
-  '本月估算费用': 'Monthly estimated cost',
+  '本月计价值': 'Monthly estimated cost',
   '本月请求': 'Monthly requests',
   '完整周期等效 Token': 'Full-cycle equivalent Tokens',
   '估计置信度': 'Estimate confidence',
-  '额度百分比来自上游响应头，美元来自 models.dev 价格；预测不是 OpenAI 官方标称额度。': 'Quota percentages come from upstream response headers and USD values use models.dev pricing. Forecasts are not official OpenAI quota values.',
+  '额度百分比来自上游响应头；计价值按所选口径换算，预测不是 OpenAI 官方标称额度。': 'Quota percentages come from upstream response headers and USD values use models.dev pricing. Forecasts are not official OpenAI quota values.',
   '连接 Management API': 'Connect to Management API',
   '请输入 CPA Management Key；可选择在此浏览器中记住。': 'Enter the CPA Management Key. You can choose to remember it in this browser.',
   '在此浏览器记住密钥': 'Remember the key in this browser',
@@ -632,6 +669,7 @@ function applyLanguage(nextLanguage) {
   $('#rangeStart').setAttribute('aria-label', tr('rangeStartLabel'));
   $('#rangeEnd').setAttribute('aria-label', tr('rangeEndLabel'));
   $('#showSpark').setAttribute('aria-label', language === 'en' ? 'Show Spark quota' : '显示 Spark 额度');
+  $('#pricingMode').setAttribute('aria-label', language === 'en' ? 'Pricing basis' : '计价方式');
   $('#applyLongContextPricing').setAttribute('aria-label', tr('longContextPricingLabel', {threshold: pricingThresholdK(state && state.config)}));
   $('#applyFastPricing').setAttribute('aria-label', fastPricingLabel(state && state.config));
   renderPricingSettings(state && state.config, true);
@@ -684,9 +722,21 @@ const fmt = number => {
   return number.toFixed(0);
 };
 
-const usd = number => Number.isFinite(+number)
-  ? '$' + (+number).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})
-  : '—';
+function activePricingMode(config) {
+  return String(config && config.pricing_mode || state && state.config && state.config.pricing_mode || 'current_api');
+}
+
+function pricingUnitLabel(config) {
+  return activePricingMode(config) === 'credits' ? 'credits' : 'USD';
+}
+
+const usd = number => {
+  if (!Number.isFinite(+number)) return '—';
+  if (activePricingMode() === 'credits') {
+    return (+number).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' credits';
+  }
+  return '$' + (+number).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+};
 
 function dateLocale() {
   return language === 'en' ? 'en-US' : 'zh-CN';
@@ -1001,19 +1051,19 @@ const mainMonthlyIDs = {
   tokens: '#monthTokens', requests: '#monthRequests', cost: '#monthCost', cycles: '#monthCycles',
   resets: '#monthResets', quotaEquivalent: '#monthQuotaEquivalent', quotaPercent: '#monthQuotaPercent',
   capacity: '#monthCapacity', capacityCost: '#monthCapacityCost', estimateCoverage: '#monthEstimateCoverage',
-  unused: '#monthUnused', coverage: '#monthCoverage', note: '#monthlyNote', rows: '#cycleRows'
+  unused: '#monthUnused', coverage: '#monthCoverage', note: '#monthlyNote', rows: '#cycleRows', unit: '#monthValueUnit'
 };
 const weeklyMonthlyIDs = {
   tokens: '#weeklyMonthTokens', requests: '#weeklyMonthRequests', cost: '#weeklyMonthCost', cycles: '#weeklyMonthCycles',
   resets: '#weeklyMonthResets', quotaEquivalent: '#weeklyMonthQuotaEquivalent', quotaPercent: '#weeklyMonthQuotaPercent',
   capacity: '#weeklyMonthCapacity', capacityCost: '#weeklyMonthCapacityCost', estimateCoverage: '#weeklyMonthEstimateCoverage',
-  unused: '#weeklyMonthUnused', coverage: '#weeklyMonthCoverage', note: '#weeklyMonthlyNote', rows: '#weeklyCycleRows'
+  unused: '#weeklyMonthUnused', coverage: '#weeklyMonthCoverage', note: '#weeklyMonthlyNote', rows: '#weeklyCycleRows', unit: '#weeklyMonthValueUnit'
 };
 const sparkMonthlyIDs = {
   tokens: '#sparkMonthTokens', requests: '#sparkMonthRequests', cost: '#sparkMonthCost', cycles: '#sparkMonthCycles',
   resets: '#sparkMonthResets', quotaEquivalent: '#sparkMonthQuotaEquivalent', quotaPercent: '#sparkMonthQuotaPercent',
   capacity: '#sparkMonthCapacity', capacityCost: '#sparkMonthCapacityCost', estimateCoverage: '#sparkMonthEstimateCoverage',
-  unused: '#sparkMonthUnused', coverage: '#sparkMonthCoverage', note: '#sparkMonthlyNote', rows: '#sparkCycleRows'
+  unused: '#sparkMonthUnused', coverage: '#sparkMonthCoverage', note: '#sparkMonthlyNote', rows: '#sparkCycleRows', unit: '#sparkMonthValueUnit'
 };
 
 function renderMonthly(data) {
@@ -1046,6 +1096,7 @@ function renderMonthlySummary(summary, ids, noteKey) {
   $(ids.tokens).textContent = fmt(summary.actual_tokens);
   $(ids.requests).textContent = tr('monthlyRequests', {count: fmt(summary.requests || 0)});
   $(ids.cost).textContent = usd(summary.actual_cost_usd);
+  if (ids.unit) $(ids.unit).textContent = tr('pricingUnitCaption', {mode: pricingModeText(activePricingMode()), unit: pricingUnitLabel()});
   $(ids.cycles).textContent = fmt(summary.cycle_count || 0);
   $(ids.resets).textContent = tr('monthlyResetSummary', {
     count: summary.reset_count || 0,
@@ -1115,11 +1166,31 @@ function fastPricingLabel(config) {
     : tr('fastPricingMultiplierLabel', {multiplier: config.fast_multiplier || 2.5});
 }
 
+function pricingModeText(mode) {
+  if (mode === 'legacy_api') return tr('pricingModeLegacy');
+  if (mode === 'credits') return tr('pricingModeCredits');
+  return tr('pricingModeCurrent');
+}
+
+function renderPricingModeSelect(config, preserveSelection) {
+  let select = $('#pricingMode');
+  let selected = preserveSelection && pricingSettingsDirty ? select.value : activePricingMode(config);
+  select.replaceChildren();
+  [['current_api', tr('pricingModeCurrent')], ['legacy_api', tr('pricingModeLegacy')], ['credits', tr('pricingModeCredits')]].forEach(item => {
+    let option = document.createElement('option');
+    option.value = item[0];
+    option.textContent = item[1];
+    select.append(option);
+  });
+  select.value = selected || 'current_api';
+}
+
 function renderPricingSettings(config, preserveChecks) {
   config = config || {};
   let threshold = pricingThresholdK(config);
   $('#longContextPricingLabel').textContent = tr('longContextPricingLabel', {threshold: threshold});
   $('#fastPricingLabel').textContent = fastPricingLabel(config);
+  renderPricingModeSelect(config, preserveChecks);
   if (!preserveChecks && !pricingSettingsDirty) {
     $('#applyLongContextPricing').checked = config.apply_long_context_pricing !== false;
     $('#applyFastPricing').checked = config.apply_fast_pricing !== false;
@@ -1128,7 +1199,7 @@ function renderPricingSettings(config, preserveChecks) {
 
 function pricingDescription(config) {
   config = config || {};
-  let rules = [];
+  let rules = [tr('pricingModeLabel', {mode: pricingModeText(activePricingMode(config))})];
   if (config.apply_fast_pricing !== false) {
     rules.push(config.fast_pricing_mode === 'source'
       ? tr('fastSource')
@@ -1137,7 +1208,31 @@ function pricingDescription(config) {
   if (config.apply_long_context_pricing !== false) {
     rules.push(tr('longContextRule', {threshold: pricingThresholdK(config)}));
   }
-  return rules.length ? rules.join(' · ') : tr('basePricingOnly');
+  return rules.join(' · ');
+}
+
+function pricingRate(value, unit) {
+  if (!Number.isFinite(+value) || +value <= 0) return '—';
+  let formatted = (+value).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 4});
+  return (unit === 'credits' ? formatted + ' credits' : '$' + formatted) + ' / 1M';
+}
+
+function renderModelAllowances(rows, rowsSelector, modeSelector, available) {
+  rows = rows || [];
+  $(modeSelector).textContent = pricingModeText(activePricingMode());
+  if (!rows.length) {
+    $(rowsSelector).innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted)">' + tr('allowanceNoData') + '</td></tr>';
+    return;
+  }
+  $(rowsSelector).innerHTML = rows.map(item => '<tr>' +
+    '<td>' + item.model + '</td>' +
+    '<td>' + pricingRate(item.input_rate, item.value_unit) + '</td>' +
+    '<td>' + (available && item.input_tokens ? fmt(item.input_tokens) : '—') + '</td>' +
+    '<td>' + pricingRate(item.output_rate, item.value_unit) + '</td>' +
+    '<td>' + (available && item.output_tokens ? fmt(item.output_tokens) : '—') + '</td>' +
+    '<td>' + pricingRate(item.cache_read_rate, item.value_unit) + '</td>' +
+    '<td>' + (available && item.cache_read_tokens ? fmt(item.cache_read_tokens) : '—') + '</td>' +
+    '</tr>').join('');
 }
 
 function renderSummary(summary) {
@@ -1185,6 +1280,7 @@ function renderSummary(summary) {
     ? fmt(estimate.token_low) + ' — ' + fmt(estimate.token_high) : '—';
   $('#costRange').textContent = estimate.available
     ? usd(estimate.cost_low) + ' — ' + usd(estimate.cost_high) : '—';
+  renderModelAllowances(summary.remaining_by_model, '#allowanceRows', '#allowanceMode', !!estimate.available);
   $('#note').textContent = (historical ? tr('historyReview') : '') + estimateExplanation(estimate);
 }
 
@@ -1382,7 +1478,7 @@ function renderCharts(seriesData, range) {
   let chartSeries = [
     {name: tr('quotaSeries'), unit: '%', color: 'var(--green)', value: point => point.used_percent, label: value => value.toFixed(0) + '%'},
     {name: tr('tokenUsageSeries'), unit: 'Token', color: 'var(--blue)', value: point => point.window_tokens, label: fmt},
-    {name: tr('costUsageSeries'), unit: 'USD', color: 'var(--amber)', value: point => point.window_cost_usd, label: usd}
+    {name: tr('costUsageSeries'), unit: pricingUnitLabel(), color: 'var(--amber)', value: point => point.window_cost_usd, label: usd}
   ];
   let svg = '';
 
@@ -1468,7 +1564,7 @@ function renderCapacityHistory(seriesData, range) {
   let selectedCycleID = String(seriesData.selected_cycle_id || '');
   let chartSeries = [
     {name: tr('forecastTokenSeries'), unit: 'Token', color: 'var(--blue)', value: point => point.full_window_tokens, label: fmt},
-    {name: tr('forecastCostSeries'), unit: 'USD', color: 'var(--amber)', value: point => point.full_window_cost_usd, label: usd}
+    {name: tr('forecastCostSeries'), unit: pricingUnitLabel(), color: 'var(--amber)', value: point => point.full_window_cost_usd, label: usd}
   ];
   let svg = '';
 
@@ -1542,6 +1638,7 @@ function renderWeeklyQuota(seriesData) {
     ? fmt(estimate.token_low) + ' — ' + fmt(estimate.token_high) : '—';
   $('#weeklyCostRange').textContent = estimate.available
     ? usd(estimate.cost_low) + ' — ' + usd(estimate.cost_high) : '—';
+  renderModelAllowances(weekly.remaining_by_model, '#weeklyAllowanceRows', '#weeklyAllowanceMode', !!estimate.available);
   if (!points.length || !weekly.started_at || !weekly.reset_at || weekly.reset_at <= weekly.started_at) {
     let message = inferred
       ? tr('weeklyInferredNoSamples', {time: dt(weekly.last_observed_at)})
@@ -1558,7 +1655,7 @@ function renderWeeklyQuota(seriesData) {
   let chartSeries = [
     {name: tr('quotaSeries'), unit: '%', color: 'var(--purple)', value: point => point.used_percent, max: 100, label: value => value.toFixed(0) + '%'},
     {name: tr('tokenUsageSeries'), unit: 'Token', color: 'var(--blue)', value: point => point.window_tokens, label: fmt},
-    {name: tr('costUsageSeries'), unit: 'USD', color: 'var(--amber)', value: point => point.window_cost_usd, label: usd}
+    {name: tr('costUsageSeries'), unit: pricingUnitLabel(), color: 'var(--amber)', value: point => point.window_cost_usd, label: usd}
   ];
   let svg = '';
   chartSeries.forEach((item, seriesIndex) => {
@@ -1644,7 +1741,7 @@ function renderSparkQuota(seriesData) {
   let chartSeries = [
     {name: tr('quotaSeries'), unit: '%', color: 'var(--purple)', value: point => point.used_percent, max: 100, label: value => value.toFixed(0) + '%'},
     {name: tr('tokenUsageSeries'), unit: 'Token', color: 'var(--blue)', value: point => point.window_tokens, label: fmt},
-    {name: tr('costUsageSeries'), unit: 'USD', color: 'var(--amber)', value: point => point.window_cost_usd, label: usd}
+    {name: tr('costUsageSeries'), unit: pricingUnitLabel(), color: 'var(--amber)', value: point => point.window_cost_usd, label: usd}
   ];
   let svg = '';
   chartSeries.forEach((item, seriesIndex) => {
@@ -1721,7 +1818,7 @@ $('#showSpark').onchange = event => {
   else renderSparkQuota(seriesState || {});
 };
 $('#language').onchange = event => setLanguageMode(event.target.value);
-['#applyLongContextPricing', '#applyFastPricing'].forEach(selector => {
+['#pricingMode', '#applyLongContextPricing', '#applyFastPricing'].forEach(selector => {
   $(selector).onchange = () => {
     pricingSettingsDirty = true;
     $('#pricingSaveStatus').textContent = '';
@@ -1736,7 +1833,8 @@ $('#savePricingSettings').onclick = async () => {
       method: 'POST',
       body: JSON.stringify({
         apply_long_context_pricing: $('#applyLongContextPricing').checked,
-        apply_fast_pricing: $('#applyFastPricing').checked
+        apply_fast_pricing: $('#applyFastPricing').checked,
+        pricing_mode: $('#pricingMode').value
       })
     });
     pricingSettingsDirty = false;

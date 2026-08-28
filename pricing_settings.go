@@ -5,30 +5,35 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 const pricingSettingsMetadataKey = "pricing_settings"
 
 type pricingSettings struct {
-	ApplyLongContext bool `json:"apply_long_context_pricing"`
-	ApplyFast        bool `json:"apply_fast_pricing"`
+	ApplyLongContext bool   `json:"apply_long_context_pricing"`
+	ApplyFast        bool   `json:"apply_fast_pricing"`
+	PricingMode      string `json:"pricing_mode"`
 }
 
 type pricingSettingsUpdate struct {
-	ApplyLongContext *bool `json:"apply_long_context_pricing"`
-	ApplyFast        *bool `json:"apply_fast_pricing"`
+	ApplyLongContext *bool  `json:"apply_long_context_pricing"`
+	ApplyFast        *bool  `json:"apply_fast_pricing"`
+	PricingMode      string `json:"pricing_mode"`
 }
 
 func (c config) pricingSettings() pricingSettings {
 	return pricingSettings{
 		ApplyLongContext: c.ApplyLongContextPricing,
 		ApplyFast:        c.ApplyFastPricing,
+		PricingMode:      normalizePricingMode(c.PricingMode),
 	}
 }
 
 func (c config) withPricingSettings(settings pricingSettings) config {
 	c.ApplyLongContextPricing = settings.ApplyLongContext
 	c.ApplyFastPricing = settings.ApplyFast
+	c.PricingMode = normalizePricingMode(settings.PricingMode)
 	return c
 }
 
@@ -44,6 +49,11 @@ func (s *store) loadPricingSettings(ctx context.Context, fallback pricingSetting
 	var settings pricingSettings
 	if err = json.Unmarshal([]byte(raw), &settings); err != nil {
 		return fallback, fmt.Errorf("decode saved pricing settings: %w", err)
+	}
+	if strings.TrimSpace(settings.PricingMode) == "" {
+		settings.PricingMode = normalizePricingMode(fallback.PricingMode)
+	} else {
+		settings.PricingMode = normalizePricingMode(settings.PricingMode)
 	}
 	return settings, nil
 }

@@ -12,6 +12,9 @@ func TestPublicReleaseDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cfg.PricingMode != pricingModeCurrentAPI {
+		t.Fatalf("pricing mode = %q, want %q", cfg.PricingMode, pricingModeCurrentAPI)
+	}
 	if cfg.HistoryDays != 365 {
 		t.Fatalf("history days = %d, want 365", cfg.HistoryDays)
 	}
@@ -63,6 +66,11 @@ func TestPublicReleaseDefaults(t *testing.T) {
 		[]byte("不计入主额度"),
 		[]byte("applyLongContextPricing"),
 		[]byte("applyFastPricing"),
+		[]byte("pricingMode"),
+		[]byte("current_api"),
+		[]byte("legacy_api"),
+		[]byte("credits"),
+		[]byte("remaining_by_model"),
 		[]byte("/pricing-settings"),
 		[]byte("保存并重算"),
 	} {
@@ -217,5 +225,39 @@ func TestDecodeCatalog(t *testing.T) {
 	p := prices[0]
 	if p.LongInput != 3 || p.FastOutput != 5 || p.CacheWrite != .2 {
 		t.Fatalf("price = %#v", p)
+	}
+}
+
+func TestSubscriptionCreditsUseNonPromotionalRates(t *testing.T) {
+	p := price{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5}
+	detail := usageDetail{InputTokens: 1_000_000, OutputTokens: 100_000, CacheReadTokens: 500_000}
+	cfg := defaultConfig()
+	cfg.ApplyFastPricing = false
+
+	cfg.PricingMode = pricingModeCurrentAPI
+	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-4.2) > 1e-9 {
+		t.Fatalf("current API value = %f, want 4.2", got)
+	}
+	cfg.PricingMode = pricingModeLegacyAPI
+	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-5.75) > 1e-9 {
+		t.Fatalf("legacy API value = %f, want 5.75", got)
+	}
+	cfg.PricingMode = pricingModeCredits
+	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-143.75) > 1e-9 {
+		t.Fatalf("subscription credits = %f, want 143.75", got)
+	}
+
+	for _, check := range []struct {
+		model                 string
+		input, cached, output float64
+	}{
+		{"gpt-5.6-sol", 125, 12.5, 750},
+		{"gpt-5.6-terra", 62.5, 6.25, 375},
+		{"gpt-5.6-luna", 25, 2.5, 150},
+	} {
+		got := priceForPricingMode(price{Model: check.model, Input: .01, Output: .01, CacheRead: .01}, pricingModeCredits)
+		if got.Input != check.input || got.CacheRead != check.cached || got.Output != check.output || got.CacheWrite != 0 {
+			t.Fatalf("%s credit rates = input:%g cached:%g output:%g cache-write:%g", check.model, got.Input, got.CacheRead, got.Output, got.CacheWrite)
+		}
 	}
 }

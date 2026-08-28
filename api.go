@@ -43,7 +43,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if account == "" && len(accounts) > 0 {
 			account = accounts[0]
 		}
-		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": map[string]any{"fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing, "price_source_url": a.cfg.PriceSourceURL}}
+		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": map[string]any{"fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing, "price_source_url": a.cfg.PriceSourceURL}}
 		if account != "" {
 			hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 			if errWeekly != nil {
@@ -69,7 +69,13 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, err.Error())
 			}
 			resp["plan_type"] = plan
-			resp["estimate"] = estimateCapacity(points)
+			estimate := estimateCapacity(points)
+			resp["estimate"] = estimate
+			allowances, errAllowance := a.store.remainingModelAllowances(ctx, estimate.RemainingCostUSD, a.cfg)
+			if errAllowance != nil {
+				return textResponse(500, errAllowance.Error())
+			}
+			resp["remaining_by_model"] = allowances
 			resp["burn_forecast"] = estimateBurn(points, forecastReference(points, isCurrent))
 			if len(points) > 0 {
 				resp["latest"] = points[len(points)-1]
@@ -108,7 +114,12 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, err.Error())
 			}
 		}
-		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "estimate": estimateCapacity(points), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))}
+		estimate := estimateCapacity(points)
+		allowances, errAllowance := a.store.remainingModelAllowances(ctx, estimate.RemainingCostUSD, a.cfg)
+		if errAllowance != nil {
+			return textResponse(500, errAllowance.Error())
+		}
+		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "estimate": estimate, "remaining_by_model": allowances, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))}
 		hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 		if errWeekly != nil {
 			return textResponse(500, errWeekly.Error())
@@ -116,6 +127,10 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		response["five_hour_quota_detected"] = hasWeeklyQuota
 		if hasWeeklyQuota {
 			weeklySeries, errQuota := a.store.latestQuotaScopeSeries(ctx, account, weeklyQuotaScope, limit)
+			if errQuota != nil {
+				return textResponse(500, errQuota.Error())
+			}
+			weeklySeries.RemainingByModel, errQuota = a.store.remainingModelAllowances(ctx, weeklySeries.Estimate.RemainingCostUSD, a.cfg)
 			if errQuota != nil {
 				return textResponse(500, errQuota.Error())
 			}
@@ -152,7 +167,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
-		response := map[string]any{"account": account, "months": months, "summary": monthly}
+		response := map[string]any{"account": account, "months": months, "summary": monthly, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode)}
 		hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 		if errWeekly != nil {
 			return textResponse(500, errWeekly.Error())
@@ -198,7 +213,14 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if update.ApplyLongContext == nil || update.ApplyFast == nil {
 			return textResponse(400, "apply_long_context_pricing and apply_fast_pricing are required")
 		}
-		settings := pricingSettings{ApplyLongContext: *update.ApplyLongContext, ApplyFast: *update.ApplyFast}
+		mode := strings.TrimSpace(update.PricingMode)
+		if mode == "" {
+			mode = a.cfg.PricingMode
+		}
+		if !validPricingMode(mode) {
+			return textResponse(400, "pricing_mode must be current_api, legacy_api, or credits")
+		}
+		settings := pricingSettings{ApplyLongContext: *update.ApplyLongContext, ApplyFast: *update.ApplyFast, PricingMode: normalizePricingMode(mode)}
 		cfg := a.cfg.withPricingSettings(settings)
 		recalculated, err := a.store.savePricingSettingsAndRecalculate(ctx, settings, cfg)
 		if err != nil {
@@ -217,7 +239,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
-		return jsonResponse(200, map[string]any{"prices": prices, "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing})
+		return jsonResponse(200, map[string]any{"prices": prices, "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing})
 	default:
 		return textResponse(404, "not found")
 	}
@@ -262,6 +284,8 @@ func pricingSettingsResponse(cfg config, recalculated int64) map[string]any {
 	return map[string]any{
 		"apply_long_context_pricing": cfg.ApplyLongContextPricing,
 		"apply_fast_pricing":         cfg.ApplyFastPricing,
+		"pricing_mode":               normalizePricingMode(cfg.PricingMode),
+		"value_unit":                 pricingValueUnit(cfg.PricingMode),
 		"long_context_threshold":     cfg.LongContextThreshold,
 		"fast_pricing_mode":          cfg.FastPricingMode,
 		"fast_multiplier":            cfg.FastMultiplier,

@@ -79,3 +79,94 @@ func assertStoredCosts(t *testing.T, s *store, want float64) {
 		t.Fatalf("event cost = %f, sample cost = %f, want %f", eventCost, sampleCost, want)
 	}
 }
+
+func TestPricingModePersistsAndCanSwitchBack(t *testing.T) {
+	ctx := context.Background()
+	s, err := openStore(filepath.Join(t.TempDir(), "pricing-mode-switch.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	if err = s.upsertPrices(ctx, []price{{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO usage_events(requested_at,account,model,input_tokens,output_tokens,cache_read_tokens,total_tokens,quota_scope) VALUES(100,'account','gpt-5.6-sol',1000000,100000,500000,1100000,?)`, mainQuotaScope); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO quota_samples(sampled_at,account,used_percent,reset_at,window_minutes,window_cost_usd) VALUES(100,'account',1,1000,15,99)`); err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []struct {
+		mode string
+		want float64
+	}{{pricingModeLegacyAPI, 5.75}, {pricingModeCredits, 143.75}, {pricingModeCurrentAPI, 4.2}}
+	for _, check := range checks {
+		settings := pricingSettings{PricingMode: check.mode}
+		cfg := defaultConfig().withPricingSettings(settings)
+		if _, err = s.savePricingSettingsAndRecalculate(ctx, settings, cfg); err != nil {
+			t.Fatal(err)
+		}
+		assertStoredCosts(t, s, check.want)
+		saved, errLoad := s.loadPricingSettings(ctx, defaultConfig().pricingSettings())
+		if errLoad != nil {
+			t.Fatal(errLoad)
+		}
+		if saved.PricingMode != check.mode {
+			t.Fatalf("saved mode = %q, want %q", saved.PricingMode, check.mode)
+		}
+	}
+}
+
+func TestPricingModeRecalculatesEveryHistoricalCycle(t *testing.T) {
+	ctx := context.Background()
+	s, err := openStore(filepath.Join(t.TempDir(), "pricing-mode-history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	if err = s.upsertPrices(ctx, []price{{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4}}); err != nil {
+		t.Fatal(err)
+	}
+	var cycleIDs []int64
+	for index := 0; index < 2; index++ {
+		start := int64(100 + index*1000)
+		result, errInsert := s.db.Exec(`INSERT INTO quota_cycles(account,started_at,reset_at,window_minutes,ended_at) VALUES(?,?,?,?,?)`, "account", start, start+900, 15, start+900)
+		if errInsert != nil {
+			t.Fatal(errInsert)
+		}
+		cycleID, errID := result.LastInsertId()
+		if errID != nil {
+			t.Fatal(errID)
+		}
+		cycleIDs = append(cycleIDs, cycleID)
+		if _, err = s.db.Exec(`INSERT INTO usage_events(cycle_id,requested_at,account,model,input_tokens,output_tokens,cache_read_tokens,total_tokens,quota_scope) VALUES(?,?,?,?,?,?,?,?,?)`,
+			cycleID, start+100, "account", "gpt-5.6-sol", 1_000_000, 100_000, 500_000, 1_100_000, mainQuotaScope); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.db.Exec(`INSERT INTO quota_samples(cycle_id,sampled_at,account,used_percent,reset_at,window_minutes,window_tokens,window_cost_usd,requests) VALUES(?,?,?,?,?,?,?,?,?)`,
+			cycleID, start+100, "account", 10, start+900, 15, 1_100_000, 99, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, check := range []struct {
+		mode string
+		want float64
+	}{{pricingModeCredits, 143.75}, {pricingModeLegacyAPI, 5.75}, {pricingModeCurrentAPI, 4.2}} {
+		settings := pricingSettings{PricingMode: check.mode}
+		cfg := defaultConfig().withPricingSettings(settings)
+		if _, err = s.savePricingSettingsAndRecalculate(ctx, settings, cfg); err != nil {
+			t.Fatal(err)
+		}
+		for _, cycleID := range cycleIDs {
+			points, _, errPoints := s.pointsForCycle(ctx, "account", cycleID, 10)
+			if errPoints != nil {
+				t.Fatal(errPoints)
+			}
+			if len(points) != 1 || math.Abs(points[0].WindowCostUSD-check.want) > 1e-9 {
+				t.Fatalf("mode=%s cycle=%d points=%#v want value=%f", check.mode, cycleID, points, check.want)
+			}
+		}
+	}
+}

@@ -10,6 +10,86 @@ import (
 	"time"
 )
 
+const (
+	pricingModeCurrentAPI = "current_api"
+	pricingModeLegacyAPI  = "legacy_api"
+	pricingModeCredits    = "credits"
+)
+
+func validPricingMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits:
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizePricingMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case pricingModeLegacyAPI:
+		return pricingModeLegacyAPI
+	case pricingModeCredits:
+		return pricingModeCredits
+	default:
+		return pricingModeCurrentAPI
+	}
+}
+
+func pricingValueUnit(mode string) string {
+	if normalizePricingMode(mode) == pricingModeCredits {
+		return "credits"
+	}
+	return "USD"
+}
+
+func priceForPricingMode(p price, mode string) price {
+	mode = normalizePricingMode(mode)
+	if mode == pricingModeCurrentAPI {
+		return p
+	}
+	// Subscription Credits deliberately derive from the non-promotional
+	// Codex rate card. Temporary purchased-credit/API discounts must never
+	// leak into this mode.
+	base := legacyAPIPrice(p)
+	if mode != pricingModeCredits {
+		return base
+	}
+	base.Input *= 25
+	base.Output *= 25
+	base.CacheRead *= 25
+	base.CacheWrite = 0 // The subscription Credits rate card does not charge cache writes.
+	base.LongInput *= 25
+	base.LongOutput *= 25
+	base.LongRead *= 25
+	base.LongWrite = 0
+	// Credits use the saved Fast multiplier rather than the current API
+	// source-mode prices, which may contain temporary promotional rates.
+	base.FastInput = 0
+	base.FastOutput = 0
+	base.FastRead = 0
+	base.FastWrite = 0
+	return base
+}
+
+func legacyAPIPrice(p price) price {
+	switch normalizeModel(p.Model) {
+	case "gpt-5.6", "gpt-5.6-sol":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = 5, 30, .5, 6.25
+		p.LongInput, p.LongOutput, p.LongRead, p.LongWrite = 10, 45, 1, 12.5
+		p.FastInput, p.FastOutput, p.FastRead, p.FastWrite = 0, 0, 0, 0
+	case "gpt-5.6-terra":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = 2.5, 15, .25, 3.125
+		p.LongInput, p.LongOutput, p.LongRead, p.LongWrite = 5, 22.5, .5, 6.25
+		p.FastInput, p.FastOutput, p.FastRead, p.FastWrite = 0, 0, 0, 0
+	case "gpt-5.6-luna":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = 1, 6, .1, 1.25
+		p.LongInput, p.LongOutput, p.LongRead, p.LongWrite = 2, 9, .2, 2.5
+		p.FastInput, p.FastOutput, p.FastRead, p.FastWrite = 0, 0, 0, 0
+	}
+	return p
+}
+
 type catalogProvider struct {
 	Models map[string]json.RawMessage `json:"models"`
 }
@@ -126,19 +206,20 @@ func decodeCatalog(r io.Reader) ([]price, error) {
 func seedPrices(ctx context.Context, s *store) error {
 	now := time.Now().Unix()
 	return s.upsertPrices(ctx, []price{
-		{Model: "gpt-5.6-sol", Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25, LongInput: 10, LongOutput: 45, LongRead: 1, LongWrite: 12.5, FastInput: 10, FastOutput: 60, FastRead: 1, FastWrite: 12.5, Source: "built-in fallback", UpdatedAt: now},
+		{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5, LongInput: 8, LongOutput: 30, LongRead: .8, LongWrite: 10, FastInput: 8, FastOutput: 40, FastRead: .8, FastWrite: 10, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-luna", Input: .2, Output: 1.2, CacheRead: .02, CacheWrite: .25, LongInput: .4, LongOutput: 1.8, LongRead: .04, LongWrite: .5, FastInput: .4, FastOutput: 2.4, FastRead: .04, FastWrite: .5, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-terra", Input: 2, Output: 12, CacheRead: .2, CacheWrite: 2.5, LongInput: 4, LongOutput: 18, LongRead: .4, LongWrite: 5, FastInput: 4, FastOutput: 24, FastRead: .4, FastWrite: 5, Source: "built-in fallback", UpdatedAt: now},
 	})
 }
 
 func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float64 {
+	p = priceForPricingMode(p, cfg.PricingMode)
 	in, out, read, write := p.Input, p.Output, p.CacheRead, p.CacheWrite
 	if cfg.ApplyLongContextPricing && d.InputTokens > cfg.LongContextThreshold && p.LongInput > 0 {
 		in, out, read, write = p.LongInput, p.LongOutput, p.LongRead, p.LongWrite
 	}
 	if cfg.ApplyFastPricing && isFastTier(serviceTier) {
-		if strings.EqualFold(cfg.FastPricingMode, "source") && p.FastInput > 0 {
+		if normalizePricingMode(cfg.PricingMode) == pricingModeCurrentAPI && strings.EqualFold(cfg.FastPricingMode, "source") && p.FastInput > 0 {
 			in, out, read, write = p.FastInput, p.FastOutput, p.FastRead, p.FastWrite
 		} else {
 			in *= cfg.FastMultiplier
@@ -147,10 +228,7 @@ func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float
 			write *= cfg.FastMultiplier
 		}
 	}
-	cacheRead := d.CacheReadTokens
-	if d.CachedTokens > cacheRead {
-		cacheRead = d.CachedTokens
-	}
+	cacheRead := max(d.CacheReadTokens, d.CachedTokens)
 	cacheWrite := d.CacheCreationTokens
 	uncached := d.InputTokens - cacheRead - cacheWrite
 	if uncached < 0 {
