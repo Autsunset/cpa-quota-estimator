@@ -13,18 +13,30 @@
 [![Release](https://img.shields.io/github/v/release/Autsunset/cpa-quota-estimator)](https://github.com/Autsunset/cpa-quota-estimator/releases)
 [![License](https://img.shields.io/github/license/Autsunset/cpa-quota-estimator)](LICENSE)
 
-A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugin that records actual Codex quota cycles, maps quota changes to estimated Token and USD-equivalent capacity, and summarizes usage across scheduled or early official resets.
+A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) quota-observability and capacity-forecasting plugin for Codex. It passively records real traffic flowing through CPA, can combine configured OAuth credentials and sampled accounts in one operational overview, separates 5-hour, weekly, and Spark quota scopes, and translates quota percentage changes into estimated Token capacity and pricing-value equivalents under the selected valuation basis.
 
-> OpenAI does not publish a fixed Token or USD value for the Codex weekly quota. The estimates shown here are workload-equivalent capacity estimates, not official plan face values.
+The dashboard answers the operational questions that raw quota percentages do not: **Which account is closest to exhaustion? When will it run out? How much work is the remaining quota worth for the current request mix? What happened across previous resets and calendar months?**
+
+> The plugin never sends probe or model requests. OpenAI does not publish a fixed Token capacity for Codex quota windows; Token, USD, and Credits figures shown here are workload-equivalent estimates derived from observed requests, not official plan face values.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Autsunset/cpa-quota-estimator/main/docs/images/dashboard-en.png" alt="Quota Estimator dashboard (English)" width="720">
+  <img src="https://raw.githubusercontent.com/Autsunset/cpa-quota-estimator/main/docs/images/dashboard-en.png" alt="Quota Estimator per-account forecast dashboard (English)" width="720">
 </p>
 
-## Features
+## At a glance
 
+- **All accounts in one view:** merge recorded accounts with the configured Codex OAuth inventory when available, including accounts awaiting their first sample and credentials that are disabled or unavailable. The table supports per-column filters, type-aware sorting, persisted resizing, and keyboard controls.
+- **Independent quota scopes:** automatically separate a detected 5-hour Primary quota from its weekly Secondary quota, while keeping `gpt-5.3-codex-spark` usage in a completely independent ledger.
+- **Capacity in practical units:** estimate full-cycle and remaining capacity in Tokens and the selected pricing basis—current API prices, pre-discount API prices, or subscription Credits—with uncertainty ranges and confidence levels.
+- **Actionable forecasts:** compare actual usage with a sustainable baseline, cumulative-average pace, and recent pace to estimate exhaustion time and whether a quota will survive until reset.
+- **History that survives resets:** retain confirmed cycles, cross-cycle charts, calendar-month reports, quota-consumption equivalents, reset counts, and unused quota at reset.
+- **Passive and private by design:** consume no extra quota, store no prompts or response bodies, and keep retained usage metadata in a local SQLite database.
+
+## Detailed features
+
+- Provides an all-account quota overview with current remaining quota, reset state, requests, Tokens, pricing value, full-cycle capacity, confidence, and burn forecast. For detected dual-quota accounts, the same row shows both 5-hour and weekly status; selecting a sampled row opens the existing detailed forecast.
 - Listens to CPA's native `usage.handle`; it does not send probe requests or consume additional quota.
-- Persists Token counts, model, `service_tier`, estimated cost, and `X-Codex-Primary-*` quota metadata in a private SQLite database.
+- Persists Token counts, model, `service_tier`, selected-basis pricing value, and `X-Codex-Primary-*` quota metadata in a private SQLite database.
 - Syncs OpenAI model pricing from `https://models.dev/catalog.json` by default.
 - Accounts for cached reads/writes, output Tokens, and the context pricing tier above 272K input Tokens.
 - Provides three persistent pricing bases: current API prices, pre-discount API prices, and subscription Credits. Subscription Credits deliberately use the non-promotional Codex rate card (`pre-discount price × 25`) and never use temporary API/purchased-credit discounts. Saving a basis or surcharge switch transactionally recalculates every retained request, current and historical quota-cycle sample, monthly total, and pricing-value-equivalent capacity estimate; switching back always recalculates from raw Token fields.
@@ -34,8 +46,8 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 - Estimates full-cycle and remaining-quota Token/pricing-value-equivalent capacity with interquartile ranges and confidence levels, and converts the selected cycle’s remaining value into per-model uncached-input, output, and cache-hit Token allowances.
 - Shows actual quota usage, a sustainable baseline, cumulative-average projection, recent-rate projection, predicted exhaustion, planned reset time, and countdown.
 - Maintains an independent ledger for every confirmed quota cycle. Historical cycles remain available in the selector after a reset.
-- Treats `gpt-5.3-codex-spark` headers as a separate quota scope and cycle. Spark actual Tokens, requests, cost, quota equivalents, cycle capacity, and monthly summaries are all accounted for separately; they never create, split, estimate, or add to the primary quota. An optional switch at the top of the dashboard displays the complete Spark statistics below all primary-quota content.
-- When—and only when—the latest primary quota window is detected as approximately 5 hours and valid `X-Codex-Secondary-*` headers are present, treats the primary window as the independent 5-hour quota and the Secondary window as the independent weekly quota. Each gets its own percentage trajectory, reset cycles, Token/USD-equivalent capacity, monthly quota equivalents, and dashboard section. Accounts without a detected 5-hour primary window, including weekly-only Pro accounts, keep the existing single-window behavior and never expose or calculate this secondary weekly section.
+- Treats `gpt-5.3-codex-spark` headers as a separate quota scope and cycle. Spark actual Tokens, requests, pricing value, quota equivalents, cycle capacity, and monthly summaries are all accounted for separately; they never create, split, estimate, or add to the primary quota. An optional switch at the top of the dashboard displays the complete Spark statistics below all primary-quota content.
+- When—and only when—the latest primary quota window is detected as approximately 5 hours and valid `X-Codex-Secondary-*` headers are present, treats the primary window as the independent 5-hour quota and the Secondary window as the independent weekly quota. Each gets its own percentage trajectory, reset cycles, Token/pricing-value-equivalent capacity, monthly quota equivalents, and dashboard section. Accounts without a detected 5-hour primary window, including weekly-only Pro accounts, keep the existing single-window behavior and never expose or calculate this secondary weekly section.
 - Orders quota headers by their response observation time, confirms scheduled transitions with two consistent successful observations, and confirms same-`reset_at` early resets only after three stable successful low-usage observations spanning at least 60 seconds.
 - Handles exhausted 5-hour primary windows whose `reset_at` advances before the percentage falls: the expired cycle is closed immediately, carried-over 100% readings are quarantined until a fresh percentage arrives, and already-contaminated open cycles are repaired from retained raw observations as soon as the next fresh percentage arrives.
 - Provides an explicit preview/apply repair API for historical false early-reset chains. It preserves raw usage rows and leaves confirmed normal cycles unchanged.
@@ -52,7 +64,7 @@ For adjacent quota-growth samples in the same quota cycle:
 
 ```text
 Token-equivalent full-cycle capacity = ΔToken × 100 / Δquota_percent
-USD-equivalent full-cycle capacity   = Δcost × 100 / Δquota_percent
+Pricing-value full-cycle capacity    = Δpricing_value × 100 / Δquota_percent
 ```
 
 The dashboard uses the median of valid intervals and reports P25–P75 as the uncertainty range. Because quota response headers are usually integer percentages, early estimates can vary significantly and become more stable as percentage coverage increases.
@@ -74,11 +86,11 @@ The green line is the pace that reaches exactly 100% at reset. Purple is the cum
 
 Quota evidence is ordered by when its response headers were observed: request time plus TTFT for streaming requests, or total latency when TTFT is unavailable. Actual Tokens and monthly request attribution continue to use the original request timestamp.
 
-Spark has a model-specific quota scope and reset schedule that are independent of the primary Codex allowance. Spark requests are excluded from the primary monthly actual Tokens, requests, estimated cost, cycle ledger, charts, consumed-quota equivalent, and capacity estimates. If Spark's planned reset time is corrected before the old boundary while usage continues to rise, the plugin updates the current Spark cycle instead of creating overlapping cycles or counting the same requests twice. The dashboard hides Spark quota by default; enable **Show Spark quota** at the top to display, below all primary-quota content, the latest Spark cycle curve, full-cycle and remaining Token/USD-equivalent capacity, sample quality, monthly summary, and cycle details. Every Spark figure is calculated only from Spark headers and Spark requests. The plugin does not actively poll upstream quota, and the dashboard's **Refresh** button only reloads stored observations. If a scheduled Spark reset passes without another Spark request, the expired cycle is closed at its scheduled boundary and the current window/next reset are projected from the prior schedule. Current usage remains **Awaiting sample** until a successful Spark request returns fresh headers; two consistent successful observations are still required to confirm the new scheduled window.
+Spark has a model-specific quota scope and reset schedule that are independent of the primary Codex allowance. Spark requests are excluded from the primary monthly actual Tokens, requests, pricing value, cycle ledger, charts, consumed-quota equivalent, and capacity estimates. If Spark's planned reset time is corrected before the old boundary while usage continues to rise, the plugin updates the current Spark cycle instead of creating overlapping cycles or counting the same requests twice. The dashboard hides Spark quota by default; enable **Show Spark quota** at the top to display, below all primary-quota content, the latest Spark cycle curve, full-cycle and remaining Token/pricing-value-equivalent capacity, sample quality, monthly summary, and cycle details. Every Spark figure is calculated only from Spark headers and Spark requests. The plugin does not actively poll upstream quota, and the dashboard's **Refresh** button only reloads stored observations. If a scheduled Spark reset passes without another Spark request, the expired cycle is closed at its scheduled boundary and the current window/next reset are projected from the prior schedule. Current usage remains **Awaiting sample** until a successful Spark request returns fresh headers; two consistent successful observations are still required to confirm the new scheduled window.
 
 Calendar-month totals use Asia/Shanghai boundaries:
 
-- actual Tokens and requests are assigned by request timestamp; request cost is estimated from models.dev pricing and assigned by the same timestamp;
+- actual Tokens and requests are assigned by request timestamp; request pricing value uses the active valuation basis and is assigned by the same timestamp;
 - quota-consumption equivalent is the sum of observed percentage growth attributable to the month, so multiple cycles can exceed `100%` or `1.00×`;
 - reset counts and unconsumed quota include confirmed scheduled, early, and migrated historical resets;
 - estimated monthly capacity sums the median full-cycle estimates for cycles that start in the selected month. It remains a workload-equivalent estimate rather than an official allowance;
@@ -88,7 +100,7 @@ Calendar-month totals use Asia/Shanghai boundaries:
 
 ### CPA plugin marketplace
 
-After this plugin is accepted into the official registry, install it from **Plugin Management** in the CPA management center.
+Install the latest release directly from **Plugin Management** in the CPA management center. The marketplace follows this repository’s latest compatible GitHub Release.
 
 ### Manual installation
 
@@ -136,18 +148,18 @@ Open **额度容量预测 / Quota Estimator** from CPAMP. The dashboard first tr
 
 Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history. Upgrading does not generally rewrite historical cycles; the sole automatic boundary repair is the targeted exhausted-5-hour carry-over fix, which runs only when the next fresh primary percentage proves that an open cycle spans an expired reset. Saving the dashboard pricing switches intentionally recalculates historical pricing values and derived capacity estimates, but does not alter Token counts or other quota-cycle boundaries. Historical false early resets are changed only through the explicit repair POST described below. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
 
-## Token and cost rules
+## Token and pricing-value rules
 
-The Token charts use input + output Tokens. Cached Tokens are normally included in input Tokens and are therefore not added again. Cost calculation still applies cache pricing independently:
+The Token charts use input + output Tokens. Cached Tokens are normally included in input Tokens and are therefore not added again. Pricing-value calculation still applies cache rates independently:
 
 ```text
 cached read   = max(CacheReadTokens, CachedTokens)
 uncached input = max(InputTokens - cached read - cached write, 0)
 
-cost = uncached input × input price
-     + cached read × cache-read price
-     + cached write × cache-write price
-     + output × output price
+pricing value = uncached input × input rate
+              + cached read × cache-read rate
+              + cached write × cache-write rate
+              + output × output rate
 ```
 
 The active rate is per one million Tokens and is denominated in either USD or subscription Credits. `ReasoningTokens` are already included in output Tokens and are not charged twice. Requests whose recorded `service_tier` is `priority` or `fast` use the configured Fast policy; `auto` and `default` remain at 1×. The long-context tier is selected when `InputTokens > long_context_threshold` (272,000 by default).
@@ -208,7 +220,7 @@ make package VERSION=0.8.0
 
 ## Privacy
 
-The SQLite database contains credential identifiers, model names, Token counts, estimated costs, failure status, and quota metadata. It does **not** store prompts, request bodies, or response bodies. The default retention period is 365 days.
+The SQLite database contains credential identifiers, model names, Token counts, selected-basis pricing values, failure status, and quota metadata. It does **not** store prompts, request bodies, or response bodies. The default retention period is 365 days.
 
 ## Optional CPAMP authentication bridge
 
