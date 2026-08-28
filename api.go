@@ -34,6 +34,26 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	switch {
+	case strings.HasSuffix(req.Path, "/overview"):
+		accounts, err := a.store.accounts(ctx)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		items := make([]accountOverview, 0, len(accounts))
+		now := time.Now().Unix()
+		for _, account := range accounts {
+			item, errOverview := a.buildAccountOverview(ctx, account, now)
+			if errOverview != nil {
+				return textResponse(500, errOverview.Error())
+			}
+			items = append(items, item)
+		}
+		return jsonResponse(200, overviewResponse{
+			PluginVersion: pluginVersion,
+			PricingMode:   normalizePricingMode(a.cfg.PricingMode),
+			ValueUnit:     pricingValueUnit(a.cfg.PricingMode),
+			Accounts:      items,
+		})
 	case strings.HasSuffix(req.Path, "/summary"):
 		account := req.Query.Get("account")
 		accounts, err := a.store.accounts(ctx)
@@ -78,8 +98,12 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			resp["remaining_by_model"] = allowances
 			resp["burn_forecast"] = estimateBurn(points, forecastReference(points, isCurrent))
 			if len(points) > 0 {
-				resp["latest"] = points[len(points)-1]
+				latest := points[len(points)-1]
+				resp["latest"] = latest
+				resp["remaining_percent"], resp["quota_status"] = quotaSnapshotState(latest, time.Now().Unix())
 				resp["window_start"] = selected.StartedAt
+			} else if selected.ScheduleInferred {
+				resp["quota_status"] = "awaiting_refresh"
 			}
 		}
 		return jsonResponse(200, resp)
@@ -245,6 +269,88 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	}
 }
 
+func (a *app) buildAccountOverview(ctx context.Context, account string, now int64) (accountOverview, error) {
+	item := accountOverview{Account: account}
+	cycles, err := a.store.cycles(ctx, account, 1)
+	if err != nil || len(cycles) == 0 {
+		return item, err
+	}
+
+	selected := cycles[0]
+	points, plan, err := a.store.pointsForCycle(ctx, account, selected.ID, 5000)
+	if err != nil && err != sql.ErrNoRows {
+		return item, err
+	}
+	item.PlanType = plan
+	item.SelectedCycleID = selected.ID
+	item.WindowStart = selected.StartedAt
+	item.ResetAt = selected.ResetAt
+	item.WindowMinutes = selected.WindowMinutes
+	item.IsCurrent = selected.Current
+	item.ScheduleInferred = selected.ScheduleInferred
+	item.Estimate = estimateCapacity(points)
+	item.BurnForecast = estimateBurn(points, forecastReference(points, selected.Current))
+	if len(points) > 0 {
+		latest := points[len(points)-1]
+		item.RemainingPercent, item.QuotaStatus = quotaSnapshotState(latest, now)
+		item.Latest = &latest
+	} else if selected.ScheduleInferred || selected.ResetAt > 0 && now >= selected.ResetAt {
+		item.QuotaStatus = "awaiting_refresh"
+	}
+
+	hasWeeklyQuota, err := a.store.hasFiveHourWeeklyQuota(ctx, account)
+	if err != nil {
+		return item, err
+	}
+	item.FiveHourQuotaDetected = hasWeeklyQuota
+	if !hasWeeklyQuota {
+		return item, nil
+	}
+
+	weekly, err := a.store.latestQuotaScopeSeriesAt(ctx, account, weeklyQuotaScope, 5000, now)
+	if err != nil {
+		return item, err
+	}
+	item.WeeklyQuota = weeklyOverview(weekly, now)
+	if item.PlanType == "" {
+		item.PlanType = weekly.PlanType
+	}
+	return item, nil
+}
+
+func weeklyOverview(series scopedQuotaSeries, now int64) *accountQuotaOverview {
+	overview := &accountQuotaOverview{
+		Scope:            weeklyQuotaScope,
+		WindowStart:      series.StartedAt,
+		ResetAt:          series.ResetAt,
+		WindowMinutes:    series.WindowMinutes,
+		ScheduleInferred: series.ScheduleInferred,
+		Estimate:         series.Estimate,
+	}
+	points := make([]quotaPoint, 0, len(series.Points))
+	for _, point := range series.Points {
+		points = append(points, quotaPoint{
+			CycleStart:    series.StartedAt,
+			Time:          point.Time,
+			UsedPercent:   point.UsedPercent,
+			ResetAt:       point.ResetAt,
+			WindowMinutes: point.WindowMinutes,
+			WindowTokens:  point.WindowTokens,
+			WindowCostUSD: point.WindowCostUSD,
+			Requests:      point.Requests,
+		})
+	}
+	overview.BurnForecast = estimateBurn(points, now)
+	if len(series.Points) > 0 {
+		latest := series.Points[len(series.Points)-1]
+		overview.RemainingPercent, overview.QuotaStatus = quotaState(latest.UsedPercent, latest.ResetAt, now)
+		overview.Latest = &latest
+	} else if series.ScheduleInferred || series.ResetAt > 0 && now >= series.ResetAt {
+		overview.QuotaStatus = "awaiting_refresh"
+	}
+	return overview
+}
+
 func selectCycle(cycles []quotaCycle, rawCycleID, rawResetAt string) (quotaCycle, bool) {
 	if len(cycles) == 0 {
 		return quotaCycle{}, false
@@ -278,6 +384,22 @@ func forecastReference(points []quotaPoint, isCurrent bool) int64 {
 		return time.Now().Unix()
 	}
 	return points[len(points)-1].Time
+}
+
+func quotaSnapshotState(point quotaPoint, now int64) (float64, string) {
+	return quotaState(point.UsedPercent, point.ResetAt, now)
+}
+
+func quotaState(usedPercent float64, resetAt, now int64) (float64, string) {
+	used := max(float64(0), min(float64(100), usedPercent))
+	remaining := 100 - used
+	if remaining <= 0.5 {
+		return remaining, "exhausted"
+	}
+	if resetAt > 0 && now >= resetAt {
+		return remaining, "awaiting_refresh"
+	}
+	return remaining, "active"
 }
 
 func pricingSettingsResponse(cfg config, recalculated int64) map[string]any {

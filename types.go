@@ -300,6 +300,44 @@ type burnForecast struct {
 	Status                   string  `json:"status"`
 }
 
+type accountQuotaOverview struct {
+	Scope            string            `json:"scope"`
+	WindowStart      int64             `json:"window_start,omitempty"`
+	ResetAt          int64             `json:"reset_at,omitempty"`
+	WindowMinutes    int64             `json:"window_minutes,omitempty"`
+	ScheduleInferred bool              `json:"schedule_inferred,omitempty"`
+	RemainingPercent float64           `json:"remaining_percent"`
+	QuotaStatus      string            `json:"quota_status"`
+	Latest           *scopedQuotaPoint `json:"latest,omitempty"`
+	Estimate         estimate          `json:"estimate"`
+	BurnForecast     burnForecast      `json:"burn_forecast"`
+}
+
+type accountOverview struct {
+	Account               string                `json:"account"`
+	PlanType              string                `json:"plan_type"`
+	SelectedCycleID       int64                 `json:"selected_cycle_id,omitempty"`
+	WindowStart           int64                 `json:"window_start,omitempty"`
+	ResetAt               int64                 `json:"reset_at,omitempty"`
+	WindowMinutes         int64                 `json:"window_minutes,omitempty"`
+	IsCurrent             bool                  `json:"is_current"`
+	ScheduleInferred      bool                  `json:"schedule_inferred,omitempty"`
+	RemainingPercent      float64               `json:"remaining_percent"`
+	QuotaStatus           string                `json:"quota_status"`
+	Latest                *quotaPoint           `json:"latest,omitempty"`
+	Estimate              estimate              `json:"estimate"`
+	BurnForecast          burnForecast          `json:"burn_forecast"`
+	FiveHourQuotaDetected bool                  `json:"five_hour_quota_detected"`
+	WeeklyQuota           *accountQuotaOverview `json:"weekly_quota,omitempty"`
+}
+
+type overviewResponse struct {
+	PluginVersion string            `json:"plugin_version"`
+	PricingMode   string            `json:"pricing_mode"`
+	ValueUnit     string            `json:"value_unit"`
+	Accounts      []accountOverview `json:"accounts"`
+}
+
 type monthlyCycle struct {
 	quotaCycle
 	MonthTokens       int64   `json:"month_tokens"`

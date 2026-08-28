@@ -8,20 +8,25 @@
 :root.theme-light,:root[data-theme="white"]{color-scheme:light;--bg:#eff2f7;--glow:#dceaff;--panel-start:rgba(255,255,255,.99);--panel-end:rgba(248,250,253,.99);--control:#fff;--line:rgba(15,23,42,.1);--grid:#dce2ea;--text:#263445;--muted:#718096;--primary-bg:#3578e5;--primary-text:#fff;--login-bg:#fff;--overlay:rgba(225,231,240,.84);--green:#1f9d61;--blue:#3478e5;--amber:#c57a12;--purple:#7957c7;--red:#dc4c55}
 @media(prefers-color-scheme:light){:root:not(.theme-dark){color-scheme:light;--bg:#eff2f7;--glow:#dceaff;--panel-start:rgba(255,255,255,.99);--panel-end:rgba(248,250,253,.99);--control:#fff;--line:rgba(15,23,42,.1);--grid:#dce2ea;--text:#263445;--muted:#718096;--primary-bg:#3578e5;--primary-text:#fff;--login-bg:#fff;--overlay:rgba(225,231,240,.84);--green:#1f9d61;--blue:#3478e5;--amber:#c57a12;--purple:#7957c7;--red:#dc4c55}}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% -10%,var(--glow) 0,transparent 35%),var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"PingFang SC",sans-serif}.wrap{max-width:1380px;margin:auto;padding:28px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}h1{font-size:24px;margin:0}h1 span{display:block;font-size:13px;color:var(--muted);font-weight:400;margin-top:3px}.actions{display:flex;gap:10px;align-items:center}button,select,input{border:1px solid var(--line);background:var(--control);color:var(--text);border-radius:9px;padding:9px 12px}button{cursor:pointer}button:hover{border-color:var(--blue)}.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-bg);font-weight:650}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}.card,.chart{background:linear-gradient(150deg,var(--panel-start),var(--panel-end));border:1px solid var(--line);border-radius:14px}.card{padding:17px;min-height:124px}.label{color:var(--muted);font-size:12px}.value{font-size:29px;letter-spacing:-.8px;font-weight:680;margin:6px 0}.sub{color:var(--muted);font-size:12px}.good{color:var(--green)}.warn{color:var(--amber)}.charts{display:grid;grid-template-columns:2fr 1fr;gap:13px;margin-top:13px}.chart{padding:18px}.chart h2{font-size:14px;margin:0 0 14px}.chart svg{display:block;width:100%;height:300px;overflow:visible}#curve svg{height:520px}.capacity-history{margin-top:13px}#capacityCurve svg{height:390px}.legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:8px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}.details{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:13px}.rows{padding:5px 18px}.row{display:flex;justify-content:space-between;gap:20px;padding:12px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}.row span:first-child{color:var(--muted)}.note{margin-top:13px;color:var(--muted);border:1px dashed var(--line);padding:12px 15px;border-radius:11px}.empty{height:300px;display:grid;place-items:center;color:var(--muted)}.login{position:fixed;inset:0;display:none;place-items:center;background:var(--overlay);backdrop-filter:blur(12px);z-index:9}.login.show{display:grid}.loginbox{width:min(420px,calc(100vw - 32px));background:var(--login-bg);border:1px solid var(--line);border-radius:16px;padding:24px}.loginbox h2{margin-top:0}.loginbox input{width:100%;margin:8px 0 12px}.error{color:var(--red);min-height:21px;font-size:12px}@media(max-width:900px){.top{align-items:flex-start;flex-direction:column}.actions{width:100%;flex-wrap:wrap}.grid{grid-template-columns:1fr 1fr}.charts,.details{grid-template-columns:1fr}.wrap{padding:16px}}@media(max-width:600px){.wrap{padding:10px}.top{gap:12px;margin-bottom:14px}h1{font-size:20px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.actions>#account,.actions>#period,.actions>#language{grid-column:1/-1;width:100%}.actions button{width:100%}.grid{gap:8px}.card{padding:12px;min-height:105px}.value{font-size:22px}.charts{gap:8px;margin-top:8px}.chart{padding:12px}.capacity-history,.details,.note{margin-top:8px}#curve,#capacityCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#curve svg{height:440px;min-width:720px}#capacityCurve svg{height:340px;min-width:760px}.legend{gap:8px 14px}.row{font-size:12px;gap:8px}.row b{text-align:right}}@media(max-width:370px){.grid{grid-template-columns:1fr}.actions{grid-template-columns:1fr}.actions>*{grid-column:1!important}}
-.pace-section{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:13px;margin-top:13px}.pace-chart{min-width:0}.pace-stats{padding:5px 18px}.pace-stats .row b{max-width:62%;text-align:right}.pace-status{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;background:color-mix(in srgb,var(--green) 15%,transparent);color:var(--green)}.pace-status.fast{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}.pace-status.slow{background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue)}#paceCurve svg{height:360px}@media(max-width:900px){.pace-section{grid-template-columns:1fr}}@media(max-width:600px){.pace-section{gap:8px;margin-top:8px}.pace-chart{padding:12px}#paceCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#paceCurve svg{height:320px;min-width:760px}.pace-stats{padding:4px 12px}}
+.pace-section{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:13px;margin-top:13px}.pace-chart{min-width:0}.pace-stats{padding:5px 18px}.pace-stats .row b{max-width:62%;text-align:right}.pace-status{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;background:color-mix(in srgb,var(--green) 15%,transparent);color:var(--green)}.pace-status.fast{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}.pace-status.slow{background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue)}.pace-status.exhausted{background:color-mix(in srgb,var(--red) 15%,transparent);color:var(--red)}#paceCurve svg{height:360px}@media(max-width:900px){.pace-section{grid-template-columns:1fr}}@media(max-width:600px){.pace-section{gap:8px;margin-top:8px}.pace-chart{padding:12px}#paceCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#paceCurve svg{height:320px;min-width:760px}.pace-stats{padding:4px 12px}}
 .charts>.chart{min-width:0}#capacity svg{height:245px}.capacity-bar{height:7px;border-radius:999px;background:var(--grid);overflow:hidden;margin:0 2px 14px}.capacity-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--green),var(--blue))}.capacity-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}.capacity-item{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:10px;padding:9px 10px}.capacity-item span{display:block;color:var(--muted);font-size:11px}.capacity-item b{display:block;margin-top:3px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(max-width:600px){#capacity svg{height:220px}.capacity-meta{gap:6px}.capacity-item{padding:8px}.capacity-item b{font-size:14px}}
 .model-allowances{margin-top:13px}.allowance-table{min-width:1060px}.monthly{margin-top:13px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.section-head h2{margin-bottom:3px}.section-head select{min-width:130px}.monthly-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.monthly-item{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:11px;padding:11px 12px}.monthly-item span{display:block;color:var(--muted);font-size:11px}.monthly-item b{display:block;margin-top:4px;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.monthly-item small{display:block;color:var(--muted);font-size:10px;margin-top:2px;min-height:15px}.coverage-note{color:var(--muted);font-size:11px;margin:10px 1px}.cycle-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}.cycle-table{width:100%;border-collapse:collapse;min-width:900px}.cycle-table th,.cycle-table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.cycle-table th{color:var(--muted);font-size:11px;font-weight:550;background:color-mix(in srgb,var(--control) 70%,transparent)}.cycle-table td{font-size:12px}.cycle-table tr:last-child td{border-bottom:0}.cycle-state{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:10px;background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue)}.cycle-state.early{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}.cycle-state.closed{background:color-mix(in srgb,var(--muted) 13%,transparent);color:var(--muted)}@media(max-width:900px){.monthly-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.monthly{margin-top:8px}.section-head{align-items:stretch;flex-direction:column}.section-head select{width:100%}.monthly-grid{gap:6px}.monthly-item{padding:9px}.monthly-item b{font-size:16px}}
 .loginbox .remember-key{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;cursor:pointer;margin-bottom:8px}.loginbox .remember-key input{width:16px;height:16px;margin:0;padding:0;flex:0 0 auto;accent-color:var(--blue)}
 .chart-range{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 13px;color:var(--muted);font-size:12px}.chart-range input{min-width:185px}.chart-range .error{min-height:0;margin-left:4px}@media(max-width:760px){.chart-range{align-items:stretch;display:grid;grid-template-columns:auto 1fr}.chart-range input{min-width:0;width:100%}.chart-range button{grid-column:2}.chart-range .error{grid-column:1/-1;margin:0}}
 .pricing-settings{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:-9px 0 13px;padding:12px 14px;background:color-mix(in srgb,var(--control) 62%,transparent);border:1px solid var(--line);border-radius:12px}.pricing-settings-copy{display:flex;flex-direction:column;gap:2px;min-width:210px}.pricing-settings-copy span,.pricing-save-status{color:var(--muted);font-size:12px}.pricing-controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.pricing-mode-control{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--control);border-radius:9px;padding:4px 6px 4px 11px;font-weight:600;white-space:nowrap}.pricing-mode-control span{color:var(--muted);font-size:11px}.pricing-mode-control select{border:0;padding:4px 6px;background:transparent}.pricing-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--line);background:var(--control);border-radius:9px;padding:8px 11px;font-weight:600;white-space:nowrap}.pricing-toggle:hover{border-color:var(--blue)}.pricing-toggle input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--blue)}.pricing-save-status{min-width:120px}@media(max-width:900px){.pricing-settings{align-items:flex-start;flex-direction:column}.pricing-controls{justify-content:flex-start;width:100%}}@media(max-width:600px){.pricing-settings{margin-top:-3px;padding:11px}.pricing-controls{display:grid;grid-template-columns:1fr;width:100%}.pricing-toggle{justify-content:flex-start}.pricing-controls button{width:100%}.pricing-save-status{min-width:0}}
 .spark-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:var(--text)}.spark-toggle input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--purple)}.spark-toggle-top{border:1px solid color-mix(in srgb,var(--purple) 55%,var(--line));background:color-mix(in srgb,var(--purple) 11%,var(--control));border-radius:9px;padding:8px 11px;font-weight:600;white-space:nowrap}.spark-toggle-top:hover{border-color:var(--purple)}.spark-section{margin-top:18px;padding-top:18px;border-top:2px solid color-mix(in srgb,var(--purple) 52%,var(--line))}.spark-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:10px}.spark-section-head h2{font-size:18px;margin:0 0 3px}.spark-quota{margin-top:9px}.spark-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.spark-stats{display:grid;grid-template-columns:repeat(4,minmax(118px,1fr));gap:9px;margin-top:14px}.spark-stat{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:10px;padding:8px 10px}.spark-stat span{display:block;color:var(--muted);font-size:10px}.spark-stat b{display:block;margin-top:2px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#sparkCurve svg,#weeklyCurve svg{height:500px}.weekly-section{border-top-color:color-mix(in srgb,var(--blue) 52%,var(--line))}@media(max-width:900px){.spark-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.spark-section-head,.spark-head{flex-direction:column}#sparkCurve,#weeklyCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#sparkCurve svg,#weeklyCurve svg{height:440px;min-width:760px}}@media(max-width:600px){.actions>.spark-toggle-top{grid-column:1/-1;justify-content:center;width:100%}}
+.overview{margin-bottom:13px}.overview .section-head{align-items:center;margin-bottom:12px}.overview .section-head h2{margin:0 0 3px}.overview-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.overview-head-actions button{padding:7px 10px;font-size:12px}.overview-toggle{display:inline-flex;align-items:center;gap:6px}.overview-toggle-icon{width:14px;height:14px;transition:transform .18s ease}.overview-toggle.collapsed .overview-toggle-icon{transform:rotate(180deg)}.overview-body[hidden]{display:none}.overview-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}.overview-table{width:1855px;min-width:100%;table-layout:fixed;border-collapse:collapse}.overview-table th,.overview-table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.overview-table th{color:var(--muted);font-size:11px;font-weight:550;background:color-mix(in srgb,var(--control) 70%,transparent)}.overview-heading-row th{position:relative;padding-right:18px}.overview-sort{display:inline-flex;align-items:center;gap:5px;max-width:100%;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;font-weight:650;padding:2px 0}.overview-sort span{overflow:hidden;text-overflow:ellipsis}.overview-sort:hover,.overview-sort:focus-visible{border:0;color:var(--blue);outline:0}.overview-sort-indicator{display:inline-block;min-width:12px;color:var(--muted);font-style:normal}.overview-sort.active .overview-sort-indicator{color:var(--blue)}.overview-column-resizer{position:absolute;z-index:2;top:0;right:-5px;width:11px;height:100%;cursor:col-resize;touch-action:none;user-select:none}.overview-column-resizer::after{content:"";position:absolute;top:20%;bottom:20%;left:5px;width:1px;background:var(--line);transition:background .12s,box-shadow .12s}.overview-column-resizer:hover::after,.overview-column-resizer:focus-visible::after,.overview-column-resizer.dragging::after{background:var(--blue);box-shadow:0 0 0 1px color-mix(in srgb,var(--blue) 28%,transparent)}.overview-column-resizer:focus-visible{outline:0}.overview-column-resizing,.overview-column-resizing *{cursor:col-resize!important;user-select:none!important}.overview-filter-row th{padding:7px 6px;background:color-mix(in srgb,var(--control) 48%,transparent)}.overview-filter{width:100%;min-width:88px;border-radius:7px;padding:6px 7px;font-size:11px}.overview-filter[data-overview-filter="account"]{min-width:230px}.overview-filter[data-overview-filter="capacity"],.overview-filter[data-overview-filter="forecast"]{min-width:150px}.overview-table td{font-size:12px;overflow:hidden;text-overflow:ellipsis}.overview-table td.scope-cell{white-space:pre-line;line-height:1.55}.overview-table tbody tr.inactive{opacity:.72}.overview-table tbody tr.sampled{cursor:pointer}.overview-table tbody tr.sampled:hover,.overview-table tbody tr.sampled:focus{outline:0;background:color-mix(in srgb,var(--blue) 8%,transparent)}.overview-table tbody tr.selected{background:color-mix(in srgb,var(--blue) 13%,transparent)}.overview-table tbody tr.unsampled{color:var(--muted)}.overview-table tr:last-child td{border-bottom:0}.overview-table .account-cell{overflow:hidden;text-overflow:ellipsis}.overview-table .capacity-cell span,.overview-table .capacity-cell small{display:block;overflow:hidden;text-overflow:ellipsis}.overview-table .capacity-cell small{color:var(--muted)}.overview-table .empty-cell{text-align:center;color:var(--muted);cursor:default;padding:24px}.overview-table .status-fast{color:var(--amber)}.overview-table .status-ok{color:var(--green)}.overview-table .status-exhausted{color:var(--red);font-weight:650}.overview-table .status-waiting{color:var(--muted)}.bad{color:var(--red)}@media(max-width:600px){.overview{margin-bottom:8px}.overview .section-head{align-items:stretch}.overview-head-actions{justify-content:flex-start}.overview-head-actions #overviewCount{flex-basis:100%}.overview-table th,.overview-table td{padding:9px 10px}}
+.overview .overview-toggle-icon{width:14px;height:14px;flex:0 0 14px}
+.overview .overview-filter{min-width:0}
+
 </style>
 </head>
 <body><main class="wrap">
 <div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与所选计价口径的等效容量</span></h1><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="预测周期"><option value="">当前预测</option></select><select id="language" aria-label="界面语言"></select><label class="spark-toggle spark-toggle-top"><input id="showSpark" type="checkbox"><span>显示 Spark 额度</span></label><button id="sync">同步价格</button><button id="refresh" class="primary">刷新</button></div></div>
 <section class="pricing-settings"><div class="pricing-settings-copy"><b>费用计算规则</b><span>默认使用当前 API 价格；可切换优惠前价格或订阅无优惠 Credits，保存后重算全部历史周期</span></div><div class="pricing-controls"><label class="pricing-mode-control"><span>计价方式</span><select id="pricingMode" aria-label="计价方式"></select></label><label class="pricing-toggle"><input id="applyLongContextPricing" type="checkbox"><span id="longContextPricingLabel">&gt;272K 长上下文加价</span></label><label class="pricing-toggle"><input id="applyFastPricing" type="checkbox" checked><span id="fastPricingLabel">Fast 加价（2.5×）</span></label><button id="savePricingSettings" class="primary">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" aria-live="polite"></span></div></section>
+<section class="chart overview"><div class="section-head"><div><h2>全部账号额度概览</h2><div class="sub">合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；点击有样本的账号查看详情</div></div><div class="overview-head-actions"><span class="sub" id="overviewCount">—</span><button id="overviewClearFilters" type="button">清除筛选</button><button id="overviewToggle" type="button" aria-expanded="true" aria-controls="overviewBody">折叠概览</button></div></div><div class="overview-body" id="overviewBody"><div class="overview-table-wrap"><table class="overview-table"><thead><tr class="overview-heading-row"><th><button class="overview-sort" type="button" data-sort-key="account"><span>账号</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="plan"><span>计划类型</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="remaining"><span>当前剩余额度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="reset"><span>重置时间</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="requests"><span>请求数</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="tokens"><span>Token</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="cost"><span>等价费用</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="capacity"><span>完整周期容量估计</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="confidence"><span>估计置信度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="forecast"><span>预计耗尽 / 状态</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th></tr><tr class="overview-filter-row"><th><input class="overview-filter" data-overview-filter="account"></th><th><input class="overview-filter" data-overview-filter="plan"></th><th><input class="overview-filter" data-overview-filter="remaining"></th><th><input class="overview-filter" data-overview-filter="reset"></th><th><input class="overview-filter" data-overview-filter="requests"></th><th><input class="overview-filter" data-overview-filter="tokens"></th><th><input class="overview-filter" data-overview-filter="cost"></th><th><input class="overview-filter" data-overview-filter="capacity"></th><th><input class="overview-filter" data-overview-filter="confidence"></th><th><input class="overview-filter" data-overview-filter="forecast"></th></tr></thead><tbody id="overviewRows"></tbody></table></div></div></section>
 <section class="grid">
- <div class="card"><div class="label">所选周期额度使用率</div><div class="value" id="used">—</div><div class="sub" id="window">等待额度样本</div></div>
+ <div class="card"><div class="label">所选周期剩余额度</div><div class="value" id="used">—</div><div class="sub" id="window">等待额度样本</div></div>
  <div class="card"><div class="label">所选周期累计 Token</div><div class="value" id="tokens">—</div><div class="sub" id="requests">—</div></div>
  <div class="card"><div class="label">所选周期累计计价值</div><div class="value" id="cost">—</div><div class="sub" id="pricing">—</div></div>
  <div class="card"><div class="label">预计额度耗尽</div><div class="value" id="exhaust">—</div><div class="sub" id="confidence">尚无预测</div></div>
@@ -49,6 +54,21 @@ const cpampAuthStorageKey = 'cli-proxy-auth';
 const sessionKeyStorageKey = 'cqe-key';
 const persistentKeyStorageKey = 'cqe-persistent-key';
 const showSparkStorageKey = 'cqe-show-spark-quota';
+const overviewPreferencesStorageKey = 'cqe-overview-preferences-v1';
+const overviewColumnMinimumWidth = 40;
+const overviewColumnMaximumWidth = 2000;
+const overviewColumns = [
+  {key: 'account', type: 'text', width: 270, minWidth: overviewColumnMinimumWidth},
+  {key: 'plan', type: 'text', width: 110, minWidth: overviewColumnMinimumWidth},
+  {key: 'remaining', type: 'number', width: 170, minWidth: overviewColumnMinimumWidth},
+  {key: 'reset', type: 'time', width: 190, minWidth: overviewColumnMinimumWidth},
+  {key: 'requests', type: 'number', width: 105, minWidth: overviewColumnMinimumWidth},
+  {key: 'tokens', type: 'number', width: 115, minWidth: overviewColumnMinimumWidth},
+  {key: 'cost', type: 'number', width: 130, minWidth: overviewColumnMinimumWidth},
+  {key: 'capacity', type: 'number', width: 300, minWidth: overviewColumnMinimumWidth},
+  {key: 'confidence', type: 'status', width: 170, minWidth: overviewColumnMinimumWidth},
+  {key: 'forecast', type: 'status', width: 320, minWidth: overviewColumnMinimumWidth}
+];
 const storedAuth = readStoredAuth();
 let key = storedAuth.key;
 let rememberKey = storedAuth.persistent;
@@ -59,6 +79,8 @@ let chartRangeCycleID;
 let chartRangeManual = false;
 let pricingSettingsDirty = false;
 let showSparkQuota = readShowSparkQuota();
+let overviewState = readOverviewState();
+let overviewSnapshot;
 let bridgeState = embedded ? 'unknown' : 'unavailable';
 let languageMode = readLanguageMode();
 let language = resolveLanguage();
@@ -69,6 +91,32 @@ function readShowSparkQuota() {
   } catch (_) {
     return false;
   }
+}
+
+function readOverviewState() {
+  let fallback = {collapsed: false, sortKey: '', sortDirection: 'asc', filters: {}, widths: {}};
+  try {
+    let stored = JSON.parse(localStorage.getItem(overviewPreferencesStorageKey) || '{}');
+    let validKeys = new Set(overviewColumns.map(column => column.key));
+    return {
+      collapsed: Boolean(stored.collapsed),
+      sortKey: validKeys.has(stored.sortKey) ? stored.sortKey : '',
+      sortDirection: stored.sortDirection === 'desc' ? 'desc' : 'asc',
+      filters: Object.fromEntries(Object.entries(stored.filters || {})
+        .filter(entry => validKeys.has(entry[0]) && typeof entry[1] === 'string')),
+      widths: Object.fromEntries(Object.entries(stored.widths || {})
+        .filter(entry => validKeys.has(entry[0]) && Number.isFinite(+entry[1]))
+        .map(entry => [entry[0], +entry[1]]))
+    };
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function storeOverviewState() {
+  try {
+    localStorage.setItem(overviewPreferencesStorageKey, JSON.stringify(overviewState));
+  } catch (_) {}
 }
 
 function readStoredAuth() {
@@ -277,7 +325,39 @@ const messages = {
     capacityRange: '{low} — {high}',
     monthlyMethodNote: '仅统计主额度请求；实际 Token 按请求发生时间归属月份。检测到 5 小时额度时，周限额在下方独立汇总；Spark 也可单独显示。',
     weeklyMonthlyMethodNote: '周限额使用独立的 Secondary 百分比和重置周期；实际 Token、费用和请求来自同一批 5 小时主额度请求。',
-    sparkMonthlyMethodNote: '仅统计 Spark 请求；容量、额度消耗当量和周期均与主额度分开。'
+    sparkMonthlyMethodNote: '仅统计 Spark 请求；容量、额度消耗当量和周期均与主额度分开。',
+    overviewAccountCount: '已采样 {count} 个账号',
+    overviewDescription: '合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；支持逐列筛选、排序和调整列宽',
+    overviewConfiguredCount: '已配置 {configured} 个 Codex OAuth · 已采样 {sampled} 个 · 待采样 {waiting} 个 · 已停用/不可用 {inactive} 个 · 当前显示 {visible} 个',
+    overviewAuthUnavailable: '已采样 {sampled} 个账号 · OAuth 清单暂不可读 · 当前显示 {visible} 个',
+    overviewEmpty: '暂无账号额度样本',
+    overviewNoMatches: '没有账号符合当前筛选条件',
+    overviewLoadFailed: '概览加载失败：{message}',
+    overviewForecastExhaust: '{time} · 预计提前耗尽',
+    overviewForecastReset: '可用至 {time} · {status}',
+    overviewExhausted: '额度已耗尽 · {time} 重置',
+    overviewExhaustedStale: '末次样本额度已耗尽 · 等待重置后新样本',
+    overviewAwaitingRefresh: '已到重置时间 · 等待新样本',
+    overviewAwaitingFirstSample: '等待首次经 CPA 调用',
+    overviewCapacityTokens: 'Token：{value}',
+    overviewCapacityCost: '计价值：{value}',
+    overviewPrimaryQuota: '主额度',
+    overviewFiveHourQuota: '5 小时',
+    overviewWeeklyQuota: '周额度',
+    overviewDisabled: '凭证已停用',
+    overviewUnavailable: '凭证当前不可用',
+    overviewFilterPlaceholder: '筛选…',
+    overviewFilterLabel: '筛选“{column}”；数值和时间支持 >、>=、<、<=、=',
+    overviewSortLabel: '按“{column}”排序',
+    overviewSortAscending: '升序',
+    overviewSortDescending: '降序',
+    overviewExpand: '展开概览',
+    overviewCollapse: '折叠概览',
+    overviewClearFilters: '清除筛选',
+    overviewResizeLabel: '调整“{column}”列宽',
+    overviewResizeHint: '拖动调整列宽；双击恢复默认宽度',
+    quotaExhausted: '额度已耗尽',
+    quotaAwaitingRefresh: '等待重置后新样本'
   },
   en: {
     autoLanguage: 'Auto (follow panel)',
@@ -410,7 +490,39 @@ const messages = {
     capacityRange: '{low} — {high}',
     monthlyMethodNote: 'Only primary-quota requests are counted here. When a 5-hour quota is detected, the weekly quota is summarized separately below; Spark can also be shown independently.',
     weeklyMonthlyMethodNote: 'The weekly quota uses independent Secondary percentages and reset cycles. Actual Tokens, cost, and requests come from the same 5-hour primary-quota requests.',
-    sparkMonthlyMethodNote: 'Only Spark requests are counted here. Capacity, quota equivalents, and cycles remain separate from the primary quota.'
+    sparkMonthlyMethodNote: 'Only Spark requests are counted here. Capacity, quota equivalents, and cycles remain separate from the primary quota.',
+    overviewAccountCount: '{count} sampled accounts',
+    overviewDescription: 'Merge configured Codex OAuth with plugin samples, combine 5-hour and weekly quota states, and support per-column filtering, sorting, and resizing',
+    overviewConfiguredCount: '{configured} Codex OAuth configured · {sampled} sampled · {waiting} awaiting samples · {inactive} disabled/unavailable · {visible} shown',
+    overviewAuthUnavailable: '{sampled} sampled accounts · OAuth inventory unavailable · {visible} shown',
+    overviewEmpty: 'No account quota samples yet',
+    overviewNoMatches: 'No accounts match the current filters',
+    overviewLoadFailed: 'Failed to load overview: {message}',
+    overviewForecastExhaust: '{time} · expected to exhaust early',
+    overviewForecastReset: 'Usable until {time} · {status}',
+    overviewExhausted: 'Quota exhausted · resets {time}',
+    overviewExhaustedStale: 'Last sample was exhausted · awaiting a post-reset sample',
+    overviewAwaitingRefresh: 'Reset time reached · awaiting a new sample',
+    overviewAwaitingFirstSample: 'Awaiting first request through CPA',
+    overviewCapacityTokens: 'Tokens: {value}',
+    overviewCapacityCost: 'Value: {value}',
+    overviewPrimaryQuota: 'Primary',
+    overviewFiveHourQuota: '5-hour',
+    overviewWeeklyQuota: 'Weekly',
+    overviewDisabled: 'Credential disabled',
+    overviewUnavailable: 'Credential currently unavailable',
+    overviewFilterPlaceholder: 'Filter…',
+    overviewFilterLabel: 'Filter “{column}”; number and time fields support >, >=, <, <=, =',
+    overviewSortLabel: 'Sort by “{column}”',
+    overviewSortAscending: 'ascending',
+    overviewSortDescending: 'descending',
+    overviewExpand: 'Expand overview',
+    overviewCollapse: 'Collapse overview',
+    overviewClearFilters: 'Clear filters',
+    overviewResizeLabel: 'Resize the “{column}” column',
+    overviewResizeHint: 'Drag to resize; double-click to restore the default width',
+    quotaExhausted: 'Quota exhausted',
+    quotaAwaitingRefresh: 'Awaiting a post-reset sample'
   }
 };
 
@@ -427,7 +539,7 @@ const staticEnglish = {
   '额度百分比来自上游响应头；计价值按所选口径换算，预测不是 OpenAI 官方标称额度。': 'Quota percentages come from upstream headers. Pricing value uses the selected basis; forecasts are not official OpenAI quota values.',
 
   '额度容量预测': 'Quota Capacity Forecast',
-  '把额度百分比变化映射为 Token 与所选计价口径的等效容量': 'Map quota percentage changes to Token and USD-equivalent capacity',
+  '把额度百分比变化映射为 Token 与所选计价口径的等效容量': 'Map quota percentage changes to Token and selected-pricing-basis equivalents',
   '同步价格': 'Sync pricing',
   '计价方式': 'Pricing basis',
   '按模型估算剩余 Token': 'Remaining Tokens by model',
@@ -448,6 +560,19 @@ const staticEnglish = {
   'Fast 加价（2.5×）': 'Fast surcharge (2.5×)',
   '保存并重算': 'Save and recalculate',
   '刷新': 'Refresh',
+  '全部账号额度概览': 'All-account quota overview',
+  '合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；点击有样本的账号查看详情': 'Merge configured Codex OAuth credentials with plugin samples, combine 5-hour and weekly quotas, and open sampled accounts for details',
+  '清除筛选': 'Clear filters',
+  '折叠概览': 'Collapse overview',
+  '账号': 'Account',
+  '计划类型': 'Plan type',
+  '重置时间': 'Reset time',
+  '请求数': 'Requests',
+  'Token': 'Tokens',
+  '等价费用': 'Pricing value',
+  '完整周期容量估计': 'Full-cycle capacity estimate',
+  '预计耗尽 / 状态': 'Estimated exhaustion / status',
+  '当前剩余额度': 'Quota remaining',
   '曲线范围': 'Chart range',
   '至': 'to',
   '恢复本周期': 'Reset to cycle',
@@ -455,7 +580,7 @@ const staticEnglish = {
   '当前周期': 'Current cycle',
   '当前预测': 'Current forecast',
   '预测周期': 'Forecast cycle',
-  '所选周期额度使用率': 'Selected-cycle quota used',
+  '所选周期剩余额度': 'Selected-cycle quota remaining',
   '等待额度样本': 'Waiting for quota samples',
   '所选周期累计 Token': 'Selected-cycle cumulative Tokens',
   '所选周期累计计价值': 'Selected-cycle cumulative estimated cost',
@@ -674,6 +799,7 @@ function applyLanguage(nextLanguage) {
   $('#applyFastPricing').setAttribute('aria-label', fastPricingLabel(state && state.config));
   renderPricingSettings(state && state.config, true);
   renderLanguageSelect();
+  renderOverviewControls();
 }
 
 function setLanguageMode(mode) {
@@ -891,7 +1017,7 @@ window.addEventListener('message', event => {
   }
 });
 
-function bridgeApi(path, options) {
+function bridgeRequest(path, options) {
   options = options || {};
   return new Promise((resolve, reject) => {
     let id = crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random();
@@ -904,11 +1030,15 @@ function bridgeApi(path, options) {
     window.parent.postMessage({
       type: 'cpamp:plugin-api-request',
       id: id,
-      path: base + path,
+      path: path,
       method: options.method || 'GET',
       body: options.body
     }, window.location.origin);
   });
+}
+
+function bridgeApi(path, options) {
+  return bridgeRequest(base + path, options);
 }
 
 async function directApi(path, options) {
@@ -939,6 +1069,75 @@ async function api(path, options) {
   return directApi(path, options);
 }
 
+async function directManagementApi(path, options) {
+  options = options || {};
+  let headers = Object.assign({}, options.headers || {});
+  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  if (key) headers.Authorization = 'Bearer ' + key;
+  let response = await fetch('/v0/management' + path, Object.assign({}, options, {headers: headers}));
+  if (response.status === 401 || response.status === 403) {
+    throw Object.assign(new Error(tr('managementKeyRequired')), {auth: true});
+  }
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+async function managementApi(path, options) {
+  let bridgeError;
+  if (embedded && bridgeState !== 'unavailable') {
+    try {
+      return await bridgeRequest('/v0/management' + path, options);
+    } catch (error) {
+      bridgeError = error;
+      if (error.bridgeUnavailable) bridgeState = 'unavailable';
+    }
+  }
+  if (key) {
+    try {
+      return await directManagementApi(path, options);
+    } catch (error) {
+      throw error;
+    }
+  }
+  throw bridgeError || new Error(tr('bridgeUnavailable'));
+}
+
+function credentialPlan(file) {
+  let explicit = String(file.account_type || file.plan_type || '').trim().toLowerCase();
+  let knownPlans = ['free', 'k12', 'team', 'plus', 'pro', 'business', 'enterprise', 'edu'];
+  if (knownPlans.includes(explicit)) return explicit;
+  let name = String(file.name || file.id || '');
+  let match = name.match(/-(free|k12|team|plus|pro|business|enterprise|edu)(?:\.json)?$/i);
+  return match ? match[1].toLowerCase() : '';
+}
+
+function accountMatchKey(value) {
+  return String(value || '').trim();
+}
+
+async function loadConfiguredCodexAccounts() {
+  let response = await managementApi('/auth-files');
+  let byAccount = new Map();
+  (response.files || []).forEach(file => {
+    let provider = String(file.provider || file.type || '').trim().toLowerCase();
+    let id = String(file.id || '').trim();
+    let name = String(file.name || '').trim();
+    let account = name || id;
+    if (provider !== 'codex' || !account) return;
+    let aliases = Array.from(new Set([account, id, name].filter(Boolean)));
+    let key = accountMatchKey(account);
+    if (!key || byAccount.has(key)) return;
+    byAccount.set(key, {
+      account: account,
+      aliases: aliases,
+      plan_type: credentialPlan(file),
+      disabled: Boolean(file.disabled),
+      unavailable: Boolean(file.unavailable)
+    });
+  });
+  return Array.from(byAccount.values()).sort((a, b) => a.account.localeCompare(b.account));
+}
+
 function showLogin(message) {
   $('#login').classList.add('show');
   $('#loginError').textContent = message || '';
@@ -957,9 +1156,28 @@ async function load() {
     let period = $('#period').value;
     if (account) query.set('account', account);
     if (period) query.set('cycle_id', period);
-    let summary = await api('/summary' + (query.size ? '?' + query : ''));
+    let initial = await Promise.allSettled([
+      api('/overview'),
+      api('/summary' + (query.size ? '?' + query : '')),
+      loadConfiguredCodexAccounts()
+    ]);
+    if (initial[1].status === 'rejected') throw initial[1].reason;
+    let summary = initial[1].value;
     state = summary;
     $('#login').classList.remove('show');
+    let configuredAccounts = initial[2].status === 'fulfilled'
+      ? {available: true, accounts: initial[2].value}
+      : {available: false, accounts: []};
+    if (initial[0].status === 'fulfilled') {
+      renderOverview(initial[0].value, summary.account, configuredAccounts);
+    } else if (initial[0].reason && initial[0].reason.auth) {
+      throw initial[0].reason;
+    } else {
+      renderOverview({accounts: []}, summary.account, configuredAccounts);
+      $('#overviewCount').textContent = tr('overviewLoadFailed', {
+        message: initial[0].reason && initial[0].reason.message || tr('requestFailed')
+      });
+    }
     renderSummary(summary);
     let seriesQuery = new URLSearchParams({limit: '5000'});
     if (summary.account) seriesQuery.set('account', summary.account);
@@ -996,6 +1214,461 @@ async function load() {
       $('#note').textContent = tr('loadFailed', {message: error.message});
     }
   }
+}
+
+function appendOverviewCell(row, value, className) {
+  let cell = document.createElement('td');
+  if (className) cell.className = className;
+  cell.textContent = value;
+  if (value && value !== '—') cell.title = value;
+  row.append(cell);
+  return cell;
+}
+
+function overviewQuotaSnapshot(item, scope) {
+  let source = scope === 'weekly' ? item.weekly_quota : item;
+  if (!source) return null;
+  let point = source.latest || null;
+  let resetAt = Number(point && point.reset_at || source.reset_at || 0);
+  let remaining = point
+    ? Number.isFinite(+source.remaining_percent)
+      ? +source.remaining_percent
+      : Math.max(0, 100 - Number(point.used_percent || 0))
+    : NaN;
+  let status = String(source.quota_status || '');
+  if (!status && point) {
+    status = Number(point.used_percent || 0) >= 99.5 ? 'exhausted'
+      : resetAt && resetAt <= Date.now() / 1000 ? 'awaiting_refresh' : 'active';
+  }
+  if (!status && source.schedule_inferred) status = 'awaiting_refresh';
+  return {
+    scope: scope,
+    label: scope === 'weekly' ? tr('overviewWeeklyQuota')
+      : item.five_hour_quota_detected ? tr('overviewFiveHourQuota') : tr('overviewPrimaryQuota'),
+    point: point,
+    resetAt: resetAt,
+    remaining: remaining,
+    status: status,
+    estimate: source.estimate || {},
+    burn: source.burn_forecast || {},
+    sampled: Boolean(point),
+    inferred: Boolean(source.schedule_inferred),
+    disabled: Boolean(item.disabled),
+    unavailable: Boolean(item.unavailable)
+  };
+}
+
+function overviewQuotaForecast(snapshot) {
+  if (!snapshot.sampled) {
+    if (snapshot.disabled) return {text: tr('overviewDisabled'), className: 'status-waiting', rank: 0};
+    if (snapshot.unavailable) return {text: tr('overviewUnavailable'), className: 'status-waiting', rank: 0};
+    return snapshot.status === 'awaiting_refresh' || snapshot.inferred
+      ? {text: tr('overviewAwaitingRefresh'), className: 'status-waiting', rank: 1}
+      : {text: tr('overviewAwaitingFirstSample'), className: 'status-waiting', rank: 0};
+  }
+  let point = snapshot.point;
+  let burn = snapshot.burn;
+  let now = Date.now() / 1000;
+  if (snapshot.status === 'exhausted' || Number(point.used_percent || 0) >= 99.5) {
+    return point.reset_at && point.reset_at <= now
+      ? {text: tr('overviewExhaustedStale'), className: 'status-exhausted', rank: 4}
+      : {text: tr('overviewExhausted', {time: dt(point.reset_at)}), className: 'status-exhausted', rank: 4};
+  }
+  if (snapshot.status === 'awaiting_refresh' || point.reset_at && point.reset_at <= now) {
+    return {text: tr('overviewAwaitingRefresh'), className: 'status-waiting', rank: 1};
+  }
+  let status = burn.status === 'fast' ? tr('paceFast')
+    : burn.status === 'slow' ? tr('paceSlow')
+    : burn.status === 'on_track' ? tr('paceOnTrack')
+    : tr('paceWaiting');
+  let useRecent = burn.recent_available;
+  let willExhaust = useRecent ? burn.recent_will_exhaust_before_reset : burn.will_exhaust_before_reset;
+  let exhaustAt = useRecent ? burn.recent_estimated_exhaust_at : burn.estimated_exhaust_at;
+  if (burn.available && willExhaust && exhaustAt) {
+    return {text: tr('overviewForecastExhaust', {time: dt(exhaustAt)}), className: 'status-fast', rank: 3};
+  }
+  return {
+    text: tr('overviewForecastReset', {time: dt(point.reset_at), status: status}),
+    className: burn.status === 'fast' ? 'status-fast' : 'status-ok',
+    rank: burn.status === 'fast' ? 2 : 1
+  };
+}
+
+function overviewScopeLines(snapshots, render) {
+  let scoped = snapshots.length > 1;
+  return snapshots.map(snapshot => (scoped ? snapshot.label + ': ' : '') + render(snapshot)).join('\n');
+}
+
+function mergeOverviewAccounts(data, configured) {
+  let sampled = (data && data.accounts || []).map(item => Object.assign({}, item, {sampled: true}));
+  if (!configured || !configured.available) return sampled;
+  let matched = new Set();
+  let sampledByAlias = new Map();
+  sampled.forEach(item => {
+    [item.account, accountMatchKey(item.account)].filter(Boolean).forEach(alias => {
+      sampledByAlias.set(accountMatchKey(alias), item);
+    });
+  });
+  configured.accounts.forEach(file => {
+    let aliases = [file.account].concat(file.aliases || []).map(accountMatchKey).filter(Boolean);
+    let existing = aliases.map(alias => sampledByAlias.get(alias)).find(Boolean);
+    if (existing) {
+      existing.configured = true;
+      existing.configured_name = file.account;
+      existing.disabled = file.disabled;
+      existing.unavailable = file.unavailable;
+      if (!existing.plan_type && file.plan_type) existing.plan_type = file.plan_type;
+      matched.add(file);
+    }
+  });
+  let waiting = configured.accounts.filter(file => !matched.has(file)).map(file =>
+    Object.assign({sampled: false, configured: true}, file));
+  return sampled.concat(waiting).sort((a, b) => String(a.account).localeCompare(String(b.account)));
+}
+
+function overviewColumnWidth(column) {
+  let stored = Number(overviewState.widths[column.key]);
+  let width = Number.isFinite(stored) ? stored : column.width;
+  return Math.min(overviewColumnMaximumWidth, Math.max(column.minWidth, Math.round(width)));
+}
+
+function applyOverviewColumnWidths() {
+  let table = document.querySelector('.overview-table');
+  if (!table) return;
+  let total = 0;
+  overviewColumns.forEach(column => {
+    let width = overviewColumnWidth(column);
+    total += width;
+    let col = table.querySelector('[data-overview-column="' + column.key + '"]');
+    if (col) col.style.width = width + 'px';
+    let handle = document.querySelector('[data-overview-resizer="' + column.key + '"]');
+    if (handle) {
+      handle.setAttribute('aria-valuemin', String(column.minWidth));
+      handle.setAttribute('aria-valuemax', String(overviewColumnMaximumWidth));
+      handle.setAttribute('aria-valuenow', String(width));
+    }
+  });
+  table.style.width = total + 'px';
+}
+
+function setupOverviewColumnResizers() {
+  let table = document.querySelector('.overview-table');
+  let headings = document.querySelectorAll('.overview-heading-row th');
+  if (!table || headings.length !== overviewColumns.length) return;
+  let colgroup = table.querySelector('colgroup');
+  if (!colgroup) {
+    colgroup = document.createElement('colgroup');
+    overviewColumns.forEach(column => {
+      let col = document.createElement('col');
+      col.dataset.overviewColumn = column.key;
+      colgroup.append(col);
+    });
+    table.insertBefore(colgroup, table.firstChild);
+  }
+  let toggle = $('#overviewToggle');
+  toggle.classList.add('overview-toggle');
+  if (!$('#overviewToggleLabel')) {
+    let label = toggle.textContent.trim() || '折叠概览';
+    toggle.innerHTML = '<svg class="overview-toggle-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4.5 12.5 10 7l5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="overviewToggleLabel"></span>';
+    $('#overviewToggleLabel').textContent = label;
+  }
+  overviewColumns.forEach((column, index) => {
+    let heading = headings[index];
+    let handle = heading.querySelector('.overview-column-resizer');
+    if (!handle) {
+      handle = document.createElement('span');
+      handle.className = 'overview-column-resizer';
+      handle.dataset.overviewResizer = column.key;
+      handle.tabIndex = 0;
+      handle.setAttribute('role', 'separator');
+      handle.setAttribute('aria-orientation', 'vertical');
+      heading.append(handle);
+    }
+    let drag = null;
+    let finishDrag = event => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      handle.classList.remove('dragging');
+      document.body.classList.remove('overview-column-resizing');
+      drag = null;
+      storeOverviewState();
+    };
+    handle.onpointerdown = event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      drag = {pointerId: event.pointerId, startX: event.clientX, startWidth: overviewColumnWidth(column)};
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add('dragging');
+      document.body.classList.add('overview-column-resizing');
+    };
+    handle.onpointermove = event => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      overviewState.widths[column.key] = Math.min(overviewColumnMaximumWidth,
+        Math.max(column.minWidth, drag.startWidth + event.clientX - drag.startX));
+      applyOverviewColumnWidths();
+    };
+    handle.onpointerup = finishDrag;
+    handle.onpointercancel = finishDrag;
+    handle.ondblclick = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      delete overviewState.widths[column.key];
+      storeOverviewState();
+      applyOverviewColumnWidths();
+    };
+    handle.onkeydown = event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Home') delete overviewState.widths[column.key];
+      else {
+        let step = event.shiftKey ? 40 : 10;
+        let direction = event.key === 'ArrowRight' ? 1 : -1;
+        overviewState.widths[column.key] = overviewColumnWidth(column) + direction * step;
+      }
+      storeOverviewState();
+      applyOverviewColumnWidths();
+    };
+  });
+  applyOverviewColumnWidths();
+}
+
+function renderOverviewControls() {
+  let body = $('#overviewBody');
+  if (!body) return;
+  let description = document.querySelector('.overview .section-head > div > .sub');
+  if (description) description.textContent = tr('overviewDescription');
+  body.hidden = overviewState.collapsed;
+  let toggle = $('#overviewToggle');
+  let toggleLabel = $('#overviewToggleLabel');
+  if (toggleLabel) toggleLabel.textContent = tr(overviewState.collapsed ? 'overviewExpand' : 'overviewCollapse');
+  else toggle.textContent = tr(overviewState.collapsed ? 'overviewExpand' : 'overviewCollapse');
+  toggle.classList.toggle('collapsed', overviewState.collapsed);
+  toggle.setAttribute('aria-expanded', overviewState.collapsed ? 'false' : 'true');
+  let hasFilters = Object.values(overviewState.filters).some(value => String(value).trim());
+  let clear = $('#overviewClearFilters');
+  clear.textContent = tr('overviewClearFilters');
+  clear.disabled = !hasFilters;
+  document.querySelectorAll('[data-overview-filter]').forEach(input => {
+    let key = input.dataset.overviewFilter;
+    let sortButton = document.querySelector('[data-sort-key="' + key + '"]');
+    let columnLabel = sortButton && sortButton.querySelector('span').textContent || key;
+    let filterValue = overviewState.filters[key] || '';
+    if (input.value !== filterValue) input.value = filterValue;
+    input.placeholder = tr('overviewFilterPlaceholder');
+    input.setAttribute('aria-label', tr('overviewFilterLabel', {column: columnLabel}));
+    input.title = tr('overviewFilterLabel', {column: columnLabel});
+  });
+  document.querySelectorAll('[data-sort-key]').forEach(button => {
+    let key = button.dataset.sortKey;
+    let active = overviewState.sortKey === key;
+    let label = button.querySelector('span').textContent;
+    let indicator = button.querySelector('.overview-sort-indicator');
+    button.classList.toggle('active', active);
+    indicator.textContent = active ? (overviewState.sortDirection === 'desc' ? '↓' : '↑') : '↕';
+    button.setAttribute('aria-label', tr('overviewSortLabel', {column: label}) +
+      (active ? ' · ' + tr(overviewState.sortDirection === 'desc' ? 'overviewSortDescending' : 'overviewSortAscending') : ''));
+    button.title = button.getAttribute('aria-label');
+    let heading = button.closest('th');
+    if (active) heading.setAttribute('aria-sort', overviewState.sortDirection === 'desc' ? 'descending' : 'ascending');
+    else heading.removeAttribute('aria-sort');
+  });
+  overviewColumns.forEach(column => {
+    let handle = document.querySelector('[data-overview-resizer="' + column.key + '"]');
+    let button = document.querySelector('[data-sort-key="' + column.key + '"]');
+    if (!handle || !button) return;
+    let columnLabel = button.querySelector('span').textContent;
+    handle.setAttribute('aria-label', tr('overviewResizeLabel', {column: columnLabel}));
+    handle.title = tr('overviewResizeHint');
+  });
+  applyOverviewColumnWidths();
+}
+
+function overviewRowData(item) {
+  let primary = overviewQuotaSnapshot(item, 'primary');
+  let weekly = item.weekly_quota ? overviewQuotaSnapshot(item, 'weekly') : null;
+  let snapshots = [primary, weekly].filter(Boolean);
+  let forecasts = snapshots.map(snapshot => ({snapshot: snapshot, forecast: overviewQuotaForecast(snapshot)}));
+  let constrained = snapshots.filter(snapshot => Number.isFinite(snapshot.remaining))
+    .sort((left, right) => left.remaining - right.remaining)[0] || primary;
+  let resets = snapshots.map(snapshot => snapshot.resetAt).filter(value => value > 0);
+  let estimates = snapshots.filter(snapshot => snapshot.estimate.available);
+  let confidenceRank = confidence => ({insufficient: 0, low: 1, medium: 2, high: 3}[confidence] || 0);
+  let weakestConfidence = estimates.length
+    ? Math.min(...estimates.map(snapshot => confidenceRank(snapshot.estimate.confidence))) : 0;
+  let urgentForecast = forecasts.slice().sort((left, right) => right.forecast.rank - left.forecast.rank)[0];
+  let point = primary && primary.point;
+  let capacityText = overviewScopeLines(snapshots, snapshot => {
+    let estimate = snapshot.estimate;
+    if (!estimate.available) return tr('insufficientSamples');
+    return tr('overviewCapacityTokens', {value: fmt(estimate.full_window_tokens)}) + ' · ' +
+      tr('overviewCapacityCost', {value: usd(estimate.full_window_cost_usd)});
+  });
+  let confidenceText = overviewScopeLines(snapshots, snapshot => snapshot.estimate.available
+    ? confidenceLabel(snapshot.estimate.confidence) : tr('insufficientSamples'));
+  let forecastText = forecasts.map(entry =>
+    (snapshots.length > 1 ? entry.snapshot.label + ': ' : '') + entry.forecast.text).join('\n');
+  if (item.sampled && (item.disabled || item.unavailable)) {
+    forecastText += '\n' + tr(item.disabled ? 'overviewDisabled' : 'overviewUnavailable');
+  }
+  let text = {
+    account: item.account || '—',
+    plan: item.plan_type || '—',
+    remaining: overviewScopeLines(snapshots, snapshot =>
+      Number.isFinite(snapshot.remaining) ? snapshot.remaining.toFixed(0) + '%' : '—'),
+    reset: overviewScopeLines(snapshots, snapshot => snapshot.resetAt ? dt(snapshot.resetAt) : '—'),
+    requests: point ? fmt(point.requests) : '—',
+    tokens: point ? fmt(point.window_tokens) : '—',
+    cost: point ? usd(point.window_cost_usd) : '—',
+    capacity: capacityText,
+    confidence: confidenceText,
+    forecast: forecastText
+  };
+  return {
+    item: item,
+    primary: primary,
+    weekly: weekly,
+    forecastClass: urgentForecast ? urgentForecast.forecast.className : 'status-waiting',
+    text: text,
+    sort: {
+      account: String(item.account || ''),
+      plan: String(item.plan_type || ''),
+      remaining: constrained ? constrained.remaining : NaN,
+      reset: resets.length ? Math.min(...resets) : NaN,
+      requests: point ? Number(point.requests) : NaN,
+      tokens: point ? Number(point.window_tokens) : NaN,
+      cost: point ? Number(point.window_cost_usd) : NaN,
+      capacity: estimates.length ? Math.min(...estimates.map(snapshot => Number(snapshot.estimate.full_window_tokens))) : NaN,
+      confidence: weakestConfidence,
+      forecast: urgentForecast ? urgentForecast.forecast.rank : 0
+    }
+  };
+}
+
+function compareOverviewFilter(rawValue, expression, type) {
+  let match = expression.match(/^\s*(>=|<=|>|<|=)\s*(.+?)\s*$/);
+  if (!match || !['number', 'time'].includes(type)) return null;
+  let expected = type === 'time' ? Date.parse(match[2]) / 1000 : Number(match[2].replaceAll(',', ''));
+  let actual = Number(rawValue);
+  if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
+  if (match[1] === '>=') return actual >= expected;
+  if (match[1] === '<=') return actual <= expected;
+  if (match[1] === '>') return actual > expected;
+  if (match[1] === '<') return actual < expected;
+  return actual === expected;
+}
+
+function matchesOverviewFilters(rowData) {
+  return overviewColumns.every(column => {
+    let expression = String(overviewState.filters[column.key] || '').trim();
+    if (!expression) return true;
+    let comparison = compareOverviewFilter(rowData.sort[column.key], expression, column.type);
+    if (comparison !== null) return comparison;
+    return String(rowData.text[column.key] || '').toLocaleLowerCase().includes(expression.toLocaleLowerCase());
+  });
+}
+
+function compareOverviewRows(left, right) {
+  let column = overviewColumns.find(item => item.key === overviewState.sortKey);
+  if (!column) return String(left.item.account || '').localeCompare(String(right.item.account || ''));
+  let a = left.sort[column.key];
+  let b = right.sort[column.key];
+  let aMissing = a === null || a === undefined || (typeof a === 'number' && !Number.isFinite(a)) || a === '';
+  let bMissing = b === null || b === undefined || (typeof b === 'number' && !Number.isFinite(b)) || b === '';
+  if (aMissing !== bMissing) return aMissing ? 1 : -1;
+  let comparison = 0;
+  if (!aMissing) {
+    comparison = column.type === 'text'
+      ? String(a).localeCompare(String(b), language, {numeric: true, sensitivity: 'base'})
+      : Number(a) - Number(b);
+  }
+  if (comparison) return overviewState.sortDirection === 'desc' ? -comparison : comparison;
+  return String(left.item.account || '').localeCompare(String(right.item.account || ''));
+}
+
+function renderOverviewFromSnapshot() {
+  if (!overviewSnapshot) {
+    renderOverviewControls();
+    return;
+  }
+  renderOverview(overviewSnapshot.data, overviewSnapshot.selectedAccount, overviewSnapshot.configured);
+}
+
+function renderOverview(data, selectedAccount, configured) {
+  overviewSnapshot = {data: data, selectedAccount: selectedAccount, configured: configured};
+  let items = mergeOverviewAccounts(data, configured);
+  let rows = items.map(overviewRowData).filter(matchesOverviewFilters).sort(compareOverviewRows);
+  let body = $('#overviewRows');
+  body.replaceChildren();
+  let sampledCount = items.filter(item => item.sampled).length;
+  let waitingCount = items.filter(item => item.configured && !item.sampled && !item.disabled && !item.unavailable).length;
+  let inactiveCount = items.filter(item => item.configured && (item.disabled || item.unavailable)).length;
+  $('#overviewCount').textContent = configured && configured.available
+    ? tr('overviewConfiguredCount', {
+      configured: configured.accounts.length,
+      sampled: sampledCount,
+      waiting: waitingCount,
+      inactive: inactiveCount,
+      visible: rows.length
+    })
+    : tr('overviewAuthUnavailable', {sampled: sampledCount, visible: rows.length});
+  renderOverviewControls();
+  if (!items.length) {
+    let row = document.createElement('tr');
+    let cell = appendOverviewCell(row, tr('overviewEmpty'), 'empty-cell');
+    cell.colSpan = 10;
+    body.append(row);
+    return;
+  }
+  if (!rows.length) {
+    let row = document.createElement('tr');
+    let cell = appendOverviewCell(row, tr('overviewNoMatches'), 'empty-cell');
+    cell.colSpan = 10;
+    body.append(row);
+    return;
+  }
+  rows.forEach(rowData => {
+    let item = rowData.item;
+    let row = document.createElement('tr');
+    row.classList.add(item.sampled ? 'sampled' : 'unsampled');
+    if (item.disabled || item.unavailable) row.classList.add('inactive');
+    if (item.account === selectedAccount) row.classList.add('selected');
+    if (item.sampled) {
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+    }
+    let accountCell = appendOverviewCell(row, rowData.text.account, 'account-cell');
+    accountCell.title = item.account || '';
+    appendOverviewCell(row, rowData.text.plan);
+    appendOverviewCell(row, rowData.text.remaining, 'scope-cell');
+    appendOverviewCell(row, rowData.text.reset, 'scope-cell');
+    appendOverviewCell(row, rowData.text.requests);
+    appendOverviewCell(row, rowData.text.tokens);
+    appendOverviewCell(row, rowData.text.cost);
+    appendOverviewCell(row, rowData.text.capacity, 'scope-cell capacity-cell');
+    appendOverviewCell(row, rowData.text.confidence, 'scope-cell');
+    appendOverviewCell(row, rowData.text.forecast, 'scope-cell ' + rowData.forecastClass);
+    let selectAccount = () => {
+      if (!item.sampled || !item.account || item.account === $('#account').value) return;
+      $('#account').value = item.account;
+      $('#period').value = '';
+      $('#month').value = '';
+      chartRangeManual = false;
+      chartRange = null;
+      load();
+    };
+    if (item.sampled) {
+      row.onclick = selectAccount;
+      row.onkeydown = event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectAccount();
+        }
+      };
+    }
+    body.append(row);
+  });
 }
 
 function renderAccounts(summary) {
@@ -1245,8 +1918,16 @@ function renderSummary(summary) {
   let historical = summary.is_current === false;
   renderPricingSettings(config, false);
 
-  $('#used').textContent = point ? point.used_percent.toFixed(0) + '%' : '—';
-  $('#used').className = 'value ' + (point && point.used_percent >= 80 ? 'warn' : 'good');
+  let remaining = point
+    ? Number.isFinite(+summary.remaining_percent)
+      ? +summary.remaining_percent
+      : Math.max(0, 100 - Number(point.used_percent || 0))
+    : NaN;
+  let quotaStatus = summary.quota_status || (point && Number(point.used_percent || 0) >= 99.5
+    ? 'exhausted'
+    : point && point.reset_at <= Date.now() / 1000 ? 'awaiting_refresh' : 'active');
+  $('#used').textContent = Number.isFinite(remaining) ? remaining.toFixed(0) + '%' : '—';
+  $('#used').className = 'value ' + (quotaStatus === 'exhausted' ? 'bad' : remaining <= 20 ? 'warn' : 'good');
   $('#window').textContent = point
     ? dt(summary.window_start) + ' — ' + dt(point.reset_at)
     : tr('waitingQuota');
@@ -1257,17 +1938,27 @@ function renderSummary(summary) {
 
   let forecastExhausts = burn.recent_available ? burn.recent_will_exhaust_before_reset : burn.will_exhaust_before_reset;
   let forecastEnd = burn.recent_available ? burn.recent_estimated_exhaust_at : burn.estimated_exhaust_at;
-  $('#exhaust').textContent = burn.available
-    ? (forecastExhausts ? dt(forecastEnd) : tr('usableUntilReset'))
-    : (estimate.estimated_exhaust_at ? dt(estimate.estimated_exhaust_at) : '—');
+  $('#exhaust').textContent = quotaStatus === 'exhausted'
+    ? tr('quotaExhausted')
+    : quotaStatus === 'awaiting_refresh'
+      ? tr('quotaAwaitingRefresh')
+      : burn.available
+        ? (forecastExhausts ? dt(forecastEnd) : tr('usableUntilReset'))
+        : (estimate.estimated_exhaust_at ? dt(estimate.estimated_exhaust_at) : '—');
 
-  let confidenceText = burn.available
-    ? (burn.recent_available
-      ? tr('recentRate', {rate: burn.recent_percent_per_day.toFixed(1)})
-      : tr('averageRate', {rate: burn.average_percent_per_day.toFixed(1)}))
-    : (estimate.available
-      ? tr('confidence', {level: confidenceLabel(estimate.confidence)})
-      : tr('insufficientGrowth'));
+  let confidenceText = quotaStatus === 'exhausted'
+    ? (point && point.reset_at <= Date.now() / 1000
+      ? tr('overviewExhaustedStale')
+      : tr('overviewExhausted', {time: dt(point && point.reset_at)}))
+    : quotaStatus === 'awaiting_refresh'
+      ? tr('overviewAwaitingRefresh')
+      : burn.available
+        ? (burn.recent_available
+          ? tr('recentRate', {rate: burn.recent_percent_per_day.toFixed(1)})
+          : tr('averageRate', {rate: burn.average_percent_per_day.toFixed(1)}))
+        : (estimate.available
+          ? tr('confidence', {level: confidenceLabel(estimate.confidence)})
+          : tr('insufficientGrowth'));
   $('#confidence').textContent = (historical ? tr('historyLastPrediction') : '') + confidenceText;
 
   $('#fullTokens').textContent = estimate.available ? fmt(estimate.full_window_tokens) : '—';
@@ -1336,12 +2027,15 @@ function renderPace(series, range) {
     return;
   }
 
-  let status = burn.status === 'fast' ? [tr('paceFast'), 'fast']
+  let exhausted = Number(burn.used_percent || 0) >= 99.5;
+  let status = exhausted ? [tr('quotaExhausted'), 'exhausted']
+    : burn.status === 'fast' ? [tr('paceFast'), 'fast']
     : burn.status === 'slow' ? [tr('paceSlow'), 'slow']
     : burn.status === 'on_track' ? [tr('paceOnTrack'), '']
     : [tr('paceWaiting'), ''];
   let delta = Math.abs(burn.pace_delta_percent || 0);
-  let comparison = burn.status === 'fast'
+  let comparison = exhausted ? tr('quotaExhausted')
+    : burn.status === 'fast'
     ? tr('fasterBy', {delta: delta.toFixed(1)})
     : burn.status === 'slow'
       ? tr('slowerBy', {delta: delta.toFixed(1)})
@@ -1367,12 +2061,13 @@ function renderPace(series, range) {
       duration: duration(burn.recent_window_seconds)
     })
     : tr('insufficientSamples');
-  $('#averageEnd').textContent = burn.will_exhaust_before_reset
-    ? dt(burn.estimated_exhaust_at) : tr('usableUntilThisReset');
+  $('#averageEnd').textContent = exhausted ? tr('quotaExhausted')
+    : burn.will_exhaust_before_reset ? dt(burn.estimated_exhaust_at) : tr('usableUntilThisReset');
 
   let recentWill = burn.recent_available ? burn.recent_will_exhaust_before_reset : burn.will_exhaust_before_reset;
   let recentEnd = burn.recent_available ? burn.recent_estimated_exhaust_at : burn.estimated_exhaust_at;
-  $('#paceEnd').textContent = recentWill ? dt(recentEnd) : tr('usableUntilThisReset');
+  $('#paceEnd').textContent = exhausted ? tr('quotaExhausted')
+    : recentWill ? dt(recentEnd) : tr('usableUntilThisReset');
   let projected = burn.recent_available ? burn.recent_projected_at_reset : burn.projected_used_at_reset || 0;
   $('#projectedUsage').textContent = recentWill
     ? tr('projectedExhaust', {percent: projected.toFixed(0)})
@@ -1779,6 +2474,39 @@ function renderSparkQuota(seriesData) {
     '" preserveAspectRatio="xMidYMid meet">' + svg + '</svg>';
 }
 
+document.querySelectorAll('[data-sort-key]').forEach(button => {
+  button.onclick = () => {
+    let key = button.dataset.sortKey;
+    if (overviewState.sortKey === key) {
+      overviewState.sortDirection = overviewState.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      overviewState.sortKey = key;
+      overviewState.sortDirection = 'asc';
+    }
+    storeOverviewState();
+    renderOverviewFromSnapshot();
+  };
+});
+document.querySelectorAll('[data-overview-filter]').forEach(input => {
+  input.autocomplete = 'off';
+  input.oninput = () => {
+    let key = input.dataset.overviewFilter;
+    if (input.value) overviewState.filters[key] = input.value;
+    else delete overviewState.filters[key];
+    storeOverviewState();
+    renderOverviewFromSnapshot();
+  };
+});
+$('#overviewClearFilters').onclick = () => {
+  overviewState.filters = {};
+  storeOverviewState();
+  renderOverviewFromSnapshot();
+};
+$('#overviewToggle').onclick = () => {
+  overviewState.collapsed = !overviewState.collapsed;
+  storeOverviewState();
+  renderOverviewControls();
+};
 $('#loginBtn').onclick = () => {
   key = $('#key').value.trim();
   rememberKey = $('#rememberKey').checked;
@@ -1859,6 +2587,7 @@ $('#sync').onclick = async () => {
   }
 };
 
+setupOverviewColumnResizers();
 $('#showSpark').checked = showSparkQuota;
 captureStaticText();
 applyLanguage(language);
