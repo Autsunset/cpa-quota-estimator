@@ -27,11 +27,11 @@
 - 将 Token 数、模型、`service_tier`、估算费用和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
-- 仪表盘提供两个可保存的费用开关：>272K 长上下文加价默认关闭，Fast 加价默认开启。保存后会持久化到 SQLite，并在单个事务中重算全部历史请求费用、额度采样、月度汇总和美元等效容量估计。
+- 仪表盘提供三种可持久化计价口径：当前 API 价格、优惠前 API 价格和订阅 Credits。订阅 Credits 固定采用无促销的 Codex Rate Card（`优惠前价格 × 25`），绝不使用临时 API/购买 Credits 优惠。保存计价方式或加价开关后，会在单个事务中重算全部保留请求、当前与历史额度周期采样、月度汇总和计价等效容量；切回任意口径时都从原始 Token 字段重新计算。
 - 支持两种可配置的 Fast 定价方式：
   - `multiplier`：在普通或长上下文价格上应用倍数，默认 **2.5×**；
   - `source`：使用 models.dev 中明确提供的 `experimental.modes.fast.cost` 价格。
-- 估计完整周期与剩余额度的 Token/美元等效容量，并提供四分位数区间和置信度。
+- 估计完整周期与剩余额度的 Token/计价等效容量，并提供四分位数区间和置信度；还会把所选周期剩余计价值分别换算为各模型的未缓存输入、输出和缓存命中 Token 余量。
 - 展示实际额度轨迹、可持续基准、累计平均预测、近期速率预测、预计耗尽时间、计划重置时间和倒计时。
 - 为每个已确认的额度周期建立独立账本；重置后，旧周期仍可在下拉框中选择和回看。
 - 将 `gpt-5.3-codex-spark` 响应头视为独立额度口径和周期。Spark 的实际 Token、请求数、费用、额度消耗当量、周期容量及月度汇总均单独统计，不会创建、拆分、估算或累加到主额度；仪表盘可通过页面顶部的可选开关在主额度内容下方显示完整 Spark 统计。
@@ -39,7 +39,7 @@
 - 按响应头实际观察时间排序额度证据；计划周期切换需连续两个成功观测一致，当 `reset_at` 不变时则需三个成功、稳定且跨越至少 60 秒的低用量观测，才确认提前重置。
 - 兼容已耗尽的 5 小时主额度在使用率下降前先延后 `reset_at` 的行为：立即关闭已到期周期，将沿用的 100% 读数隔离到出现新鲜使用率为止，并在下一条新鲜使用率到达时依据保留的原始观测自动修复已被污染的进行中周期。
 - 提供显式的历史伪提前重置预览/修复接口；原始用量记录保持不变，已确认的正常周期不会被合并。
-- 增加自然月统计：实际 Token、请求估算费用、请求数、涉及周期数、已确认重置数、提前重置数、累计额度消耗当量、重置时未消耗额度，以及本月开始周期的估计总容量。
+- 增加自然月统计：实际 Token、所选口径请求计价值、请求数、涉及周期数、已确认重置数、提前重置数、累计额度消耗当量、重置时未消耗额度，以及本月开始周期的估计总容量。
 - 自动跟随官方 CPA 或 CPAMP 面板语言，支持中英文手动切换，并在浏览器中保存选择。
 - 提供响应式嵌入式仪表盘，支持深色、浅色主题和移动端布局。
 - 将预测周期选择与曲线范围分离：切换预测周期会更新该周期的全部统计数值，并将曲线范围自动重置到该周期；手动曲线范围可以跨越多个周期，但只改变曲线显示，统计数值仍严格归属于所选预测周期。各周期按真实时间分别分段绘制，x 轴每一天一格，并高亮当前预测周期。
@@ -114,6 +114,7 @@ plugins:
       price_sync_interval_minutes: 1440
       fast_pricing_mode: multiplier
       fast_multiplier: 2.5
+      pricing_mode: current_api # current_api | legacy_api | credits
       apply_fast_pricing: true
       long_context_threshold: 272000
       apply_long_context_pricing: false
@@ -149,9 +150,17 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
      + 输出 × 输出价格
 ```
 
-所有价格单位均为每一百万 Token 的美元价格。`ReasoningTokens` 已包含在输出 Token 中，不会重复计费。记录的 `service_tier` 为 `priority` 或 `fast` 时使用配置的 Fast 定价策略；`auto` 和 `default` 保持 1×。当 `InputTokens > long_context_threshold` 时使用长上下文价格档位，默认阈值为 272,000。
+当前计价值按每一百万 Token 计算，单位可以是 USD，也可以是订阅 Credits。`ReasoningTokens` 已包含在输出 Token 中，不会重复计量。记录的 `service_tier` 为 `priority` 或 `fast` 时使用配置的 Fast 策略；`auto` 和 `default` 保持 1×。当 `InputTokens > long_context_threshold` 时使用长上下文档位，默认阈值为 272,000。
 
-仪表盘提供 **>272K 长上下文加价** 和 **Fast 加价** 两个勾选项。基于实际 Codex 额度百分比消耗的经验默认值为：**长上下文加价关闭、Fast 加价开启**；用户仍可随时修改。该默认值针对 ChatGPT/Codex 套餐额度百分比扣减，而不是 API 财务账单：OpenAI API 中超过模型长上下文阈值的请求仍可能使用官方公布的长上下文价格档位；如果希望严格按 API 价格等效口径估算，可以手动开启长上下文开关。点击**保存并重算**后，选择会保存到插件 SQLite 数据库，并在单个事务中重算保留期内所有 `usage_events.cost_usd` 以及额度采样累计费用，因此历史图表、月度汇总和美元等效容量估计会立即更新。对于同一个数据库，仪表盘已保存的值优先于 YAML 中的 `apply_fast_pricing` 和 `apply_long_context_pricing` 初始值。关闭某个开关只会移除对应加价，不会修改已记录的 Token、额度百分比或周期边界。
+仪表盘计价方式包括：
+
+- `current_api`：models.dev/API 当前价格，包含现行优惠；
+- `legacy_api`：优惠前 API 等效价；GPT-5.6 Sol/Terra/Luna 的输入/缓存命中/输出分别使用 `$5/$0.50/$30`、`$2.50/$0.25/$15`、`$1/$0.10/$6`；
+- `credits`：订阅套餐内、无促销的 Codex Credits，严格按优惠前价格 × 25 计算；Sol/Terra/Luna 每百万输入/缓存命中/输出分别为 `125/12.5/750`、`62.5/6.25/375`、`25/2.5/150` Credits，明确排除购买 Credits 的临时优惠；缓存写入按订阅 Rate Card 记为 0 Credits。
+
+仪表盘同时保留 **>272K 长上下文加价** 和 **Fast 加价** 开关。点击**保存并重算**后，三项设置会保存到 SQLite，并在单个事务中重建全部保留的 `usage_events.cost_usd` 兼容值和所有额度采样累计值。当前周期、任意历史周期、跨周期曲线、5 小时与周限额区域、月度汇总都会统一使用新口径；再次切回时从原始输入/输出/缓存 Token 重算，不会在上一次结果上继续换算。JSON 中带 `_cost_usd` 的字段为兼容旧客户端而保留，实际单位由 `pricing_mode` 和 `value_unit` 指明。
+
+对于所选主额度周期，以及检测到的独立周限额周期，仪表盘会列出各 Codex 模型的剩余未缓存输入、输出和缓存命中 Token。每一列都是独立假设：剩余计价值全部用于该模型及该 Token 类型，并采用 Standard、基础上下文单价。
 
 ## Management API
 
@@ -166,11 +175,13 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | 在单个事务中合并当前全部候选 |
 | GET | `/v0/management/cpa-quota-estimator/prices` | 已同步价格与 Fast 策略 |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即触发 models.dev 价格同步 |
-| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | 读取已保存的长上下文与 Fast 加价开关 |
-| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 保存两个开关并在事务中重算保留期内的历史费用 |
+| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | 读取已保存的计价口径、长上下文与 Fast 开关 |
+| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 保存计价口径与开关，并在事务中重算全部保留历史周期计价值 |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | 嵌入式仪表盘资源 |
 
 使用 `?account=<AuthID>` 可选择指定凭证；在 `summary` 或 `series` 中使用 `?cycle_id=<ID>` 可选择预测周期；在 `monthly` 中使用 `?month=YYYY-MM` 可选择月份。`series` 还可传入 Unix 秒级的 `?start_at=<时间戳>&end_at=<时间戳>`，返回该范围内所有重叠额度周期的曲线采样点和容量估计轨迹。
+
+`summary` 和 `series` 会返回 `remaining_by_model`；自动检测到的 `weekly_quota` 也包含自己的模型余量列表。计价设置会返回 `pricing_mode` 与 `value_unit`；通过 `POST /pricing-settings` 切换口径时，接口只会在全部保留历史周期完成重算后返回成功。
 
 当某账号的最新有效 Primary 观测为 5 小时窗口，并且同时包含更大的 Secondary 窗口时，`summary`、`series` 和 `monthly` 会返回 `five_hour_quota_detected: true`；`series` 会自动增加独立的 `weekly_quota`，`monthly` 会增加 `weekly_summary`，无需额外查询参数。周限额计算只使用带有已检测 5 小时 Primary 窗口的请求，因此只有周限额的 Pro 账号仍保持原来的主额度单窗口响应结构和统计口径。
 
@@ -185,7 +196,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.6.0
+make package VERSION=0.7.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。

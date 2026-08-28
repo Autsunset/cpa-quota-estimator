@@ -27,11 +27,11 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 - Persists Token counts, model, `service_tier`, estimated cost, and `X-Codex-Primary-*` quota metadata in a private SQLite database.
 - Syncs OpenAI model pricing from `https://models.dev/catalog.json` by default.
 - Accounts for cached reads/writes, output Tokens, and the context pricing tier above 272K input Tokens.
-- Provides two dashboard pricing switches, with an empirical default of long-context surcharge off and Fast surcharge on. Saving either switch persists it in SQLite and transactionally recalculates all historical request costs, quota samples, monthly totals, and USD-equivalent capacity estimates.
+- Provides three persistent pricing bases: current API prices, pre-discount API prices, and subscription Credits. Subscription Credits deliberately use the non-promotional Codex rate card (`pre-discount price × 25`) and never use temporary API/purchased-credit discounts. Saving a basis or surcharge switch transactionally recalculates every retained request, current and historical quota-cycle sample, monthly total, and pricing-value-equivalent capacity estimate; switching back always recalculates from raw Token fields.
 - Supports configurable Fast pricing:
   - `multiplier`: multiply normal/long-context pricing, default **2.5×**;
   - `source`: use explicit `experimental.modes.fast.cost` pricing from models.dev.
-- Estimates full-cycle and remaining-quota Token/USD-equivalent capacity with interquartile ranges and confidence levels.
+- Estimates full-cycle and remaining-quota Token/pricing-value-equivalent capacity with interquartile ranges and confidence levels, and converts the selected cycle’s remaining value into per-model uncached-input, output, and cache-hit Token allowances.
 - Shows actual quota usage, a sustainable baseline, cumulative-average projection, recent-rate projection, predicted exhaustion, planned reset time, and countdown.
 - Maintains an independent ledger for every confirmed quota cycle. Historical cycles remain available in the selector after a reset.
 - Treats `gpt-5.3-codex-spark` headers as a separate quota scope and cycle. Spark actual Tokens, requests, cost, quota equivalents, cycle capacity, and monthly summaries are all accounted for separately; they never create, split, estimate, or add to the primary quota. An optional switch at the top of the dashboard displays the complete Spark statistics below all primary-quota content.
@@ -39,7 +39,7 @@ A native [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) usage plugi
 - Orders quota headers by their response observation time, confirms scheduled transitions with two consistent successful observations, and confirms same-`reset_at` early resets only after three stable successful low-usage observations spanning at least 60 seconds.
 - Handles exhausted 5-hour primary windows whose `reset_at` advances before the percentage falls: the expired cycle is closed immediately, carried-over 100% readings are quarantined until a fresh percentage arrives, and already-contaminated open cycles are repaired from retained raw observations as soon as the next fresh percentage arrives.
 - Provides an explicit preview/apply repair API for historical false early-reset chains. It preserves raw usage rows and leaves confirmed normal cycles unchanged.
-- Adds calendar-month reporting for actual Tokens, estimated request cost, requests, involved cycles, confirmed resets, early resets, cumulative quota-consumption equivalents, unconsumed quota at reset, and estimated capacity allocated by cycles starting in that month.
+- Adds calendar-month reporting for actual Tokens, selected-basis request value, requests, involved cycles, confirmed resets, early resets, cumulative quota-consumption equivalents, unconsumed quota at reset, and estimated capacity allocated by cycles starting in that month.
 - Automatically follows the official CPA or CPAMP panel language, supports Chinese/English manual switching, and remembers the selected mode in the browser.
 - Includes a responsive embedded dashboard with dark/light themes and mobile layouts.
 - Separates the forecast-cycle selector from the chart range. Changing the forecast cycle updates all selected-cycle statistics and resets the charts to that cycle. A manual chart range may span multiple cycles and changes only chart rendering, while statistics remain scoped to the selected forecast cycle. Each cycle is drawn as a separate segment at its real timestamps, with one x-axis grid interval per day and the forecast cycle highlighted.
@@ -114,6 +114,7 @@ plugins:
       price_sync_interval_minutes: 1440
       fast_pricing_mode: multiplier
       fast_multiplier: 2.5
+      pricing_mode: current_api # current_api | legacy_api | credits
       apply_fast_pricing: true
       long_context_threshold: 272000
       apply_long_context_pricing: false
@@ -149,9 +150,17 @@ cost = uncached input × input price
      + output × output price
 ```
 
-All prices are USD per one million Tokens. `ReasoningTokens` are already included in output Tokens and are not charged twice. Requests whose recorded `service_tier` is `priority` or `fast` use the configured Fast pricing policy; `auto` and `default` remain at 1×. The long-context tier is selected when `InputTokens > long_context_threshold` (272,000 by default).
+The active rate is per one million Tokens and is denominated in either USD or subscription Credits. `ReasoningTokens` are already included in output Tokens and are not charged twice. Requests whose recorded `service_tier` is `priority` or `fast` use the configured Fast policy; `auto` and `default` remain at 1×. The long-context tier is selected when `InputTokens > long_context_threshold` (272,000 by default).
 
-The dashboard exposes **>272K long-context surcharge** and **Fast surcharge** checkboxes. The empirical defaults are **long-context surcharge off** and **Fast surcharge on**, based on observed Codex quota-percentage consumption; both remain user-configurable. These defaults target ChatGPT/Codex quota-percentage accounting, not API invoice pricing: OpenAI API requests above the model's long-context threshold can still use the published long-context price tier, so users who want strict API-price-equivalent accounting can enable the long-context switch. **Save and recalculate** stores the selection in the plugin SQLite database and recalculates every retained `usage_events.cost_usd` row plus cumulative quota-sample costs in one transaction, so historical charts, monthly summaries, and USD-equivalent capacity estimates update immediately. Saved dashboard values take precedence over the `apply_fast_pricing` and `apply_long_context_pricing` YAML initial values for the same database. Disabling a switch removes only that surcharge; it does not change recorded Tokens, quota percentages, or cycle boundaries.
+The dashboard pricing selector provides:
+
+- `current_api`: current models.dev/API prices, including active discounts;
+- `legacy_api`: pre-discount API-equivalent prices; GPT-5.6 Sol/Terra/Luna use `$5/$0.50/$30`, `$2.50/$0.25/$15`, and `$1/$0.10/$6` for input/cache-hit/output;
+- `credits`: subscription, non-promotional Codex Credits, calculated as the pre-discount rate × 25; therefore Sol/Terra/Luna use `125/12.5/750`, `62.5/6.25/375`, and `25/2.5/150` Credits per one million input/cache-hit/output Tokens. Temporary purchased-credit discounts are intentionally excluded, and cache writes are assigned zero Credits according to the subscription rate-card treatment.
+
+The dashboard also exposes **>272K long-context surcharge** and **Fast surcharge** switches. **Save and recalculate** persists all three settings and transactionally rebuilds every retained `usage_events.cost_usd` compatibility value plus all quota-sample cumulative values. The selected current or historical cycle, cross-cycle charts, 5-hour and weekly quota panels, and monthly summaries then use the same basis. Switching back recalculates from raw input/output/cache Token fields rather than converting the prior result. JSON field names containing `_cost_usd` are retained for API compatibility; `pricing_mode` and `value_unit` identify whether their active value is USD or Credits.
+
+For each selected primary cycle—and for the independent weekly cycle when detected—the dashboard lists remaining uncached-input, output, and cache-hit Tokens for supported Codex models. Each column is a separate hypothetical: it assumes all remaining pricing value is spent only on that model and Token category, using Standard and base-context rates.
 
 ## Management API
 
@@ -166,11 +175,13 @@ All management routes are protected by CPA Management Key:
 | POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | Transactionally merge all currently detected candidates |
 | GET | `/v0/management/cpa-quota-estimator/prices` | Synced prices and Fast policy |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | Trigger an immediate models.dev sync |
-| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | Read the saved long-context and Fast surcharge switches |
-| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | Save both switches and transactionally recalculate retained historical costs |
+| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | Read the saved pricing basis plus long-context and Fast switches |
+| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | Save the pricing basis and switches, then transactionally recalculate all retained historical cycle values |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | Embedded dashboard resource |
 
 Use `?account=<AuthID>` to select a credential, `?cycle_id=<ID>` on `summary` or `series` to select the forecast cycle, and `?month=YYYY-MM` on `monthly` to select a month. On `series`, pass Unix-second `?start_at=<timestamp>&end_at=<timestamp>` values to return chart samples and capacity trajectories across every quota cycle overlapping that range.
+
+`summary` and `series` include `remaining_by_model`, while an automatically detected `weekly_quota` includes its own list. Pricing settings expose `pricing_mode` and `value_unit`; changing the mode through `POST /pricing-settings` recalculates all retained historical cycles before the response succeeds.
 
 For an account whose latest valid primary observation is a 5-hour window and also contains a larger Secondary window, `summary`, `series`, and `monthly` return `five_hour_quota_detected: true`. `series` then automatically includes an independent `weekly_quota`, and `monthly` includes `weekly_summary`; no opt-in query parameter is needed. Weekly calculations use only requests carrying a detected 5-hour primary window, so weekly-only Pro accounts retain the original primary-only response shape and accounting.
 
@@ -185,7 +196,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.6.0
+make package VERSION=0.7.0
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
