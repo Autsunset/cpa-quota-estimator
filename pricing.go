@@ -16,6 +16,19 @@ const (
 	pricingModeCredits    = "credits"
 )
 
+// modelPriceMultiplier is a quota-equivalence calibration, not an upstream
+// price. Keep catalog prices unchanged so syncs and UI retain the base rates.
+func modelPriceMultiplier(model string) float64 {
+	if normalizeModel(model) == "gpt-6-astra" {
+		return 1.8
+	}
+	return 1
+}
+
+func modelPriceMultipliers() map[string]float64 {
+	return map[string]float64{"gpt-6-astra": modelPriceMultiplier("gpt-6-astra")}
+}
+
 func validPricingMode(mode string) bool {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits:
@@ -206,6 +219,7 @@ func decodeCatalog(r io.Reader) ([]price, error) {
 func seedPrices(ctx context.Context, s *store) error {
 	now := time.Now().Unix()
 	return s.upsertPrices(ctx, []price{
+		{Model: "gpt-6-astra", Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5, LongInput: 20, LongOutput: 75, LongRead: 2, LongWrite: 25, FastInput: 20, FastOutput: 100, FastRead: 2, FastWrite: 25, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5, LongInput: 8, LongOutput: 30, LongRead: .8, LongWrite: 10, FastInput: 8, FastOutput: 40, FastRead: .8, FastWrite: 10, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-luna", Input: .2, Output: 1.2, CacheRead: .02, CacheWrite: .25, LongInput: .4, LongOutput: 1.8, LongRead: .04, LongWrite: .5, FastInput: .4, FastOutput: 2.4, FastRead: .04, FastWrite: .5, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-terra", Input: 2, Output: 12, CacheRead: .2, CacheWrite: 2.5, LongInput: 4, LongOutput: 18, LongRead: .4, LongWrite: 5, FastInput: 4, FastOutput: 24, FastRead: .4, FastWrite: 5, Source: "built-in fallback", UpdatedAt: now},
@@ -234,7 +248,7 @@ func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float
 	if uncached < 0 {
 		uncached = 0
 	}
-	return (float64(uncached)*in + float64(cacheRead)*read + float64(cacheWrite)*write + float64(d.OutputTokens)*out) / 1_000_000
+	return (float64(uncached)*in + float64(cacheRead)*read + float64(cacheWrite)*write + float64(d.OutputTokens)*out) / 1_000_000 * modelPriceMultiplier(p.Model)
 }
 
 func isFastTier(t string) bool {

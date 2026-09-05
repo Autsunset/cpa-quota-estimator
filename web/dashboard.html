@@ -222,6 +222,8 @@ const messages = {
     pricingSettingsSaved: '已保存，重算 {count} 条历史请求。',
     pricingSettingsFailed: '保存失败：{message}',
     pricingModeCurrent: '当前 API 价格',
+    modelMultiplier: '模型倍率 ×{multiplier}',
+    effectiveRate: '折算 {rate}',
     pricingModeLegacy: '优惠前 API 价格',
     pricingModeCredits: 'Credits（订阅无优惠）',
     pricingModeLabel: '计价：{mode}',
@@ -387,6 +389,8 @@ const messages = {
     pricingSettingsSaved: 'Saved and recalculated {count} historical requests.',
     pricingSettingsFailed: 'Failed to save: {message}',
     pricingModeCurrent: 'Current API prices',
+    modelMultiplier: 'Model multiplier ×{multiplier}',
+    effectiveRate: 'Effective {rate}',
     pricingModeLegacy: 'Pre-discount API prices',
     pricingModeCredits: 'Credits (subscription, no promotion)',
     pricingModeLabel: 'Pricing: {mode}',
@@ -1881,6 +1885,9 @@ function pricingDescription(config) {
   if (config.apply_long_context_pricing !== false) {
     rules.push(tr('longContextRule', {threshold: pricingThresholdK(config)}));
   }
+  Object.entries(config.model_price_multipliers || {}).forEach(([model, multiplier]) => {
+    rules.push(model + ' ' + tr('modelMultiplier', {multiplier: multiplier}));
+  });
   return rules.join(' · ');
 }
 
@@ -1888,6 +1895,15 @@ function pricingRate(value, unit) {
   if (!Number.isFinite(+value) || +value <= 0) return '—';
   let formatted = (+value).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 4});
   return (unit === 'credits' ? formatted + ' credits' : '$' + formatted) + ' / 1M';
+}
+
+function allowanceRate(value, item) {
+  let base = pricingRate(value, item.value_unit);
+  let multiplier = Number(item.model_multiplier) || 1;
+  if (multiplier === 1) return base;
+  return base + '<br><small class="muted">' + tr('effectiveRate', {
+    rate: pricingRate(value * multiplier, item.value_unit)
+  }) + '</small>';
 }
 
 function renderModelAllowances(rows, rowsSelector, modeSelector, available) {
@@ -1898,12 +1914,12 @@ function renderModelAllowances(rows, rowsSelector, modeSelector, available) {
     return;
   }
   $(rowsSelector).innerHTML = rows.map(item => '<tr>' +
-    '<td>' + item.model + '</td>' +
-    '<td>' + pricingRate(item.input_rate, item.value_unit) + '</td>' +
+    '<td>' + item.model + (item.model_multiplier > 1 ? '<br><small class="muted">' + tr('modelMultiplier', {multiplier: item.model_multiplier}) + '</small>' : '') + '</td>' +
+    '<td>' + allowanceRate(item.input_rate, item) + '</td>' +
     '<td>' + (available && item.input_tokens ? fmt(item.input_tokens) : '—') + '</td>' +
-    '<td>' + pricingRate(item.output_rate, item.value_unit) + '</td>' +
+    '<td>' + allowanceRate(item.output_rate, item) + '</td>' +
     '<td>' + (available && item.output_tokens ? fmt(item.output_tokens) : '—') + '</td>' +
-    '<td>' + pricingRate(item.cache_read_rate, item.value_unit) + '</td>' +
+    '<td>' + allowanceRate(item.cache_read_rate, item) + '</td>' +
     '<td>' + (available && item.cache_read_tokens ? fmt(item.cache_read_tokens) : '—') + '</td>' +
     '</tr>').join('');
 }

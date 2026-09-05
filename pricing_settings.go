@@ -69,6 +69,27 @@ type costRecalculationEvent struct {
 }
 
 func (s *store) savePricingSettingsAndRecalculate(ctx context.Context, settings pricingSettings, cfg config) (int64, error) {
+	return s.recalculatePricing(ctx, settings, cfg, false)
+}
+
+const astraCalibrationKey = "astra_quota_multiplier_v1_1.8"
+
+// Run once on upgrade; only Astra history changes. The marker, request values,
+// and affected cycle samples commit together and are safe to retry.
+func (s *store) ensureAstraCalibration(ctx context.Context, cfg config) error {
+	var applied string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key=?", astraCalibrationKey).Scan(&applied)
+	if err == nil && applied == "applied" {
+		return nil
+	}
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	_, err = s.recalculatePricing(ctx, cfg.pricingSettings(), cfg, true)
+	return err
+}
+
+func (s *store) recalculatePricing(ctx context.Context, settings pricingSettings, cfg config, astraOnly bool) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -107,7 +128,9 @@ func (s *store) savePricingSettingsAndRecalculate(ctx context.Context, settings 
 			eventRows.Close()
 			return 0, err
 		}
-		events = append(events, event)
+		if !astraOnly || normalizeModel(event.Model) == "gpt-6-astra" {
+			events = append(events, event)
+		}
 	}
 	if err = eventRows.Err(); err != nil {
 		eventRows.Close()
@@ -140,14 +163,21 @@ func (s *store) savePricingSettingsAndRecalculate(ctx context.Context, settings 
 		return 0, err
 	}
 
-	if _, err = tx.ExecContext(ctx, `UPDATE quota_samples
+	sampleSQL := `UPDATE quota_samples
 SET window_cost_usd=COALESCE((
  SELECT SUM(usage_events.cost_usd)
  FROM usage_events
  WHERE usage_events.cycle_id=quota_samples.cycle_id
    AND usage_events.quota_scope=?
    AND usage_events.requested_at<=quota_samples.sampled_at
-),0)`, mainQuotaScope); err != nil {
+),0)`
+	if astraOnly {
+		sampleSQL += ` WHERE cycle_id IN (SELECT DISTINCT cycle_id FROM usage_events WHERE lower(trim(model))='gpt-6-astra' OR lower(trim(model)) LIKE '%/gpt-6-astra')`
+	}
+	if _, err = tx.ExecContext(ctx, sampleSQL, mainQuotaScope); err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,'applied') ON CONFLICT(key) DO UPDATE SET value=excluded.value`, astraCalibrationKey); err != nil {
 		return 0, err
 	}
 

@@ -174,6 +174,10 @@ func (a *app) configure(raw []byte) error {
 		return err
 	}
 	cfg = cfg.withPricingSettings(settings)
+	if err = s.ensureAstraCalibration(context.Background(), cfg); err != nil {
+		_ = s.close()
+		return fmt.Errorf("calibrate Astra history: %w", err)
+	}
 	a.cfg, a.store = cfg, s
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel

@@ -63,7 +63,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if account == "" && len(accounts) > 0 {
 			account = accounts[0]
 		}
-		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": map[string]any{"fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing, "price_source_url": a.cfg.PriceSourceURL}}
+		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": map[string]any{"model_price_multipliers": modelPriceMultipliers(), "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing, "price_source_url": a.cfg.PriceSourceURL}}
 		if account != "" {
 			hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 			if errWeekly != nil {
@@ -263,7 +263,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
-		return jsonResponse(200, map[string]any{"prices": prices, "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing})
+		return jsonResponse(200, map[string]any{"prices": prices, "model_price_multipliers": modelPriceMultipliers(), "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing})
 	default:
 		return textResponse(404, "not found")
 	}
@@ -412,5 +412,6 @@ func pricingSettingsResponse(cfg config, recalculated int64) map[string]any {
 		"fast_pricing_mode":          cfg.FastPricingMode,
 		"fast_multiplier":            cfg.FastMultiplier,
 		"recalculated_events":        recalculated,
+		"model_price_multipliers":    modelPriceMultipliers(),
 	}
 }

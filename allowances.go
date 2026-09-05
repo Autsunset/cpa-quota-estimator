@@ -3,6 +3,7 @@ package main
 import "context"
 
 var allowanceModelOrder = []string{
+	"gpt-6-astra",
 	"gpt-5.6-sol",
 	"gpt-5.6-terra",
 	"gpt-5.6-luna",
@@ -32,17 +33,18 @@ func (s *store) remainingModelAllowances(ctx context.Context, remainingValue flo
 			continue
 		}
 		item := modelAllowance{
-			Model:         model,
-			PricingMode:   normalizePricingMode(cfg.PricingMode),
-			ValueUnit:     pricingValueUnit(cfg.PricingMode),
-			InputRate:     p.Input,
-			OutputRate:    p.Output,
-			CacheReadRate: p.CacheRead,
+			Model:           model,
+			ModelMultiplier: modelPriceMultiplier(model),
+			PricingMode:     normalizePricingMode(cfg.PricingMode),
+			ValueUnit:       pricingValueUnit(cfg.PricingMode),
+			InputRate:       p.Input,
+			OutputRate:      p.Output,
+			CacheReadRate:   p.CacheRead,
 		}
 		if remainingValue > 0 {
-			item.InputTokens = tokensForValue(remainingValue, p.Input)
-			item.OutputTokens = tokensForValue(remainingValue, p.Output)
-			item.CacheReadTokens = tokensForValue(remainingValue, p.CacheRead)
+			item.InputTokens = tokensForValue(remainingValue, p.Input*item.ModelMultiplier)
+			item.OutputTokens = tokensForValue(remainingValue, p.Output*item.ModelMultiplier)
+			item.CacheReadTokens = tokensForValue(remainingValue, p.CacheRead*item.ModelMultiplier)
 		}
 		out = append(out, item)
 	}
