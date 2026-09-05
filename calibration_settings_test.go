@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,8 @@ func TestCalibrationSettingsAPIAndPersistence(t *testing.T) {
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"legacy_api"}`, 10, 2.3, false},
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"apply_model_calibration":true}`, 23, 2.3, true},
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":0.5}`, 5, .5, true},
+		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":2.3,"pricing_mode":"credits","apply_model_calibration":true}`, 575, 2.3, true},
+		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":1,"pricing_mode":"credits","apply_model_calibration":true}`, 250, 1, true},
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":1.8,"pricing_mode":"current_api"}`, 18, 1.8, true},
 	}
 	for _, tc := range cases {
@@ -78,7 +81,11 @@ func TestCalibrationSettingsAPIAndPersistence(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rows[0].InputRate != 10 || math.Abs(rows[0].InputTokens-1e6) > 1e-7 {
+		baseRate := float64(10)
+		if restored.PricingMode == pricingModeCredits {
+			baseRate *= 25
+		}
+		if rows[0].InputRate != baseRate || math.Abs(rows[0].InputTokens-1e6) > 1e-7 {
 			t.Fatalf("allowance=%#v", rows[0])
 		}
 	}
@@ -121,5 +128,17 @@ func TestOldSettingsDefaultCalibrationAndConfigValidation(t *testing.T) {
 	}
 	if cfg.modelPriceMultiplier("gpt-6-astra") != 1 || cfg.AstraMultiplier != 2.4 {
 		t.Fatalf("cfg=%#v", cfg)
+	}
+}
+
+func TestCalibrationControlIsAlwaysAvailable(t *testing.T) {
+	html := string(dashboardHTML)
+	for _, text := range []string{`id="astraMultiplier"`, "三种计价方式（含 Credits）均适用", "Set 1 for no multiplier", "apply_model_calibration: true"} {
+		if !strings.Contains(html, text) {
+			t.Fatalf("missing always-on control detail %q", text)
+		}
+	}
+	if strings.Contains(html, `id="applyModelCalibration"`) {
+		t.Fatal("obsolete switch must not be shown")
 	}
 }
