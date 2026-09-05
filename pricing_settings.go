@@ -5,32 +5,43 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 )
 
 const pricingSettingsMetadataKey = "pricing_settings"
 
 type pricingSettings struct {
-	ApplyLongContext bool   `json:"apply_long_context_pricing"`
-	ApplyFast        bool   `json:"apply_fast_pricing"`
-	PricingMode      string `json:"pricing_mode"`
+	ApplyModelCalibration bool    `json:"apply_model_calibration"`
+	AstraMultiplier       float64 `json:"astra_multiplier"`
+	ApplyLongContext      bool    `json:"apply_long_context_pricing"`
+	ApplyFast             bool    `json:"apply_fast_pricing"`
+	PricingMode           string  `json:"pricing_mode"`
 }
 
 type pricingSettingsUpdate struct {
-	ApplyLongContext *bool  `json:"apply_long_context_pricing"`
-	ApplyFast        *bool  `json:"apply_fast_pricing"`
-	PricingMode      string `json:"pricing_mode"`
+	ApplyModelCalibration *bool    `json:"apply_model_calibration"`
+	AstraMultiplier       *float64 `json:"astra_multiplier"`
+	ApplyLongContext      *bool    `json:"apply_long_context_pricing"`
+	ApplyFast             *bool    `json:"apply_fast_pricing"`
+	PricingMode           string   `json:"pricing_mode"`
 }
 
 func (c config) pricingSettings() pricingSettings {
 	return pricingSettings{
-		ApplyLongContext: c.ApplyLongContextPricing,
-		ApplyFast:        c.ApplyFastPricing,
-		PricingMode:      normalizePricingMode(c.PricingMode),
+		ApplyModelCalibration: c.ApplyModelCalibration,
+		AstraMultiplier:       c.AstraMultiplier,
+		ApplyLongContext:      c.ApplyLongContextPricing,
+		ApplyFast:             c.ApplyFastPricing,
+		PricingMode:           normalizePricingMode(c.PricingMode),
 	}
 }
 
 func (c config) withPricingSettings(settings pricingSettings) config {
+	c.ApplyModelCalibration = settings.ApplyModelCalibration
+	if settings.AstraMultiplier != 0 {
+		c.AstraMultiplier = settings.AstraMultiplier
+	}
 	c.ApplyLongContextPricing = settings.ApplyLongContext
 	c.ApplyFastPricing = settings.ApplyFast
 	c.PricingMode = normalizePricingMode(settings.PricingMode)
@@ -46,7 +57,10 @@ func (s *store) loadPricingSettings(ctx context.Context, fallback pricingSetting
 	if err != nil {
 		return fallback, err
 	}
-	var settings pricingSettings
+	settings := pricingSettings{ApplyModelCalibration: fallback.ApplyModelCalibration, AstraMultiplier: fallback.AstraMultiplier}
+	if settings.AstraMultiplier == 0 {
+		settings.AstraMultiplier = defaultConfig().AstraMultiplier
+	}
 	if err = json.Unmarshal([]byte(raw), &settings); err != nil {
 		return fallback, fmt.Errorf("decode saved pricing settings: %w", err)
 	}
@@ -55,7 +69,17 @@ func (s *store) loadPricingSettings(ctx context.Context, fallback pricingSetting
 	} else {
 		settings.PricingMode = normalizePricingMode(settings.PricingMode)
 	}
+	if err := validateAstraMultiplier(settings.AstraMultiplier); err != nil {
+		return fallback, err
+	}
 	return settings, nil
+}
+
+func validateAstraMultiplier(value float64) error {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0.01 || value > 100 {
+		return fmt.Errorf("astra_multiplier must be between 0.01 and 100")
+	}
+	return nil
 }
 
 type costRecalculationEvent struct {
@@ -90,6 +114,18 @@ func (s *store) ensureAstraCalibration(ctx context.Context, cfg config) error {
 }
 
 func (s *store) recalculatePricing(ctx context.Context, settings pricingSettings, cfg config, astraOnly bool) (int64, error) {
+	// Internal callers written before calibration settings have a zero value.
+	// HTTP/config input is validated separately and cannot save a zero rate.
+	if settings.AstraMultiplier == 0 {
+		settings.AstraMultiplier = cfg.AstraMultiplier
+	}
+	if settings.AstraMultiplier == 0 {
+		settings.AstraMultiplier = defaultConfig().AstraMultiplier
+	}
+	if err := validateAstraMultiplier(settings.AstraMultiplier); err != nil {
+		return 0, err
+	}
+	cfg = cfg.withPricingSettings(settings)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err

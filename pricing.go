@@ -18,15 +18,15 @@ const (
 
 // modelPriceMultiplier is a quota-equivalence calibration, not an upstream
 // price. Keep catalog prices unchanged so syncs and UI retain the base rates.
-func modelPriceMultiplier(model string) float64 {
-	if normalizeModel(model) == "gpt-6-astra" {
-		return 1.8
+func (c config) modelPriceMultiplier(model string) float64 {
+	if c.ApplyModelCalibration && normalizeModel(model) == "gpt-6-astra" {
+		return c.AstraMultiplier
 	}
 	return 1
 }
 
-func modelPriceMultipliers() map[string]float64 {
-	return map[string]float64{"gpt-6-astra": modelPriceMultiplier("gpt-6-astra")}
+func (c config) modelPriceMultipliers() map[string]float64 {
+	return map[string]float64{"gpt-6-astra": c.modelPriceMultiplier("gpt-6-astra")}
 }
 
 func validPricingMode(mode string) bool {
@@ -248,7 +248,7 @@ func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float
 	if uncached < 0 {
 		uncached = 0
 	}
-	return (float64(uncached)*in + float64(cacheRead)*read + float64(cacheWrite)*write + float64(d.OutputTokens)*out) / 1_000_000 * modelPriceMultiplier(p.Model)
+	return (float64(uncached)*in + float64(cacheRead)*read + float64(cacheWrite)*write + float64(d.OutputTokens)*out) / 1_000_000 * cfg.modelPriceMultiplier(p.Model)
 }
 
 func isFastTier(t string) bool {

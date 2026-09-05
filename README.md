@@ -40,7 +40,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 - Syncs OpenAI model pricing from `https://models.dev/catalog.json` by default.
 - Accounts for cached reads/writes, output Tokens, and the context pricing tier above 272K input Tokens.
 - Provides three persistent pricing bases: current API prices, pre-discount API prices, and subscription Credits. Subscription Credits deliberately use the non-promotional Codex rate card (`pre-discount price × 25`) and never use temporary API/purchased-credit discounts. Saving a basis or surcharge switch transactionally recalculates every retained request, current and historical quota-cycle sample, monthly total, and pricing-value-equivalent capacity estimate; switching back always recalculates from raw Token fields.
-- Applies a separate **1.8× quota-equivalence multiplier to `gpt-6-astra`**; official/catalog base prices remain unchanged ($10 input, $1 cache read, $50 output per million Tokens). The dashboard shows base prices, the model multiplier, and effective rates ($18/$1.8/$90), and includes Astra in remaining-Token allowances. The multiplier applies once in all pricing modes, on top of the existing optional Fast/context rules. On upgrade, Astra request values and affected cycle samples are transactionally recalculated from raw Tokens; other models are unchanged. This is a provisional workload calibration against Sol, not an official price increase.
+- Provides a separate **Model quota calibration** switch and editable Astra multiplier (enabled by default, **1.8×**, range **0.01–100**); official/catalog base prices remain unchanged ($10 input, $1 cache read, $50 output per million Tokens). The dashboard shows base prices, the model multiplier, and effective rates ($18/$1.8/$90), and includes Astra in remaining-Token allowances. The multiplier applies once in all pricing modes, on top of the existing optional Fast/context rules. On upgrade, Astra request values and affected cycle samples are transactionally recalculated from raw Tokens; other models are unchanged. This is a provisional workload calibration against Sol, not an official price increase.
 - Supports configurable Fast pricing:
   - `multiplier`: multiply normal/long-context pricing, default **2.5×**;
   - `source`: use explicit `experimental.modes.fast.cost` pricing from models.dev.
@@ -58,6 +58,12 @@ The dashboard answers the operational questions that raw quota percentages do no
 - Separates the forecast-cycle selector from the chart range. Changing the forecast cycle updates all selected-cycle statistics and resets the charts to that cycle. A manual chart range may span multiple cycles and changes only chart rendering, while statistics remain scoped to the selected forecast cycle. Each cycle is drawn as a separate segment at its real timestamps, with one x-axis grid interval per day and the forecast cycle highlighted.
 - Retains data for 365 days by default and never stores request or response bodies.
 - Runs independently of CPA Manager Plus (CPAMP).
+
+## Model quota calibration
+
+In **Pricing rules**, toggle **Model quota calibration** and edit **Astra ×** (default **1.8**). Click **Save and recalculate** to persist the switch and multiplier and transactionally rebuild historical estimates, cycle capacity, and remaining-Token allowances. Disabling calibration applies **1×** without discarding your configured multiplier; switching pricing bases preserves this independent setting. The same value is restored after restarting CPA. The API accepts `apply_model_calibration` and `astra_multiplier` in `POST /pricing-settings`; older clients that omit them preserve the existing values.
+
+This setting affects **plugin estimates only**. It never changes catalog prices, raw Tokens, quota percentages, or **New API billing**. Official/base rates remain visible alongside the applied multiplier and effective rates.
 
 ## Estimation
 
@@ -129,6 +135,8 @@ plugins:
       fast_multiplier: 2.5
       pricing_mode: current_api # current_api | legacy_api | credits
       apply_fast_pricing: true
+      apply_model_calibration: true
+      astra_multiplier: 1.8
       long_context_threshold: 272000
       apply_long_context_pricing: false
       history_days: 365
@@ -214,7 +222,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.9.0
+make package VERSION=0.10.0
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.9.0"
+var pluginVersion = "0.10.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -84,6 +84,8 @@ type managementResponse struct {
 }
 
 type config struct {
+	ApplyModelCalibration    bool    `yaml:"apply_model_calibration"`
+	AstraMultiplier          float64 `yaml:"astra_multiplier"`
 	Enabled                  bool    `yaml:"enabled"`
 	DataPath                 string  `yaml:"data_path"`
 	SampleIntervalMinutes    int     `yaml:"sample_interval_minutes"`
@@ -100,6 +102,8 @@ type config struct {
 
 func defaultConfig() config {
 	return config{
+		ApplyModelCalibration:    true,
+		AstraMultiplier:          1.8,
 		Enabled:                  true,
 		DataPath:                 "/CLIProxyAPI/data/cpa-quota-estimator.sqlite",
 		SampleIntervalMinutes:    5,

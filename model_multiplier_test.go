@@ -44,7 +44,7 @@ func TestAstraMultiplierPreservesBasePricesAndAppliesExactlyOnce(t *testing.T) {
 	if got := priceForPricingMode(p, pricingModeCurrentAPI); got != p {
 		t.Fatal("current API base prices must remain uncalibrated")
 	}
-	if modelPriceMultiplier(" openai/GPT-6-ASTRA ") != 1.8 || modelPriceMultiplier("gpt-5.6-sol") != 1 {
+	if defaultConfig().modelPriceMultiplier(" openai/GPT-6-ASTRA ") != 1.8 || defaultConfig().modelPriceMultiplier("gpt-5.6-sol") != 1 {
 		t.Fatal("model normalization or scope")
 	}
 }

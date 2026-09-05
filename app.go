@@ -68,6 +68,8 @@ func pluginRegistration() any {
 				{"Name": "fast_pricing_mode", "Type": "enum", "EnumValues": []string{"multiplier", "source"}, "Description": "Fast 按倍率或价格源显式价格计费"},
 				{"Name": "fast_multiplier", "Type": "number", "Description": "Fast 倍率，默认 2.5"},
 				{"Name": "pricing_mode", "Type": "enum", "EnumValues": []string{pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits}, "Description": "计价口径：当前 API、优惠前 API 或 Credits"},
+				{"Name": "apply_model_calibration", "Type": "boolean", "Description": "是否启用 Astra 额度校准，默认开启；仅影响插件估值"},
+				{"Name": "astra_multiplier", "Type": "number", "Description": "Astra 额度倍率，默认 1.8，范围 0.01–100"},
 				{"Name": "apply_fast_pricing", "Type": "boolean", "Description": "是否应用 Fast 加价，默认开启；仪表盘保存值会覆盖此初始值"},
 				{"Name": "apply_long_context_pricing", "Type": "boolean", "Description": "是否应用长上下文加价，默认关闭；仪表盘保存值会覆盖此初始值"},
 			},
@@ -101,6 +103,9 @@ func parseConfig(raw []byte) (config, error) {
 		if err := yaml.Unmarshal(raw, &cfg); err != nil {
 			return cfg, fmt.Errorf("parse plugin config: %w", err)
 		}
+	}
+	if err := validateAstraMultiplier(cfg.AstraMultiplier); err != nil {
+		return cfg, err
 	}
 	if cfg.DataPath == "" {
 		cfg.DataPath = defaultConfig().DataPath

@@ -40,7 +40,7 @@
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
 - 仪表盘提供三种可持久化计价口径：当前 API 价格、优惠前 API 价格和订阅 Credits。订阅 Credits 固定采用无促销的 Codex Rate Card（`优惠前价格 × 25`），绝不使用临时 API/购买 Credits 优惠。保存计价方式或加价开关后，会在单个事务中重算全部保留请求、当前与历史额度周期采样、月度汇总和计价等效容量；切回任意口径时都从原始 Token 字段重新计算。
-- 对 `gpt-6-astra` 单独应用 **1.8× 额度等效倍率**，官方/价格源基础价格保持不变（每百万 Token：输入 $10、缓存读取 $1、输出 $50）。仪表盘分别显示原价、模型倍率和折算价格（$18/$1.8/$90），并把 Astra 加入剩余 Token 换算表。倍率在所有计价口径中仅应用一次，与已有可选 Fast/长上下文规则叠加。升级时从原始 Token 在事务中重算 Astra 历史估值及受影响周期采样，不改变其他模型。这是相对 Sol 的暂定负载校准，不是官方涨价。
+- 提供独立的 **模型额度校准** 开关和可编辑 Astra 倍率（默认开启、**1.8×**，范围 **0.01–100**），官方/价格源基础价格保持不变（每百万 Token：输入 $10、缓存读取 $1、输出 $50）。仪表盘分别显示原价、模型倍率和折算价格（$18/$1.8/$90），并把 Astra 加入剩余 Token 换算表。倍率在所有计价口径中仅应用一次，与已有可选 Fast/长上下文规则叠加。升级时从原始 Token 在事务中重算 Astra 历史估值及受影响周期采样，不改变其他模型。这是相对 Sol 的暂定负载校准，不是官方涨价。
 - 支持两种可配置的 Fast 定价方式：
   - `multiplier`：在普通或长上下文价格上应用倍数，默认 **2.5×**；
   - `source`：使用 models.dev 中明确提供的 `experimental.modes.fast.cost` 价格。
@@ -58,6 +58,12 @@
 - 将预测周期选择与曲线范围分离：切换预测周期会更新该周期的全部统计数值，并将曲线范围自动重置到该周期；手动曲线范围可以跨越多个周期，但只改变曲线显示，统计数值仍严格归属于所选预测周期。各周期按真实时间分别分段绘制，x 轴每一天一格，并高亮当前预测周期。
 - 默认保留 365 天数据，不存储请求正文或响应正文。
 - 可独立于 CPA Manager Plus（CPAMP）运行。
+
+## 模型额度校准
+
+在 **费用计算规则** 中切换 **模型额度校准**，并修改 **Astra ×**（默认 **1.8**）。点击 **保存并重算** 后，开关与倍率会持久化，并在事务中重算历史估值、周期容量和剩余 Token。关闭时按 **1×** 估值，但保留填写的倍率；切换计价方式不会改变校准设置，重启 CPA 后也会恢复。`POST /pricing-settings` 接受 `apply_model_calibration` 与 `astra_multiplier`；旧客户端省略这两个字段时保留当前值。
+
+此设置 **仅影响插件估值**，不会修改价格源原价、原始 Token、额度百分比或 **New API 计费**。价格表仍分别显示原价、实际应用倍率及折算价格。
 
 ## 估算方法
 
@@ -129,6 +135,8 @@ plugins:
       fast_multiplier: 2.5
       pricing_mode: current_api # current_api | legacy_api | credits
       apply_fast_pricing: true
+      apply_model_calibration: true
+      astra_multiplier: 1.8
       long_context_threshold: 272000
       apply_long_context_pricing: false
       history_days: 365
@@ -214,7 +222,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.9.0
+make package VERSION=0.10.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。

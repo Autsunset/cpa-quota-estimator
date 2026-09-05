@@ -34,7 +34,7 @@ func (s *store) remainingModelAllowances(ctx context.Context, remainingValue flo
 		}
 		item := modelAllowance{
 			Model:           model,
-			ModelMultiplier: modelPriceMultiplier(model),
+			ModelMultiplier: cfg.modelPriceMultiplier(model),
 			PricingMode:     normalizePricingMode(cfg.PricingMode),
 			ValueUnit:       pricingValueUnit(cfg.PricingMode),
 			InputRate:       p.Input,
