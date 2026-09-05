@@ -40,6 +40,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 - Syncs OpenAI model pricing from `https://models.dev/catalog.json` by default.
 - Accounts for cached reads/writes, output Tokens, and the context pricing tier above 272K input Tokens.
 - Provides three persistent pricing bases: current API prices, pre-discount API prices, and subscription Credits. Subscription Credits deliberately use the non-promotional Codex rate card (`pre-discount price × 25`) and never use temporary API/purchased-credit discounts. Saving a basis or surcharge switch transactionally recalculates every retained request, current and historical quota-cycle sample, monthly total, and pricing-value-equivalent capacity estimate; switching back always recalculates from raw Token fields.
+- Applies a separate **1.8× quota-equivalence multiplier to `gpt-6-astra`**; official/catalog base prices remain unchanged ($10 input, $1 cache read, $50 output per million Tokens). The dashboard shows base prices, the model multiplier, and effective rates ($18/$1.8/$90), and includes Astra in remaining-Token allowances. The multiplier applies once in all pricing modes, on top of the existing optional Fast/context rules. On upgrade, Astra request values and affected cycle samples are transactionally recalculated from raw Tokens; other models are unchanged. This is a provisional workload calibration against Sol, not an official price increase.
 - Supports configurable Fast pricing:
   - `multiplier`: multiply normal/long-context pricing, default **2.5×**;
   - `source`: use explicit `experimental.modes.fast.cost` pricing from models.dev.
@@ -213,7 +214,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.8.0
+make package VERSION=0.9.0
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

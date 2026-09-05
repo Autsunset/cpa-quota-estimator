@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.8.0"
+var pluginVersion = "0.9.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -252,6 +252,7 @@ type estimate struct {
 }
 
 type modelAllowance struct {
+	ModelMultiplier float64 `json:"model_multiplier"`
 	Model           string  `json:"model"`
 	PricingMode     string  `json:"pricing_mode"`
 	ValueUnit       string  `json:"value_unit"`
