@@ -12,8 +12,8 @@ func TestPublicReleaseDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.PricingMode != pricingModeCurrentAPI {
-		t.Fatalf("pricing mode = %q, want %q", cfg.PricingMode, pricingModeCurrentAPI)
+	if cfg.PricingMode != pricingModeLegacyAPI {
+		t.Fatalf("pricing mode = %q, want %q", cfg.PricingMode, pricingModeLegacyAPI)
 	}
 	if cfg.HistoryDays != 365 {
 		t.Fatalf("history days = %d, want 365", cfg.HistoryDays)
@@ -225,6 +225,7 @@ func TestCalculateCostCacheLongAndFast(t *testing.T) {
 		t.Fatalf("cost = %f, want %f", got, want)
 	}
 	cfg.FastPricingMode = "source"
+	cfg.PricingMode = pricingModeCurrentAPI // Explicit source Fast prices belong to the current API basis.
 	got = calculateCost(p, detail, "priority", cfg)
 	want = (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*60) / 1_000_000
 	if math.Abs(got-want) > 1e-9 {

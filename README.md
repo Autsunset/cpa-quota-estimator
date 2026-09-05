@@ -39,7 +39,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 - Persists Token counts, model, `service_tier`, selected-basis pricing value, and `X-Codex-Primary-*` quota metadata in a private SQLite database.
 - Syncs OpenAI model pricing from `https://models.dev/catalog.json` by default.
 - Accounts for cached reads/writes, output Tokens, and the context pricing tier above 272K input Tokens.
-- Provides three persistent pricing bases: current API prices, pre-discount API prices, and subscription Credits. Subscription Credits deliberately use the non-promotional Codex rate card (`pre-discount price × 25`) and never use temporary API/purchased-credit discounts. Saving a basis or surcharge switch transactionally recalculates every retained request, current and historical quota-cycle sample, monthly total, and pricing-value-equivalent capacity estimate; switching back always recalculates from raw Token fields.
+- Provides three persistent pricing bases: **pre-discount API prices (default for new users)**, current API prices, and subscription Credits. Existing saved selections are preserved on upgrade. Subscription Credits deliberately use the non-promotional Codex rate card (`pre-discount price × 25`) and never use temporary API/purchased-credit discounts. Saving a basis or surcharge switch transactionally recalculates every retained request, current and historical quota-cycle sample, monthly total, and pricing-value-equivalent capacity estimate; switching back always recalculates from raw Token fields.
 - Provides a separate **Model quota calibration** always-visible Astra multiplier control (default **1.8×**, range **0.01–100**; set **1×** for no calibration); official/catalog base prices remain unchanged ($10 input, $1 cache read, $50 output per million Tokens). The dashboard shows base prices, the model multiplier, and effective rates ($18/$1.8/$90), and includes Astra in remaining-Token allowances. The multiplier applies once in all pricing modes, on top of the existing optional Fast/context rules. On upgrade, Astra request values and affected cycle samples are transactionally recalculated from raw Tokens; other models are unchanged. This is a provisional workload calibration against Sol, not an official price increase.
 - Supports configurable Fast pricing:
   - `multiplier`: multiply normal/long-context pricing, default **2.5×**;
@@ -133,7 +133,7 @@ plugins:
       price_sync_interval_minutes: 1440
       fast_pricing_mode: multiplier
       fast_multiplier: 2.5
-      pricing_mode: current_api # current_api | legacy_api | credits
+      pricing_mode: legacy_api # legacy_api (default) | current_api | credits
       apply_fast_pricing: true
       astra_multiplier: 1.8
       long_context_threshold: 272000

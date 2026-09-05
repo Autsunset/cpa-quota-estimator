@@ -23,7 +23,7 @@
 </head>
 <body><main class="wrap">
 <div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与所选计价口径的等效容量</span></h1><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="预测周期"><option value="">当前预测</option></select><select id="language" aria-label="界面语言"></select><label class="spark-toggle spark-toggle-top"><input id="showSpark" type="checkbox"><span>显示 Spark 额度</span></label><button id="sync">同步价格</button><button id="refresh" class="primary">刷新</button></div></div>
-<section class="pricing-settings"><div class="pricing-settings-copy"><b>费用计算规则</b><span>默认使用当前 API 价格；可切换优惠前价格或订阅无优惠 Credits，保存后重算全部历史周期</span></div><div class="pricing-controls"><label class="pricing-mode-control"><span>计价方式</span><select id="pricingMode" aria-label="计价方式"></select></label><label class="pricing-toggle"><input id="applyLongContextPricing" type="checkbox"><span id="longContextPricingLabel">&gt;272K 长上下文加价</span></label><label class="pricing-toggle"><input id="applyFastPricing" type="checkbox" checked><span id="fastPricingLabel">Fast 加价（2.5×）</span></label><div class="model-calibration-control"><div class="model-calibration-inputs"><span class="model-calibration-label">模型额度校准</span><label class="astra-multiplier-control" for="astraMultiplier"><span>Astra ×</span><input id="astraMultiplier" type="number" min="0.01" max="100" step="any" value="1.8" inputmode="decimal" aria-label="Astra 模型倍率" aria-describedby="modelCalibrationHelp"></label></div><small id="modelCalibrationHelp">三种计价方式（含 Credits）均适用；设为 1 不加倍率。仅影响插件估值，不修改 New API 计费。</small></div><button id="savePricingSettings" class="primary">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" aria-live="polite"></span></div></section>
+<section class="pricing-settings"><div class="pricing-settings-copy"><b>费用计算规则</b><span>新用户默认使用优惠前 API 价格；可切换当前 API 价格或订阅 Credits，保存后重算全部历史周期</span></div><div class="pricing-controls"><label class="pricing-mode-control"><span>计价方式</span><select id="pricingMode" aria-label="计价方式"></select></label><label class="pricing-toggle"><input id="applyLongContextPricing" type="checkbox"><span id="longContextPricingLabel">&gt;272K 长上下文加价</span></label><label class="pricing-toggle"><input id="applyFastPricing" type="checkbox" checked><span id="fastPricingLabel">Fast 加价（2.5×）</span></label><div class="model-calibration-control"><div class="model-calibration-inputs"><span class="model-calibration-label">模型额度校准</span><label class="astra-multiplier-control" for="astraMultiplier"><span>Astra ×</span><input id="astraMultiplier" type="number" min="0.01" max="100" step="any" value="1.8" inputmode="decimal" aria-label="Astra 模型倍率" aria-describedby="modelCalibrationHelp"></label></div><small id="modelCalibrationHelp">三种计价方式（含 Credits）均适用；设为 1 不加倍率。仅影响插件估值，不修改 New API 计费。</small></div><button id="savePricingSettings" class="primary">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" aria-live="polite"></span></div></section>
 <section class="chart overview"><div class="section-head"><div><h2>全部账号额度概览</h2><div class="sub">合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；点击有样本的账号查看详情</div></div><div class="overview-head-actions"><span class="sub" id="overviewCount">—</span><button id="overviewClearFilters" type="button">清除筛选</button><button id="overviewToggle" type="button" aria-expanded="true" aria-controls="overviewBody">折叠概览</button></div></div><div class="overview-body" id="overviewBody"><div class="overview-table-wrap"><table class="overview-table"><thead><tr class="overview-heading-row"><th><button class="overview-sort" type="button" data-sort-key="account"><span>账号</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="plan"><span>计划类型</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="remaining"><span>当前剩余额度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="reset"><span>重置时间</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="requests"><span>请求数</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="tokens"><span>Token</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="cost"><span>等价费用</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="capacity"><span>完整周期容量估计</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="confidence"><span>估计置信度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="forecast"><span>预计耗尽 / 状态</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th></tr><tr class="overview-filter-row"><th><input class="overview-filter" data-overview-filter="account"></th><th><input class="overview-filter" data-overview-filter="plan"></th><th><input class="overview-filter" data-overview-filter="remaining"></th><th><input class="overview-filter" data-overview-filter="reset"></th><th><input class="overview-filter" data-overview-filter="requests"></th><th><input class="overview-filter" data-overview-filter="tokens"></th><th><input class="overview-filter" data-overview-filter="cost"></th><th><input class="overview-filter" data-overview-filter="capacity"></th><th><input class="overview-filter" data-overview-filter="confidence"></th><th><input class="overview-filter" data-overview-filter="forecast"></th></tr></thead><tbody id="overviewRows"></tbody></table></div></div></section>
 <section class="grid">
  <div class="card"><div class="label">所选周期剩余额度</div><div class="value" id="used">—</div><div class="sub" id="window">等待额度样本</div></div>
@@ -562,9 +562,8 @@ const staticEnglish = {
   '模型额度校准': 'Model quota calibration',
   'Astra 模型倍率': 'Astra model multiplier',
   '三种计价方式（含 Credits）均适用；设为 1 不加倍率。仅影响插件估值，不修改 New API 计费。': 'Applies to all three pricing bases, including Credits. Set 1 for no multiplier. Plugin estimates only; New API billing stays unchanged.',
-  '默认使用当前 API 价格；可切换优惠前价格或订阅无优惠 Credits，保存后重算全部历史周期': 'Current API prices are the default. Switch to pre-discount prices or non-promotional subscription Credits; saving recalculates every historical cycle.',
+  '新用户默认使用优惠前 API 价格；可切换当前 API 价格或订阅 Credits，保存后重算全部历史周期': 'New users default to pre-discount API prices. Switch to current API prices or subscription Credits; saving recalculates every historical cycle.',
   '费用计算规则': 'Cost calculation rules',
-  '默认使用当前 API 价格；可切换优惠前价格或订阅无优惠 Credits，保存后重算全部历史周期': 'Empirical default: long context off, Fast on; saving recalculates all historical costs and capacity estimates',
   '>272K 长上下文加价': '>272K long-context surcharge',
   'Fast 加价（2.5×）': 'Fast surcharge (2.5×)',
   '保存并重算': 'Save and recalculate',
@@ -858,7 +857,7 @@ const fmt = number => {
 };
 
 function activePricingMode(config) {
-  return String(config && config.pricing_mode || state && state.config && state.config.pricing_mode || 'current_api');
+  return String(config && config.pricing_mode || state && state.config && state.config.pricing_mode || 'legacy_api');
 }
 
 function pricingUnitLabel(config) {
@@ -1858,13 +1857,13 @@ function renderPricingModeSelect(config, preserveSelection) {
   let select = $('#pricingMode');
   let selected = preserveSelection && pricingSettingsDirty ? select.value : activePricingMode(config);
   select.replaceChildren();
-  [['current_api', tr('pricingModeCurrent')], ['legacy_api', tr('pricingModeLegacy')], ['credits', tr('pricingModeCredits')]].forEach(item => {
+  [['legacy_api', tr('pricingModeLegacy')], ['current_api', tr('pricingModeCurrent')], ['credits', tr('pricingModeCredits')]].forEach(item => {
     let option = document.createElement('option');
     option.value = item[0];
     option.textContent = item[1];
     select.append(option);
   });
-  select.value = selected || 'current_api';
+  select.value = selected || 'legacy_api';
 }
 
 function renderPricingSettings(config, preserveChecks) {

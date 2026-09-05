@@ -39,7 +39,7 @@
 - 将 Token 数、模型、`service_tier`、所选口径计价值和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
-- 仪表盘提供三种可持久化计价口径：当前 API 价格、优惠前 API 价格和订阅 Credits。订阅 Credits 固定采用无促销的 Codex Rate Card（`优惠前价格 × 25`），绝不使用临时 API/购买 Credits 优惠。保存计价方式或加价开关后，会在单个事务中重算全部保留请求、当前与历史额度周期采样、月度汇总和计价等效容量；切回任意口径时都从原始 Token 字段重新计算。
+- 仪表盘提供三种可持久化计价口径：**优惠前 API 价格（新用户默认）**、当前 API 价格和订阅 Credits。升级时保留已有用户保存的选择。订阅 Credits 固定采用无促销的 Codex Rate Card（`优惠前价格 × 25`），绝不使用临时 API/购买 Credits 优惠。保存计价方式或加价开关后，会在单个事务中重算全部保留请求、当前与历史额度周期采样、月度汇总和计价等效容量；切回任意口径时都从原始 Token 字段重新计算。
 - 提供独立的 **模型额度校准** 常驻 Astra 倍率输入项（默认 **1.8×**，范围 **0.01–100**；设为 **1×** 即不校准），官方/价格源基础价格保持不变（每百万 Token：输入 $10、缓存读取 $1、输出 $50）。仪表盘分别显示原价、模型倍率和折算价格（$18/$1.8/$90），并把 Astra 加入剩余 Token 换算表。倍率在所有计价口径中仅应用一次，与已有可选 Fast/长上下文规则叠加。升级时从原始 Token 在事务中重算 Astra 历史估值及受影响周期采样，不改变其他模型。这是相对 Sol 的暂定负载校准，不是官方涨价。
 - 支持两种可配置的 Fast 定价方式：
   - `multiplier`：在普通或长上下文价格上应用倍数，默认 **2.5×**；
@@ -133,7 +133,7 @@ plugins:
       price_sync_interval_minutes: 1440
       fast_pricing_mode: multiplier
       fast_multiplier: 2.5
-      pricing_mode: current_api # current_api | legacy_api | credits
+      pricing_mode: legacy_api # legacy_api (default) | current_api | credits
       apply_fast_pricing: true
       astra_multiplier: 1.8
       long_context_threshold: 272000

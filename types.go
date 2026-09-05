@@ -111,7 +111,7 @@ func defaultConfig() config {
 		PriceSyncIntervalMinutes: 1440,
 		FastPricingMode:          "multiplier",
 		FastMultiplier:           2.5,
-		PricingMode:              pricingModeCurrentAPI,
+		PricingMode:              pricingModeLegacyAPI,
 		ApplyFastPricing:         true,
 		LongContextThreshold:     272000,
 		ApplyLongContextPricing:  false,

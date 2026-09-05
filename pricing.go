@@ -40,12 +40,12 @@ func validPricingMode(mode string) bool {
 
 func normalizePricingMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case pricingModeLegacyAPI:
-		return pricingModeLegacyAPI
+	case pricingModeCurrentAPI:
+		return pricingModeCurrentAPI
 	case pricingModeCredits:
 		return pricingModeCredits
 	default:
-		return pricingModeCurrentAPI
+		return pricingModeLegacyAPI
 	}
 }
 

@@ -142,3 +142,46 @@ func TestCalibrationControlIsAlwaysAvailable(t *testing.T) {
 		t.Fatal("obsolete switch must not be shown")
 	}
 }
+
+func TestNewUsersDefaultToLegacyAndSavedModesArePreserved(t *testing.T) {
+	ctx := context.Background()
+	s, err := openStore(filepath.Join(t.TempDir(), "defaults.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	cfg, err := parseConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PricingMode != pricingModeLegacyAPI || cfg.AstraMultiplier != 1.8 {
+		t.Fatalf("new user defaults=%#v", cfg)
+	}
+	fresh, err := s.loadPricingSettings(ctx, cfg.pricingSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.PricingMode != pricingModeLegacyAPI {
+		t.Fatalf("fresh settings=%#v", fresh)
+	}
+	for _, mode := range []string{pricingModeCurrentAPI, pricingModeCredits, pricingModeLegacyAPI} {
+		raw := `{"pricing_mode":"` + mode + `","apply_long_context_pricing":false,"apply_fast_pricing":true}`
+		if _, err = s.db.Exec(`INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, pricingSettingsMetadataKey, raw); err != nil {
+			t.Fatal(err)
+		}
+		saved, err := s.loadPricingSettings(ctx, cfg.pricingSettings())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved.PricingMode != mode {
+			t.Fatalf("saved %s overwritten by default: %#v", mode, saved)
+		}
+		explicit, err := parseConfig([]byte("pricing_mode: " + mode))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if explicit.PricingMode != mode {
+			t.Fatalf("explicit config %s overwritten", mode)
+		}
+	}
+}
