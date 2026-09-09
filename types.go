@@ -174,6 +174,22 @@ type quotaPoint struct {
 	WindowTokens  int64   `json:"window_tokens"`
 	WindowCostUSD float64 `json:"window_cost_usd"`
 	Requests      int64   `json:"requests"`
+	Anomalous     bool    `json:"anomalous,omitempty"`
+	BreakBefore   bool    `json:"break_before,omitempty"`
+}
+
+type quotaRegimeAnomaly struct {
+	CycleID              int64   `json:"cycle_id"`
+	Kind                 string  `json:"kind"`
+	StartedAt            int64   `json:"started_at"`
+	EndedAt              int64   `json:"ended_at"`
+	BeforeUsedPercent    float64 `json:"before_used_percent"`
+	AnomalousUsedPercent float64 `json:"anomalous_used_percent"`
+	RestoredUsedPercent  float64 `json:"restored_used_percent"`
+	BeforeResetAt        int64   `json:"before_reset_at"`
+	AnomalousResetAt     int64   `json:"anomalous_reset_at"`
+	RestoredResetAt      int64   `json:"restored_reset_at"`
+	ObservationCount     int64   `json:"observation_count"`
 }
 
 type scopedQuotaPoint struct {
@@ -275,6 +291,7 @@ type capacityPoint struct {
 	FullWindowTokens  float64 `json:"full_window_tokens"`
 	FullWindowCostUSD float64 `json:"full_window_cost_usd"`
 	SampleCount       int     `json:"sample_count"`
+	BreakBefore       bool    `json:"break_before,omitempty"`
 }
 
 type burnForecast struct {

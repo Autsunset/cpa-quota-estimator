@@ -30,6 +30,10 @@ func TestDashboardShowsRemainingQuotaAndExhaustedState(t *testing.T) {
 		[]byte("setupOverviewColumnResizers"),
 		[]byte("overview-column-resizer"),
 		[]byte("overview-toggle-icon"),
+		[]byte("quotaAnomalyPanel"),
+		[]byte("renderQuotaAnomalies"),
+		[]byte("quotaAnomalyOverlays"),
+		[]byte("上游额度状态异常"),
 	} {
 		if !bytes.Contains(dashboardHTML, expected) {
 			t.Fatalf("dashboard is missing %q", expected)
@@ -331,6 +335,71 @@ func TestManagementExposesBothSparkQuotaAxes(t *testing.T) {
 	}
 	if weeklyMonthly.CycleCount != 1 || len(weeklyMonthly.Cycles) != 1 || weeklyMonthly.Cycles[0].WindowMinutes != weeklyWindowMinutes {
 		t.Fatalf("Spark weekly monthly cycles = %#v", weeklyMonthly)
+	}
+}
+
+func TestManagementExposesRecoveredQuotaRegimeAnomaly(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "quota-anomaly-api.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	const (
+		account        = "quota-anomaly-api"
+		originalReset  = int64(10_000)
+		anomalousReset = int64(20_000)
+		windowMinutes  = int64(100)
+	)
+	for _, item := range []struct {
+		at      int64
+		used    float64
+		resetAt int64
+	}{{100, 49, originalReset}, {200, 50, originalReset},
+		{300, 70, anomalousReset}, {400, 71, anomalousReset},
+		{500, 50, originalReset}, {600, 51, originalReset}} {
+		used := item.used
+		if err = s.insertEvent(ctx, event{
+			RequestedAt: item.at, ObservedAt: item.at, Account: account,
+			Provider: "openai", Model: "gpt", TotalTokens: 100,
+			UsedPercent: &used, ResetAt: item.resetAt, WindowMinutes: windowMinutes, PlanType: "pro",
+		}, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	a := &app{cfg: defaultConfig(), store: s}
+	for _, endpoint := range []string{"/cpa-quota-estimator/summary", "/cpa-quota-estimator/series"} {
+		response := a.handleManagement(managementRequest{
+			Method: "GET", Path: endpoint, Query: url.Values{"account": {account}},
+		})
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", endpoint, response.StatusCode, response.Body)
+		}
+		var payload struct {
+			Latest         quotaPoint           `json:"latest"`
+			Points         []quotaPoint         `json:"points"`
+			Anomalies      []quotaRegimeAnomaly `json:"quota_anomalies"`
+			RangeAnomalies []quotaRegimeAnomaly `json:"range_quota_anomalies"`
+		}
+		if err = json.Unmarshal(response.Body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.Anomalies) != 1 || payload.Anomalies[0].Kind != quotaRegimeReverted {
+			t.Fatalf("%s anomalies=%#v", endpoint, payload.Anomalies)
+		}
+		if endpoint == "/cpa-quota-estimator/summary" &&
+			(payload.Latest.UsedPercent != 51 || payload.Latest.ResetAt != originalReset) {
+			t.Fatalf("summary latest=%#v", payload.Latest)
+		}
+		if endpoint == "/cpa-quota-estimator/series" {
+			if len(payload.Points) == 0 || payload.Points[len(payload.Points)-1].UsedPercent != 51 {
+				t.Fatalf("series points=%#v", payload.Points)
+			}
+			if len(payload.RangeAnomalies) != 1 {
+				t.Fatalf("series range anomalies=%#v", payload.RangeAnomalies)
+			}
+		}
 	}
 }
 

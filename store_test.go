@@ -641,6 +641,140 @@ func TestCycleKeepsScheduleCorrectionInCurrentCycle(t *testing.T) {
 	}
 }
 
+func TestTransientQuotaRegimeRecoveryUpdatesCurrentStateAndMarksAnomaly(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "transient-quota-regime.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	account := "transient-quota-regime-account"
+	const (
+		originalReset  = int64(10_000)
+		anomalousReset = int64(20_000)
+		windowMinutes  = int64(100)
+	)
+	for _, item := range []struct {
+		at      int64
+		used    float64
+		resetAt int64
+	}{{100, 49, originalReset}, {200, 50, originalReset},
+		{300, 70, anomalousReset}, {400, 71, anomalousReset},
+		{500, 50, originalReset}, {600, 51, originalReset}} {
+		used := item.used
+		if err = s.insertEvent(ctx, event{
+			RequestedAt: item.at, ObservedAt: item.at, Account: account,
+			Provider: "openai", Model: "gpt", TotalTokens: 100, CostUSD: 1,
+			UsedPercent: &used, ResetAt: item.resetAt, WindowMinutes: windowMinutes, PlanType: "pro",
+		}, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cycles, err := s.cycles(ctx, account, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 {
+		t.Fatalf("cycles = %#v", cycles)
+	}
+	cycle := cycles[0]
+	if cycle.ResetAt != originalReset || cycle.StartPercent != 49 || cycle.EndPercent != 51 || cycle.PeakPercent != 51 {
+		t.Fatalf("recovered cycle = %#v", cycle)
+	}
+
+	anomalies, err := s.quotaRegimeAnomalies(ctx, cycle.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(anomalies) != 1 {
+		t.Fatalf("anomalies = %#v", anomalies)
+	}
+	anomaly := anomalies[0]
+	if anomaly.Kind != quotaRegimeReverted || anomaly.StartedAt != 300 || anomaly.EndedAt != 500 ||
+		anomaly.BeforeUsedPercent != 50 || anomaly.AnomalousUsedPercent != 70 || anomaly.RestoredUsedPercent != 50 ||
+		anomaly.BeforeResetAt != originalReset || anomaly.AnomalousResetAt != anomalousReset ||
+		anomaly.RestoredResetAt != originalReset || anomaly.ObservationCount != 2 {
+		t.Fatalf("anomaly = %#v", anomaly)
+	}
+
+	points, _, err := s.pointsForCycle(ctx, account, cycle.ID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 6 || points[len(points)-1].UsedPercent != 51 || points[len(points)-1].ResetAt != originalReset {
+		t.Fatalf("points = %#v", points)
+	}
+	if !points[2].Anomalous || !points[3].Anomalous || !points[2].BreakBefore || !points[4].BreakBefore {
+		t.Fatalf("anomaly point markers = %#v", points)
+	}
+	estimate := estimateCapacity(points)
+	if !estimate.Available || estimate.SampleCount != 2 || estimate.FullWindowTokens != 10_000 ||
+		estimate.FullWindowCostUSD != 100 || estimate.RemainingTokens != 4_900 || estimate.RemainingCostUSD != 49 {
+		t.Fatalf("anomaly-safe estimate = %#v", estimate)
+	}
+	history := capacityHistory(points)
+	if len(history) != 2 || history[0].FullWindowTokens != 10_000 ||
+		history[1].FullWindowTokens != 10_000 || !history[1].BreakBefore {
+		t.Fatalf("anomaly-safe capacity history = %#v", history)
+	}
+}
+
+func TestQuotaRegimeAnomalyRequiresRepeatedAlternateState(t *testing.T) {
+	observations := []quotaRegimeObservation{
+		{RequestedAt: 100, UsedPercent: 49, ResetAt: 1_000, WindowMinutes: 100},
+		{RequestedAt: 200, UsedPercent: 50, ResetAt: 1_000, WindowMinutes: 100},
+		{RequestedAt: 300, UsedPercent: 70, ResetAt: 2_000, WindowMinutes: 100},
+		{RequestedAt: 400, UsedPercent: 51, ResetAt: 1_000, WindowMinutes: 100},
+		{RequestedAt: 500, UsedPercent: 52, ResetAt: 1_000, WindowMinutes: 100},
+	}
+	if anomalies := detectQuotaRegimeAnomalies(1, observations); len(anomalies) != 0 {
+		t.Fatalf("single alternate response was reported as an anomaly: %#v", anomalies)
+	}
+}
+
+func TestOpenStoreReconcilesCurrentCycleStatsToActiveRegime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reconcile-active-regime.sqlite")
+	s, err := openStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	account := "reconcile-active-regime-account"
+	const resetAt = int64(10_000)
+	for _, item := range []struct {
+		at   int64
+		used float64
+	}{{100, 49}, {200, 50}, {300, 51}} {
+		used := item.used
+		if err = s.insertEvent(ctx, event{
+			RequestedAt: item.at, ObservedAt: item.at, Account: account,
+			Provider: "openai", Model: "gpt", TotalTokens: 100,
+			UsedPercent: &used, ResetAt: resetAt, WindowMinutes: 100, PlanType: "pro",
+		}, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = s.db.ExecContext(ctx, `UPDATE quota_cycles SET start_used_percent=49,end_used_percent=71,peak_used_percent=71 WHERE account=?`, account); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = openStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	cycles, err := s.cycles(ctx, account, 1)
+	if err != nil || len(cycles) != 1 {
+		t.Fatalf("cycles=%#v err=%v", cycles, err)
+	}
+	if cycles[0].StartPercent != 49 || cycles[0].EndPercent != 51 || cycles[0].PeakPercent != 51 {
+		t.Fatalf("reconciled cycle=%#v", cycles[0])
+	}
+}
+
 func TestSelectCycleDistinguishesSameResetAt(t *testing.T) {
 	cycles := []quotaCycle{{ID: 2, ResetAt: 700, Current: true}, {ID: 1, ResetAt: 700}}
 	selected, current := selectCycle(cycles, "1", "")

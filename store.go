@@ -153,7 +153,10 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if _, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_usage_cycle_time ON usage_events(cycle_id, requested_at); CREATE INDEX IF NOT EXISTS idx_usage_account_scope_time ON usage_events(account, quota_scope, requested_at); CREATE INDEX IF NOT EXISTS idx_quota_cycle_time ON quota_samples(cycle_id, sampled_at);`); err != nil {
 		return err
 	}
-	return s.backfillCycles()
+	if err = s.backfillCycles(); err != nil {
+		return err
+	}
+	return s.reconcileOpenCycleQuotaRegimes()
 }
 
 func (s *store) close() error { return s.db.Close() }
@@ -187,7 +190,9 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 	if sampleQuota && cycle.ID > 0 && e.UsedPercent != nil && e.ResetAt > 0 && e.WindowMinutes > 0 {
 		var lastAt int64
 		var lastPercent float64
-		errLast := tx.QueryRowContext(ctx, `SELECT sampled_at, used_percent FROM quota_samples WHERE cycle_id=? ORDER BY sampled_at DESC LIMIT 1`, cycle.ID).Scan(&lastAt, &lastPercent)
+		errLast := tx.QueryRowContext(ctx, `SELECT sampled_at,used_percent FROM quota_samples
+WHERE cycle_id=? AND reset_at=? AND window_minutes=?
+ORDER BY sampled_at DESC,id DESC LIMIT 1`, cycle.ID, e.ResetAt, e.WindowMinutes).Scan(&lastAt, &lastPercent)
 		due := errLast == sql.ErrNoRows || (*e.UsedPercent >= lastPercent && (lastPercent != *e.UsedPercent || e.RequestedAt-lastAt >= int64(sampleInterval/time.Second)))
 		if errLast != nil && errLast != sql.ErrNoRows {
 			return errLast
@@ -202,7 +207,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			if err != nil {
 				return err
 			}
-			if err = updateCycleSample(ctx, tx, cycle.ID, e.RequestedAt, *e.UsedPercent, e.ResetAt, e.WindowMinutes, e.PlanType); err != nil {
+			if err = updateCycleSample(ctx, tx, cycle.ID, e.ResetAt, e.WindowMinutes, e.PlanType); err != nil {
 				return err
 			}
 		}

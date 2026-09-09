@@ -67,8 +67,12 @@ func estimateBurn(points []quotaPoint, now int64) burnForecast {
 		result.EstimatedExhaustAt = windowStart + int64(float64(elapsed)*100/used)
 		result.WillExhaustBeforeReset = result.EstimatedExhaustAt < last.ResetAt
 	}
-	milestones := monotonicMilestones(points)
-	if len(milestones) >= 2 {
+	segments := estimationMilestoneSegments(points)
+	if len(segments) > 0 {
+		milestones := segments[len(segments)-1].Points
+		if len(milestones) < 2 {
+			return result
+		}
 		latest := milestones[len(milestones)-1]
 		cutoff := latest.Time - 24*60*60
 		anchorIndex := 0
@@ -103,38 +107,45 @@ func estimateCapacity(points []quotaPoint) estimate {
 	// repeat the same integer percentage. Use only the first crossing of each
 	// new all-time high; adjacent periodic samples would severely undercount
 	// the work needed to advance by one percent.
-	milestones := monotonicMilestones(points)
-	if len(milestones) < 2 {
-		return result
-	}
 	var tokenEstimates, costEstimates []float64
-	first, last := milestones[0], milestones[len(milestones)-1]
-	for i := 1; i < len(milestones); i++ {
-		a, b := milestones[i-1], milestones[i]
-		dp := b.UsedPercent - a.UsedPercent
-		if dp <= 0 {
-			continue
+	segments := estimationMilestoneSegments(points)
+	var latestSegment []quotaPoint
+	for _, segment := range segments {
+		milestones := segment.Points
+		if len(milestones) > 0 {
+			latestSegment = milestones
 		}
-		dt := float64(b.WindowTokens - a.WindowTokens)
-		dc := b.WindowCostUSD - a.WindowCostUSD
-		if dt > 0 {
-			tokenEstimates = append(tokenEstimates, dt*100/dp)
+		if len(milestones) > 1 {
+			span := milestones[len(milestones)-1].UsedPercent - milestones[0].UsedPercent
+			result.PercentSpan = math.Max(result.PercentSpan, span)
 		}
-		if dc > 0 {
-			costEstimates = append(costEstimates, dc*100/dp)
+		for i := 1; i < len(milestones); i++ {
+			a, b := milestones[i-1], milestones[i]
+			dp := b.UsedPercent - a.UsedPercent
+			if dp <= 0 {
+				continue
+			}
+			dt := float64(b.WindowTokens - a.WindowTokens)
+			dc := b.WindowCostUSD - a.WindowCostUSD
+			if dt > 0 {
+				tokenEstimates = append(tokenEstimates, dt*100/dp)
+			}
+			if dc > 0 {
+				costEstimates = append(costEstimates, dc*100/dp)
+			}
 		}
 	}
 	if len(tokenEstimates) == 0 && len(costEstimates) == 0 {
 		return result
 	}
 	result.Available = true
-	result.PercentSpan = last.UsedPercent - first.UsedPercent
 	result.SampleCount = max(len(tokenEstimates), len(costEstimates))
 	result.FullWindowTokens = median(tokenEstimates)
 	result.FullWindowCostUSD = median(costEstimates)
 	result.TokenLow, result.TokenHigh = quantile(tokenEstimates, .25), quantile(tokenEstimates, .75)
 	result.CostLow, result.CostHigh = quantile(costEstimates, .25), quantile(costEstimates, .75)
-	remaining := math.Max(0, 100-last.UsedPercent) / 100
+	current := latestReliablePoint(points)
+	remaining := math.Max(0, 100-current.UsedPercent) / 100
 	result.RemainingTokens = result.FullWindowTokens * remaining
 	result.RemainingCostUSD = result.FullWindowCostUSD * remaining
 	result.Confidence = "low"
@@ -144,41 +155,45 @@ func estimateCapacity(points []quotaPoint) estimate {
 	} else if result.SampleCount >= 2 && result.PercentSpan >= 2 {
 		result.Confidence = "medium"
 	}
-	seconds := last.Time - first.Time
-	if seconds > 0 && result.PercentSpan > 0 {
-		rate := result.PercentSpan / float64(seconds)
-		result.EstimatedExhaustAt = last.Time + int64((100-last.UsedPercent)/rate)
+	if len(latestSegment) >= 2 {
+		first, last := latestSegment[0], latestSegment[len(latestSegment)-1]
+		seconds := last.Time - first.Time
+		span := last.UsedPercent - first.UsedPercent
+		if seconds > 0 && span > 0 {
+			rate := span / float64(seconds)
+			result.EstimatedExhaustAt = current.Time + int64((100-current.UsedPercent)/rate)
+		}
 	}
 	return result
 }
 
 func capacityHistory(points []quotaPoint) []capacityPoint {
-	milestones := monotonicMilestones(points)
-	if len(milestones) < 2 {
-		return []capacityPoint{}
-	}
 	var tokenEstimates, costEstimates []float64
-	out := make([]capacityPoint, 0, len(milestones)-1)
-	for i := 1; i < len(milestones); i++ {
-		a, b := milestones[i-1], milestones[i]
-		dp := b.UsedPercent - a.UsedPercent
-		if dp <= 0 {
-			continue
+	segments := estimationMilestoneSegments(points)
+	out := make([]capacityPoint, 0, len(points))
+	for _, segment := range segments {
+		for i := 1; i < len(segment.Points); i++ {
+			a, b := segment.Points[i-1], segment.Points[i]
+			dp := b.UsedPercent - a.UsedPercent
+			if dp <= 0 {
+				continue
+			}
+			if delta := float64(b.WindowTokens - a.WindowTokens); delta > 0 {
+				tokenEstimates = append(tokenEstimates, delta*100/dp)
+			}
+			if delta := b.WindowCostUSD - a.WindowCostUSD; delta > 0 {
+				costEstimates = append(costEstimates, delta*100/dp)
+			}
+			out = append(out, capacityPoint{
+				CycleID:           b.CycleID,
+				Time:              b.Time,
+				UsedPercent:       b.UsedPercent,
+				FullWindowTokens:  median(tokenEstimates),
+				FullWindowCostUSD: median(costEstimates),
+				SampleCount:       max(len(tokenEstimates), len(costEstimates)),
+				BreakBefore:       segment.BreakBefore && i == 1,
+			})
 		}
-		if delta := float64(b.WindowTokens - a.WindowTokens); delta > 0 {
-			tokenEstimates = append(tokenEstimates, delta*100/dp)
-		}
-		if delta := b.WindowCostUSD - a.WindowCostUSD; delta > 0 {
-			costEstimates = append(costEstimates, delta*100/dp)
-		}
-		out = append(out, capacityPoint{
-			CycleID:           b.CycleID,
-			Time:              b.Time,
-			UsedPercent:       b.UsedPercent,
-			FullWindowTokens:  median(tokenEstimates),
-			FullWindowCostUSD: median(costEstimates),
-			SampleCount:       max(len(tokenEstimates), len(costEstimates)),
-		})
 	}
 	return out
 }
@@ -197,18 +212,59 @@ func capacityHistoryForCycles(points []quotaPoint) []capacityPoint {
 }
 
 func monotonicMilestones(points []quotaPoint) []quotaPoint {
-	if len(points) == 0 {
-		return nil
-	}
-	milestones := []quotaPoint{points[0]}
-	maxPercent := points[0].UsedPercent
-	for _, point := range points[1:] {
-		if point.UsedPercent > maxPercent {
-			milestones = append(milestones, point)
-			maxPercent = point.UsedPercent
-		}
+	segments := estimationMilestoneSegments(points)
+	var milestones []quotaPoint
+	for _, segment := range segments {
+		milestones = append(milestones, segment.Points...)
 	}
 	return milestones
+}
+
+type quotaMilestoneSegment struct {
+	Points      []quotaPoint
+	BreakBefore bool
+}
+
+func estimationMilestoneSegments(points []quotaPoint) []quotaMilestoneSegment {
+	var segments []quotaMilestoneSegment
+	var current quotaMilestoneSegment
+	pendingBreak := false
+	flush := func() {
+		if len(current.Points) > 0 {
+			segments = append(segments, current)
+		}
+		current = quotaMilestoneSegment{}
+	}
+	for _, point := range points {
+		if point.Anomalous {
+			flush()
+			pendingBreak = true
+			continue
+		}
+		if point.BreakBefore {
+			flush()
+			pendingBreak = true
+		}
+		if len(current.Points) == 0 {
+			current = quotaMilestoneSegment{Points: []quotaPoint{point}, BreakBefore: pendingBreak}
+			pendingBreak = false
+			continue
+		}
+		if point.UsedPercent > current.Points[len(current.Points)-1].UsedPercent {
+			current.Points = append(current.Points, point)
+		}
+	}
+	flush()
+	return segments
+}
+
+func latestReliablePoint(points []quotaPoint) quotaPoint {
+	for index := len(points) - 1; index >= 0; index-- {
+		if !points[index].Anomalous {
+			return points[index]
+		}
+	}
+	return quotaPoint{}
 }
 
 func median(values []float64) float64 { return quantile(values, .5) }

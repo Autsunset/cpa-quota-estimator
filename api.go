@@ -84,6 +84,11 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			resp["selected_cycle_id"] = selected.ID
 			resp["selected_reset_at"] = selected.ResetAt
 			resp["is_current"] = isCurrent
+			anomalies, err := a.store.quotaRegimeAnomalies(ctx, selected.ID)
+			if err != nil {
+				return textResponse(500, err.Error())
+			}
+			resp["quota_anomalies"] = anomalies
 			points, plan, err := a.store.pointsForCycle(ctx, account, selected.ID, 5000)
 			if err != nil && err != sql.ErrNoRows {
 				return textResponse(500, err.Error())
@@ -138,12 +143,23 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, err.Error())
 			}
 		}
+		anomalies, err := a.store.quotaRegimeAnomalies(ctx, selected.ID)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		rangeAnomalies := anomalies
+		if startAt > 0 || endAt > 0 {
+			rangeAnomalies, err = a.store.quotaRegimeAnomaliesForCycles(ctx, rangeCycles)
+			if err != nil {
+				return textResponse(500, err.Error())
+			}
+		}
 		estimate := estimateCapacity(points)
 		allowances, errAllowance := a.store.remainingModelAllowances(ctx, estimate.RemainingCostUSD, a.cfg)
 		if errAllowance != nil {
 			return textResponse(500, errAllowance.Error())
 		}
-		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "estimate": estimate, "remaining_by_model": allowances, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))}
+		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "quota_anomalies": anomalies, "range_quota_anomalies": rangeAnomalies, "estimate": estimate, "remaining_by_model": allowances, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))}
 		hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 		if errWeekly != nil {
 			return textResponse(500, errWeekly.Error())

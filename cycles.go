@@ -277,6 +277,9 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 		if _, err = tx.ExecContext(ctx, `UPDATE quota_cycles SET reset_at=?,window_minutes=?,plan_type=CASE WHEN ?='' THEN plan_type ELSE ? END WHERE id=?`, e.ResetAt, e.WindowMinutes, e.PlanType, e.PlanType, current.ID); err != nil {
 			return quotaCycle{}, false, err
 		}
+		if err = refreshCycleSampleStatsForRegime(ctx, tx, current.ID, e.ResetAt, e.WindowMinutes); err != nil {
+			return quotaCycle{}, false, err
+		}
 		current.ResetAt = e.ResetAt
 		current.WindowMinutes = e.WindowMinutes
 		if e.PlanType != "" {
@@ -532,16 +535,13 @@ func closeCycle(ctx context.Context, tx *sql.Tx, cycleID, endedAt int64, reason 
 	return err
 }
 
-func updateCycleSample(ctx context.Context, tx *sql.Tx, cycleID, sampledAt int64, used float64, resetAt, windowMinutes int64, planType string) error {
-	_, err := tx.ExecContext(ctx, `UPDATE quota_cycles SET
-first_sample_at=CASE WHEN first_sample_at=0 THEN ? ELSE first_sample_at END,
-last_sample_at=?,
-start_used_percent=CASE WHEN first_sample_at=0 THEN ? ELSE start_used_percent END,
-end_used_percent=?,
-peak_used_percent=MAX(peak_used_percent,?),
-reset_at=?,window_minutes=?,plan_type=CASE WHEN ?='' THEN plan_type ELSE ? END
-WHERE id=?`, sampledAt, sampledAt, used, used, used, resetAt, windowMinutes, planType, planType, cycleID)
-	return err
+func updateCycleSample(ctx context.Context, tx *sql.Tx, cycleID, resetAt, windowMinutes int64, planType string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE quota_cycles SET
+	reset_at=?,window_minutes=?,plan_type=CASE WHEN ?='' THEN plan_type ELSE ? END
+	WHERE id=?`, resetAt, windowMinutes, planType, planType, cycleID); err != nil {
+		return err
+	}
+	return refreshCycleSampleStatsForRegime(ctx, tx, cycleID, resetAt, windowMinutes)
 }
 
 func insertSampleFromRecordedEvent(ctx context.Context, tx *sql.Tx, cycle quotaCycle, eventID int64, e event) error {
@@ -563,7 +563,7 @@ func insertSampleFromRecordedEvent(ctx context.Context, tx *sql.Tx, cycle quotaC
 	if _, err := tx.ExecContext(ctx, `INSERT INTO quota_samples(cycle_id,sampled_at,account,used_percent,reset_at,window_minutes,plan_type,window_tokens,window_cost_usd,requests) VALUES(?,?,?,?,?,?,?,?,?,?)`, cycle.ID, e.RequestedAt, e.Account, *e.UsedPercent, e.ResetAt, e.WindowMinutes, e.PlanType, tokens, cost, requests); err != nil {
 		return err
 	}
-	return updateCycleSample(ctx, tx, cycle.ID, e.RequestedAt, *e.UsedPercent, e.ResetAt, e.WindowMinutes, e.PlanType)
+	return updateCycleSample(ctx, tx, cycle.ID, e.ResetAt, e.WindowMinutes, e.PlanType)
 }
 
 func (s *store) cycles(ctx context.Context, account string, limit int) ([]quotaCycle, error) {
@@ -622,16 +622,33 @@ func (s *store) pointsForCycle(ctx context.Context, account string, cycleID int6
 	if err = rows.Close(); err != nil {
 		return nil, "", err
 	}
-	if len(points) > 0 {
-		last := points[len(points)-1]
-		live := quotaPoint{CycleID: cycle.ID, CycleStart: cycle.StartedAt, UsedPercent: last.UsedPercent, ResetAt: cycle.ResetAt, WindowMinutes: cycle.WindowMinutes}
-		if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(requested_at),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*) FROM usage_events WHERE cycle_id=? AND quota_scope=?`, cycle.ID, mainQuotaScope).Scan(&live.Time, &live.WindowTokens, &live.WindowCostUSD, &live.Requests); err != nil {
+	live := quotaPoint{CycleID: cycle.ID, CycleStart: cycle.StartedAt, ResetAt: cycle.ResetAt, WindowMinutes: cycle.WindowMinutes}
+	var liveRequestedAt int64
+	errLive := s.db.QueryRowContext(ctx, `SELECT requested_at,
+	CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent
+FROM usage_events
+WHERE cycle_id=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL AND reset_at=? AND window_minutes=?
+ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END DESC,id DESC LIMIT 1`,
+		cycle.ID, mainQuotaScope, cycle.ResetAt, cycle.WindowMinutes).
+		Scan(&liveRequestedAt, &live.Time, &live.UsedPercent)
+	if errLive != nil && errLive != sql.ErrNoRows {
+		return nil, "", errLive
+	}
+	if errLive == nil {
+		if err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*)
+FROM usage_events WHERE cycle_id=? AND quota_scope=? AND requested_at<=?`, cycle.ID, mainQuotaScope, liveRequestedAt).
+			Scan(&live.WindowTokens, &live.WindowCostUSD, &live.Requests); err != nil {
 			return nil, "", err
 		}
-		if live.Time > last.Time {
+		if len(points) == 0 || live.Time > points[len(points)-1].Time {
 			points = append(points, live)
 		}
 	}
+	anomalies, err := s.quotaRegimeAnomalies(ctx, cycle.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	markQuotaAnomalyPoints(points, anomalies)
 	return points, cycle.PlanType, nil
 }
 
