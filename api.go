@@ -166,6 +166,18 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, errSpark.Error())
 			}
 			response["spark_quota"] = sparkSeries
+			hasSparkWeeklyQuota, errSpark := a.store.hasSparkFiveHourWeeklyQuota(ctx, account)
+			if errSpark != nil {
+				return textResponse(500, errSpark.Error())
+			}
+			response["spark_five_hour_quota_detected"] = hasSparkWeeklyQuota
+			if hasSparkWeeklyQuota {
+				sparkWeeklySeries, errSpark := a.store.latestQuotaScopeSeries(ctx, account, sparkWeeklyQuotaScope, limit)
+				if errSpark != nil {
+					return textResponse(500, errSpark.Error())
+				}
+				response["spark_weekly_quota"] = sparkWeeklySeries
+			}
 		}
 		return jsonResponse(200, response)
 	case strings.HasSuffix(req.Path, "/monthly"):
@@ -210,6 +222,18 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, errSpark.Error())
 			}
 			response["spark_summary"] = sparkMonthly
+			hasSparkWeeklyQuota, errSpark := a.store.hasSparkFiveHourWeeklyQuota(ctx, account)
+			if errSpark != nil {
+				return textResponse(500, errSpark.Error())
+			}
+			response["spark_five_hour_quota_detected"] = hasSparkWeeklyQuota
+			if hasSparkWeeklyQuota {
+				sparkWeeklyMonthly, errSpark := a.store.monthlyQuotaScope(ctx, account, sparkWeeklyQuotaScope, selectedMonth)
+				if errSpark != nil {
+					return textResponse(500, errSpark.Error())
+				}
+				response["spark_weekly_summary"] = sparkWeeklyMonthly
+			}
 		}
 		return jsonResponse(200, response)
 	case strings.HasSuffix(req.Path, "/repair/early-resets"):

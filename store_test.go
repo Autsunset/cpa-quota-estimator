@@ -1099,6 +1099,90 @@ func TestFiveHourAndWeeklyQuotaAreCalculatedIndependently(t *testing.T) {
 	}
 }
 
+func TestSparkFiveHourAndWeeklyQuotaAreCalculatedIndependently(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "spark-five-hour-weekly.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	location := shanghaiLocation()
+	base := time.Date(2026, time.September, 9, 10, 0, 0, 0, location).Unix()
+	primaryReset := base + fiveHourWindowMinutes*60
+	weeklyReset := base + weeklyWindowMinutes*60
+	account := "spark-five-hour-weekly-account"
+
+	for index, percentages := range [][2]float64{{10, 2}, {20, 4}, {30, 7}} {
+		primary, weekly := percentages[0], percentages[1]
+		at := base + int64(index+1)*100
+		if err = s.insertEvent(ctx, event{
+			RequestedAt:            at,
+			ObservedAt:             at,
+			Account:                account,
+			Provider:               "openai",
+			Model:                  "gpt-5.3-codex-spark",
+			TotalTokens:            int64(index+1) * 100,
+			CostUSD:                float64(index + 1),
+			UsedPercent:            &primary,
+			ResetAt:                primaryReset,
+			WindowMinutes:          fiveHourWindowMinutes,
+			SecondaryUsedPercent:   &weekly,
+			SecondaryResetAt:       weeklyReset,
+			SecondaryWindowMinutes: weeklyWindowMinutes,
+			PlanType:               "pro",
+			QuotaScope:             sparkQuotaScope,
+		}, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	detected, err := s.hasSparkFiveHourWeeklyQuota(ctx, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detected {
+		t.Fatal("Spark five-hour primary plus weekly secondary quota was not detected")
+	}
+	mainDetected, err := s.hasFiveHourWeeklyQuota(ctx, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mainDetected {
+		t.Fatal("Spark axes unexpectedly enabled the main weekly quota")
+	}
+
+	fiveHour, err := s.latestQuotaScopeSeriesAt(ctx, account, sparkQuotaScope, 100, base+400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fiveHour.Scope != sparkQuotaScope || fiveHour.WindowMinutes != fiveHourWindowMinutes || fiveHour.ResetAt != primaryReset || fiveHour.UsedPercent != 30 || fiveHour.ObservationCount != 3 {
+		t.Fatalf("Spark five-hour quota series = %#v", fiveHour)
+	}
+
+	weekly, err := s.latestQuotaScopeSeriesAt(ctx, account, sparkWeeklyQuotaScope, 100, base+400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if weekly.Scope != sparkWeeklyQuotaScope || weekly.WindowMinutes != weeklyWindowMinutes || weekly.ResetAt != weeklyReset || weekly.UsedPercent != 7 || weekly.ObservationCount != 3 {
+		t.Fatalf("Spark weekly quota series = %#v", weekly)
+	}
+	if len(weekly.Points) != 3 {
+		t.Fatalf("Spark weekly points = %#v", weekly.Points)
+	}
+	last := weekly.Points[len(weekly.Points)-1]
+	if last.WindowTokens != 600 || last.WindowCostUSD != 6 || last.Requests != 3 {
+		t.Fatalf("Spark weekly cumulative usage = %#v", last)
+	}
+
+	monthly, err := s.monthlyQuotaScopeAt(ctx, account, sparkWeeklyQuotaScope, "2026-09", base+400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if monthly.ActualTokens != 600 || monthly.ActualCostUSD != 6 || monthly.Requests != 3 || monthly.CycleCount != 1 || monthly.ConsumedQuotaPercent != 7 {
+		t.Fatalf("Spark weekly monthly summary = %#v", monthly)
+	}
+}
+
 func TestWeeklyQuotaStaysDisabledWithoutFiveHourPrimary(t *testing.T) {
 	s, err := openStore(filepath.Join(t.TempDir(), "no-five-hour-weekly.sqlite"))
 	if err != nil {

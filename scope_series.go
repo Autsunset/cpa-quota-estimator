@@ -16,12 +16,16 @@ type scopedQuotaSource struct {
 }
 
 func quotaScopeSource(scope string) scopedQuotaSource {
-	if scope == weeklyQuotaScope {
+	if scope == weeklyQuotaScope || scope == sparkWeeklyQuotaScope {
 		primaryCondition := fmt.Sprintf("window_minutes BETWEEN %d AND %d", fiveHourWindowMinutes-fiveHourWindowSlack, fiveHourWindowMinutes+fiveHourWindowSlack)
 		secondaryCondition := fmt.Sprintf("secondary_window_minutes BETWEEN %d AND %d", weeklyWindowMinutes-weeklyWindowSlack, weeklyWindowMinutes+weeklyWindowSlack)
 		quotaCondition := primaryCondition + " AND " + secondaryCondition
+		eventScope := mainQuotaScope
+		if scope == sparkWeeklyQuotaScope {
+			eventScope = sparkQuotaScope
+		}
 		return scopedQuotaSource{
-			EventScope:  mainQuotaScope,
+			EventScope:  eventScope,
 			EventFilter: primaryCondition,
 			UsedExpr:    "CASE WHEN " + quotaCondition + " THEN secondary_used_percent END",
 			ResetExpr:   "CASE WHEN " + quotaCondition + " THEN secondary_reset_at ELSE 0 END",
@@ -559,13 +563,21 @@ WHERE account=? AND quota_scope=? AND ` + source.EventFilter + ` AND failed=0 AN
 }
 
 func (s *store) hasFiveHourWeeklyQuota(ctx context.Context, account string) (bool, error) {
+	return s.hasFiveHourWeeklyQuotaForScope(ctx, account, mainQuotaScope)
+}
+
+func (s *store) hasSparkFiveHourWeeklyQuota(ctx context.Context, account string) (bool, error) {
+	return s.hasFiveHourWeeklyQuotaForScope(ctx, account, sparkQuotaScope)
+}
+
+func (s *store) hasFiveHourWeeklyQuotaForScope(ctx context.Context, account, eventScope string) (bool, error) {
 	var primaryWindow, secondaryReset, secondaryWindow int64
 	var secondaryUsed sql.NullFloat64
 	err := s.db.QueryRowContext(ctx, `SELECT window_minutes,secondary_used_percent,secondary_reset_at,secondary_window_minutes
 FROM usage_events
 WHERE account=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0
 ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END DESC,id DESC
-LIMIT 1`, account, mainQuotaScope).Scan(&primaryWindow, &secondaryUsed, &secondaryReset, &secondaryWindow)
+LIMIT 1`, account, eventScope).Scan(&primaryWindow, &secondaryUsed, &secondaryReset, &secondaryWindow)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

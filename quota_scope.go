@@ -3,9 +3,10 @@ package main
 import "strings"
 
 const (
-	mainQuotaScope   = "main"
-	weeklyQuotaScope = "weekly"
-	sparkQuotaScope  = "spark"
+	mainQuotaScope        = "main"
+	weeklyQuotaScope      = "weekly"
+	sparkQuotaScope       = "spark"
+	sparkWeeklyQuotaScope = "spark_weekly"
 
 	fiveHourWindowMinutes = int64(300)
 	fiveHourWindowSlack   = int64(5)

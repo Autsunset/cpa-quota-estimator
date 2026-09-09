@@ -237,6 +237,103 @@ func TestManagementExposesWeeklyQuotaOnlyForDetectedFiveHourAccount(t *testing.T
 	check(pro.Account, false)
 }
 
+func TestManagementExposesBothSparkQuotaAxes(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "spark-dual-axis-api.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	now := time.Now().Unix()
+	account := "spark-dual-axis"
+	mainUsed := 40.0
+	if err = s.insertEvent(ctx, event{
+		RequestedAt: now - 900, ObservedAt: now - 900, Account: account,
+		Provider: "openai", Model: "gpt-5.6-sol", TotalTokens: 100,
+		UsedPercent: &mainUsed, ResetAt: now + 6*24*60*60, WindowMinutes: weeklyWindowMinutes, PlanType: "pro",
+	}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	for index, percentages := range [][2]float64{{10, 20}, {15, 24}} {
+		primary, weekly := percentages[0], percentages[1]
+		at := now - 600 + int64(index)*300
+		if err = s.insertEvent(ctx, event{
+			RequestedAt: at, ObservedAt: at, Account: account,
+			Provider: "openai", Model: "gpt-5.3-codex-spark", TotalTokens: int64(index+1) * 100,
+			UsedPercent: &primary, ResetAt: now + 4*60*60, WindowMinutes: fiveHourWindowMinutes,
+			SecondaryUsedPercent: &weekly, SecondaryResetAt: now + 6*24*60*60, SecondaryWindowMinutes: weeklyWindowMinutes,
+			PlanType: "pro", QuotaScope: sparkQuotaScope,
+		}, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	a := &app{cfg: defaultConfig(), store: s}
+	response := a.handleManagement(managementRequest{
+		Method: "GET",
+		Path:   "/cpa-quota-estimator/series",
+		Query:  url.Values{"account": {account}, "include_spark": {"1"}},
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.StatusCode, response.Body)
+	}
+	var payload map[string]json.RawMessage
+	if err = json.Unmarshal(response.Body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	var detected bool
+	if err = json.Unmarshal(payload["spark_five_hour_quota_detected"], &detected); err != nil {
+		t.Fatal(err)
+	}
+	if !detected {
+		t.Fatalf("Spark dual axis was not detected: %s", response.Body)
+	}
+	var fiveHour, weekly scopedQuotaSeries
+	if err = json.Unmarshal(payload["spark_quota"], &fiveHour); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(payload["spark_weekly_quota"], &weekly); err != nil {
+		t.Fatal(err)
+	}
+	if fiveHour.WindowMinutes != fiveHourWindowMinutes || fiveHour.UsedPercent != 15 {
+		t.Fatalf("Spark five-hour axis = %#v", fiveHour)
+	}
+	if weekly.WindowMinutes != weeklyWindowMinutes || weekly.UsedPercent != 24 {
+		t.Fatalf("Spark weekly axis = %#v", weekly)
+	}
+
+	monthlyResponse := a.handleManagement(managementRequest{
+		Method: "GET",
+		Path:   "/cpa-quota-estimator/monthly",
+		Query: url.Values{
+			"account":       {account},
+			"month":         {time.Now().In(shanghaiLocation()).Format("2006-01")},
+			"include_spark": {"1"},
+		},
+	})
+	if monthlyResponse.StatusCode != http.StatusOK {
+		t.Fatalf("monthly status=%d body=%s", monthlyResponse.StatusCode, monthlyResponse.Body)
+	}
+	var monthlyPayload map[string]json.RawMessage
+	if err = json.Unmarshal(monthlyResponse.Body, &monthlyPayload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := monthlyPayload["spark_summary"]; !ok {
+		t.Fatalf("Spark five-hour monthly summary missing: %s", monthlyResponse.Body)
+	}
+	weeklyMonthlyRaw, ok := monthlyPayload["spark_weekly_summary"]
+	if !ok {
+		t.Fatalf("Spark weekly monthly summary missing: %s", monthlyResponse.Body)
+	}
+	var weeklyMonthly monthlySummary
+	if err = json.Unmarshal(weeklyMonthlyRaw, &weeklyMonthly); err != nil {
+		t.Fatal(err)
+	}
+	if weeklyMonthly.CycleCount != 1 || len(weeklyMonthly.Cycles) != 1 || weeklyMonthly.Cycles[0].WindowMinutes != weeklyWindowMinutes {
+		t.Fatalf("Spark weekly monthly cycles = %#v", weeklyMonthly)
+	}
+}
+
 func TestPricingSettingsManagementSwitchesPricingMode(t *testing.T) {
 	s, err := openStore(filepath.Join(t.TempDir(), "pricing-mode-api.sqlite"))
 	if err != nil {
