@@ -1,5 +1,5 @@
 PLUGIN_ID := cpa-quota-estimator
-VERSION ?= 0.10.2
+VERSION ?= 0.10.3
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 EXT := so
