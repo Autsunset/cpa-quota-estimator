@@ -172,6 +172,24 @@ func capacityHistory(points []quotaPoint) []capacityPoint {
 	segments := estimationMilestoneSegments(points)
 	out := make([]capacityPoint, 0, len(points))
 	for _, segment := range segments {
+		anchored := false
+		// Capacity remains at the last trustworthy estimate while an anomalous
+		// interval is excluded. Emit that carried estimate at the exact recovery
+		// boundary so the visual history resumes there without implying that the
+		// anomalous observations contributed a new estimate.
+		if segment.BreakBefore && len(segment.Points) > 0 && (len(tokenEstimates) > 0 || len(costEstimates) > 0) {
+			first := segment.Points[0]
+			out = append(out, capacityPoint{
+				CycleID:           first.CycleID,
+				Time:              first.Time,
+				UsedPercent:       first.UsedPercent,
+				FullWindowTokens:  median(tokenEstimates),
+				FullWindowCostUSD: median(costEstimates),
+				SampleCount:       max(len(tokenEstimates), len(costEstimates)),
+				BreakBefore:       true,
+			})
+			anchored = true
+		}
 		for i := 1; i < len(segment.Points); i++ {
 			a, b := segment.Points[i-1], segment.Points[i]
 			dp := b.UsedPercent - a.UsedPercent
@@ -191,7 +209,7 @@ func capacityHistory(points []quotaPoint) []capacityPoint {
 				FullWindowTokens:  median(tokenEstimates),
 				FullWindowCostUSD: median(costEstimates),
 				SampleCount:       max(len(tokenEstimates), len(costEstimates)),
-				BreakBefore:       segment.BreakBefore && i == 1,
+				BreakBefore:       segment.BreakBefore && i == 1 && !anchored,
 			})
 		}
 	}

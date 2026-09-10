@@ -14,6 +14,7 @@
 .loginbox .remember-key{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;cursor:pointer;margin-bottom:8px}.loginbox .remember-key input{width:16px;height:16px;margin:0;padding:0;flex:0 0 auto;accent-color:var(--blue)}
 .chart-range{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 13px;color:var(--muted);font-size:12px}.chart-range input{min-width:185px}.chart-range .error{min-height:0;margin-left:4px}@media(max-width:760px){.chart-range{align-items:stretch;display:grid;grid-template-columns:auto 1fr}.chart-range input{min-width:0;width:100%}.chart-range button{grid-column:2}.chart-range .error{grid-column:1/-1;margin:0}}
 .quota-anomaly-panel{margin:0 0 13px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--red) 48%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--red) 8%,var(--panel-start))}.quota-anomaly-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.quota-anomaly-head b{color:var(--red)}.quota-anomaly-head span{color:var(--muted);font-size:11px}.quota-anomaly-rows{display:grid;gap:6px;margin-top:9px}.quota-anomaly-row{padding-top:7px;border-top:1px solid color-mix(in srgb,var(--red) 25%,var(--line));color:var(--text);font-size:12px;font-variant-numeric:tabular-nums}@media(max-width:600px){.quota-anomaly-panel{margin-bottom:8px;padding:11px 12px}.quota-anomaly-head{align-items:flex-start;flex-direction:column;gap:3px}}
+.quota-anomaly-row{display:grid;grid-template-columns:minmax(0,1fr) 190px;align-items:center;gap:14px}.quota-anomaly-mini{display:block;width:190px;height:42px}.quota-anomaly-mini svg{display:block;width:100%;height:100%}@media(max-width:720px){.quota-anomaly-row{grid-template-columns:1fr;gap:7px}.quota-anomaly-mini{width:min(100%,280px)}}
 .pricing-settings{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:-9px 0 13px;padding:12px 14px;background:color-mix(in srgb,var(--control) 62%,transparent);border:1px solid var(--line);border-radius:12px}.pricing-settings-copy{display:flex;flex-direction:column;gap:2px;min-width:210px}.pricing-settings-copy span,.pricing-save-status{color:var(--muted);font-size:12px}.pricing-controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.pricing-mode-control{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--control);border-radius:9px;padding:4px 6px 4px 11px;font-weight:600;white-space:nowrap}.pricing-mode-control span{color:var(--muted);font-size:11px}.pricing-mode-control select{border:0;padding:4px 6px;background:transparent}.pricing-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--line);background:var(--control);border-radius:9px;padding:8px 11px;font-weight:600;white-space:nowrap}.pricing-toggle:hover{border-color:var(--blue)}.pricing-toggle input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--blue)}.model-calibration-control{display:flex;flex-direction:column;gap:5px;max-width:100%}.model-calibration-label{font-weight:600}.model-calibration-inputs{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.model-calibration-control small{color:var(--muted);font-size:11px;max-width:360px;line-height:1.5}.astra-multiplier-control{display:inline-flex;align-items:center;gap:6px}.astra-multiplier-control input{width:88px;min-width:0;font-variant-numeric:tabular-nums}.astra-multiplier-control input:disabled{opacity:.5;cursor:not-allowed}.pricing-save-status{min-width:120px}@media(max-width:900px){.pricing-settings{align-items:flex-start;flex-direction:column}.pricing-controls{justify-content:flex-start;width:100%}}@media(max-width:600px){.pricing-settings{margin-top:-3px;padding:11px}.pricing-controls{display:grid;grid-template-columns:1fr;width:100%}.pricing-toggle{justify-content:flex-start}.pricing-controls button{width:100%}.pricing-save-status{min-width:0}}
 .spark-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:var(--text)}.spark-toggle input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--purple)}.spark-toggle-top{border:1px solid color-mix(in srgb,var(--purple) 55%,var(--line));background:color-mix(in srgb,var(--purple) 11%,var(--control));border-radius:9px;padding:8px 11px;font-weight:600;white-space:nowrap}.spark-toggle-top:hover{border-color:var(--purple)}.spark-section{margin-top:18px;padding-top:18px;border-top:2px solid color-mix(in srgb,var(--purple) 52%,var(--line))}.spark-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:10px}.spark-section-head h2{font-size:18px;margin:0 0 3px}.spark-quota{margin-top:9px}.spark-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.spark-stats{display:grid;grid-template-columns:repeat(4,minmax(118px,1fr));gap:9px;margin-top:14px}.spark-stat{min-width:0;background:color-mix(in srgb,var(--control) 72%,transparent);border:1px solid var(--line);border-radius:10px;padding:8px 10px}.spark-stat span{display:block;color:var(--muted);font-size:10px}.spark-stat b{display:block;margin-top:2px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#sparkCurve svg,#weeklyCurve svg,#sparkWeeklyCurve svg{height:500px}.weekly-section{border-top-color:color-mix(in srgb,var(--blue) 52%,var(--line))}@media(max-width:900px){.spark-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.spark-section-head,.spark-head{flex-direction:column}#sparkCurve,#weeklyCurve,#sparkWeeklyCurve{overflow-x:auto;-webkit-overflow-scrolling:touch}#sparkCurve svg,#weeklyCurve svg,#sparkWeeklyCurve svg{height:440px;min-width:760px}}@media(max-width:600px){.actions>.spark-toggle-top{grid-column:1/-1;justify-content:center;width:100%}}
 .overview{margin-bottom:13px}.overview .section-head{align-items:center;margin-bottom:12px}.overview .section-head h2{margin:0 0 3px}.overview-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.overview-head-actions button{padding:7px 10px;font-size:12px}.overview-toggle{display:inline-flex;align-items:center;gap:6px}.overview-toggle-icon{width:14px;height:14px;transition:transform .18s ease}.overview-toggle.collapsed .overview-toggle-icon{transform:rotate(180deg)}.overview-body[hidden]{display:none}.overview-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}.overview-table{width:1855px;min-width:100%;table-layout:fixed;border-collapse:collapse}.overview-table th,.overview-table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.overview-table th{color:var(--muted);font-size:11px;font-weight:550;background:color-mix(in srgb,var(--control) 70%,transparent)}.overview-heading-row th{position:relative;padding-right:18px}.overview-sort{display:inline-flex;align-items:center;gap:5px;max-width:100%;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;font-weight:650;padding:2px 0}.overview-sort span{overflow:hidden;text-overflow:ellipsis}.overview-sort:hover,.overview-sort:focus-visible{border:0;color:var(--blue);outline:0}.overview-sort-indicator{display:inline-block;min-width:12px;color:var(--muted);font-style:normal}.overview-sort.active .overview-sort-indicator{color:var(--blue)}.overview-column-resizer{position:absolute;z-index:2;top:0;right:-5px;width:11px;height:100%;cursor:col-resize;touch-action:none;user-select:none}.overview-column-resizer::after{content:"";position:absolute;top:20%;bottom:20%;left:5px;width:1px;background:var(--line);transition:background .12s,box-shadow .12s}.overview-column-resizer:hover::after,.overview-column-resizer:focus-visible::after,.overview-column-resizer.dragging::after{background:var(--blue);box-shadow:0 0 0 1px color-mix(in srgb,var(--blue) 28%,transparent)}.overview-column-resizer:focus-visible{outline:0}.overview-column-resizing,.overview-column-resizing *{cursor:col-resize!important;user-select:none!important}.overview-filter-row th{padding:7px 6px;background:color-mix(in srgb,var(--control) 48%,transparent)}.overview-filter{width:100%;min-width:88px;border-radius:7px;padding:6px 7px;font-size:11px}.overview-filter[data-overview-filter="account"]{min-width:230px}.overview-filter[data-overview-filter="capacity"],.overview-filter[data-overview-filter="forecast"]{min-width:150px}.overview-table td{font-size:12px;overflow:hidden;text-overflow:ellipsis}.overview-table td.scope-cell{white-space:pre-line;line-height:1.55}.overview-table tbody tr.inactive{opacity:.72}.overview-table tbody tr.sampled{cursor:pointer}.overview-table tbody tr.sampled:hover,.overview-table tbody tr.sampled:focus{outline:0;background:color-mix(in srgb,var(--blue) 8%,transparent)}.overview-table tbody tr.selected{background:color-mix(in srgb,var(--blue) 13%,transparent)}.overview-table tbody tr.unsampled{color:var(--muted)}.overview-table tr:last-child td{border-bottom:0}.overview-table .account-cell{overflow:hidden;text-overflow:ellipsis}.overview-table .capacity-cell span,.overview-table .capacity-cell small{display:block;overflow:hidden;text-overflow:ellipsis}.overview-table .capacity-cell small{color:var(--muted)}.overview-table .empty-cell{text-align:center;color:var(--muted);cursor:default;padding:24px}.overview-table .status-fast{color:var(--amber)}.overview-table .status-ok{color:var(--green)}.overview-table .status-exhausted{color:var(--red);font-weight:650}.overview-table .status-waiting{color:var(--muted)}.bad{color:var(--red)}@media(max-width:600px){.overview{margin-bottom:8px}.overview .section-head{align-items:stretch}.overview-head-actions{justify-content:flex-start}.overview-head-actions #overviewCount{flex-basis:100%}.overview-table th,.overview-table td{padding:9px 10px}}
@@ -276,7 +277,7 @@ const messages = {
     chartNeedTwoGrowth: '至少需要两个额度增长区间',
     quotaAnomalyTitle: '检测到上游额度状态异常',
     quotaAnomalyCount: '{count} 个已确认区间 · 不参与容量估算',
-    quotaAnomalyDetail: '{start} — {end}：使用率 {before}% → {anomalous}% → {restored}%；重置时间 {beforeReset} → {anomalousReset} → {restoredReset}（异常状态持续 {observations} 条响应）',
+    quotaAnomalyDetail: '{start} — {end}：使用率 {before}% → {anomalous}%（峰值 {peak}%）→ {restored}%；重置时间 {beforeReset} → {anomalousReset} → {restoredReset}（异常状态持续 {observations} 条响应）',
     quotaAnomalyLegend: '上游额度状态异常（红色区间）',
     quotaAnomalyBand: '上游异常',
     sparkNoSamples: '当前 Spark 额度周期暂无成功观测样本',
@@ -479,7 +480,7 @@ const messages = {
     chartNeedTwoGrowth: 'At least two quota-growth intervals are required',
     quotaAnomalyTitle: 'Upstream quota-state anomaly detected',
     quotaAnomalyCount: '{count} confirmed interval(s) · excluded from capacity estimates',
-    quotaAnomalyDetail: '{start} — {end}: usage {before}% → {anomalous}% → {restored}%; reset {beforeReset} → {anomalousReset} → {restoredReset} ({observations} responses in the anomalous state)',
+    quotaAnomalyDetail: '{start} — {end}: usage {before}% → {anomalous}% (peak {peak}%) → {restored}%; reset {beforeReset} → {anomalousReset} → {restoredReset} ({observations} responses in the anomalous state)',
     quotaAnomalyLegend: 'Upstream quota-state anomaly (red interval)',
     quotaAnomalyBand: 'Upstream anomaly',
     sparkNoSamples: 'No successful observations in the current Spark quota cycle',
@@ -2135,12 +2136,52 @@ function quotaAnomalyDetail(anomaly) {
     end: dt(anomaly.ended_at),
     before: Number(anomaly.before_used_percent || 0).toFixed(0),
     anomalous: Number(anomaly.anomalous_used_percent || 0).toFixed(0),
+    peak: Number(anomaly.peak_used_percent || anomaly.anomalous_used_percent || 0).toFixed(0),
     restored: Number(anomaly.restored_used_percent || 0).toFixed(0),
     beforeReset: dt(anomaly.before_reset_at),
     anomalousReset: dt(anomaly.anomalous_reset_at),
     restoredReset: dt(anomaly.restored_reset_at),
     observations: Number(anomaly.observation_count || 0)
   });
+}
+
+function quotaAnomalyVisualPoints(anomaly) {
+  let startedAt = Number(anomaly.started_at);
+  let peakAt = Number(anomaly.peak_at || startedAt);
+  let endedAt = Number(anomaly.ended_at);
+  let candidates = [
+    {time: Number(anomaly.before_at || startedAt), used: Number(anomaly.before_used_percent || 0)},
+    {time: startedAt, used: Number(anomaly.anomalous_used_percent || 0)},
+    {time: peakAt, used: Number(anomaly.peak_used_percent || anomaly.anomalous_used_percent || 0)},
+    {time: endedAt, used: Number(anomaly.restored_used_percent || 0)}
+  ].filter(point => Number.isFinite(point.time) && Number.isFinite(point.used))
+    .sort((left, right) => left.time - right.time);
+  let points = [];
+  candidates.forEach(point => {
+    if (points.length && points[points.length - 1].time === point.time) points[points.length - 1] = point;
+    else points.push(point);
+  });
+  return points;
+}
+
+function quotaAnomalyMiniChart(anomaly) {
+  let points = quotaAnomalyVisualPoints(anomaly);
+  if (points.length < 2) return '';
+  let W = 190, H = 42, P = 4;
+  let start = points[0].time, end = points[points.length - 1].time;
+  let low = Math.min.apply(null, points.map(point => point.used));
+  let high = Math.max.apply(null, points.map(point => point.used));
+  let spread = Math.max(1, high - low);
+  let x = time => P + (time - start) / Math.max(1, end - start) * (W - P * 2);
+  let y = used => P + (high + spread * .12 - used) / (spread * 1.24) * (H - P * 2);
+  let data = points.map((point, index) =>
+    (index ? 'L' : 'M') + x(point.time).toFixed(1) + ' ' + y(point.used).toFixed(1)).join(' ');
+  let dots = points.map(point => '<circle cx="' + x(point.time).toFixed(1) + '" cy="' +
+    y(point.used).toFixed(1) + '" r="2" fill="var(--red)"/>').join('');
+  return '<span class="quota-anomaly-mini" aria-hidden="true"><svg viewBox="0 0 ' + W + ' ' + H +
+    '"><rect x="0" y="0" width="' + W + '" height="' + H + '" rx="6" fill="var(--red)" fill-opacity=".035"/>' +
+    svgPath(data, 'fill="none" stroke="var(--red)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"') +
+    dots + '</svg></span>';
 }
 
 function renderQuotaAnomalies(seriesData, range) {
@@ -2157,7 +2198,10 @@ function renderQuotaAnomalies(seriesData, range) {
   let rows = anomalies.map(anomaly => {
     let row = document.createElement('div');
     row.className = 'quota-anomaly-row';
-    row.textContent = quotaAnomalyDetail(anomaly);
+    let detail = document.createElement('span');
+    detail.textContent = quotaAnomalyDetail(anomaly);
+    row.append(detail);
+    row.insertAdjacentHTML('beforeend', quotaAnomalyMiniChart(anomaly));
     return row;
   });
   $('#quotaAnomalyRows').replaceChildren(...rows);
@@ -2168,37 +2212,34 @@ function quotaAnomalyOverlays(seriesData, range, x, top, bottom) {
     let start = Math.max(range.start, Number(anomaly.started_at));
     let end = Math.min(range.end, Number(anomaly.ended_at));
     let left = x(start), right = x(end);
-    let width = Math.max(2, right - left);
+    let width = Math.max(1, right - left);
     let label = width >= 78
       ? svgText(left + width / 2, top + 13, tr('quotaAnomalyBand'),
         'fill="var(--red)" text-anchor="middle" font-size="10" font-weight="650"')
       : '';
     return '<rect x="' + left + '" y="' + top + '" width="' + width + '" height="' + (bottom - top) +
-      '" fill="var(--red)" fill-opacity=".09"/>' +
-      svgLine(left, top, left, bottom, 'stroke="var(--red)" stroke-width="1.5" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"') +
-      svgLine(right, top, right, bottom, 'stroke="var(--red)" stroke-width="1.5" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"') + label;
+      '" fill="var(--red)" fill-opacity=".035"/>' +
+      svgLine(left, top, left, bottom, 'stroke="var(--red)" stroke-width=".8" stroke-opacity=".72" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"') +
+      svgLine(right, top, right, bottom, 'stroke="var(--red)" stroke-width=".8" stroke-opacity=".72" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"') + label;
   }).join('');
 }
 
-function quotaAnomalySpikePaths(points, seriesData, range, x, y) {
+function quotaAnomalySpikePaths(seriesData, range, x, y) {
   return quotaAnomaliesInRange(seriesData, range).map(anomaly => {
-    let cycleID = String(anomaly.cycle_id || '');
-    let start = Number(anomaly.before_at || anomaly.started_at);
-    let end = Number(anomaly.ended_at);
-    let spike = (points || []).filter(point =>
-      String(point.cycle_id || '') === cycleID && point.time >= start && point.time <= end);
+    let spike = quotaAnomalyVisualPoints(anomaly);
     let svg = '';
     for (let index = 1; index < spike.length; index++) {
-      svg += clippedLine(spike[index - 1].time, spike[index - 1].used_percent,
-        spike[index].time, spike[index].used_percent,
+      svg += clippedLine(spike[index - 1].time, spike[index - 1].used,
+        spike[index].time, spike[index].used,
         range.start, range.end, x, y,
-        'fill="none" stroke="var(--red)" stroke-width="3.5" vector-effect="non-scaling-stroke"');
+        'fill="none" stroke="var(--red)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"');
     }
-    spike.filter(point => point.time >= range.start && point.time <= range.end &&
-      (point.time === Number(anomaly.started_at) || point.time === end)).forEach(point => {
-      svg += '<circle cx="' + x(point.time) + '" cy="' + y(point.used_percent) +
-        '" r="4" fill="var(--red)"/>';
-    });
+    if (Math.abs(x(Number(anomaly.ended_at)) - x(Number(anomaly.started_at))) >= 16) {
+      spike.filter(point => point.time >= range.start && point.time <= range.end).forEach(point => {
+        svg += '<circle cx="' + x(point.time) + '" cy="' + y(point.used) +
+          '" r="2.4" fill="var(--red)"/>';
+      });
+    }
     return svg;
   }).join('');
 }
@@ -2309,14 +2350,13 @@ function renderPace(series, range) {
     'fill="none" stroke="var(--purple)" stroke-width="2.5" stroke-dasharray="3 6" vector-effect="non-scaling-stroke"');
 
   groupPointsByCycle(actual).forEach(group => {
+    if (group.anomalous) return;
     let data = group.points.map((point, index) =>
       (index ? 'L' : 'M') + x(point.time).toFixed(1) + ' ' + y(point.used_percent).toFixed(1)
     ).join(' ');
-    svg += svgPath(data, 'fill="none" stroke="' + (group.anomalous ? 'var(--red)' : 'var(--blue)') +
-      '" stroke-width="3"' + (group.anomalous ? ' stroke-dasharray="5 4"' : '') +
-      ' vector-effect="non-scaling-stroke"');
+    svg += svgPath(data, 'fill="none" stroke="var(--blue)" stroke-width="3" vector-effect="non-scaling-stroke"');
   });
-  svg += quotaAnomalySpikePaths(cycleActual, series, {start: start, end: end}, x, y);
+  svg += quotaAnomalySpikePaths(series, {start: start, end: end}, x, y);
   if (cycleActual.length) {
     let last = cycleActual[cycleActual.length - 1];
     let endTime = recentWill ? recentEnd : reset;
@@ -2388,17 +2428,17 @@ function renderCharts(seriesData, range) {
     svg += svgText(8, y0 + 16, item.name, 'fill="var(--text)" font-size="12" font-weight="650"');
     svg += svgText(8, y0 + 33, item.unit, 'fill="var(--muted)" font-size="10"');
     groups.forEach(group => {
+      if (seriesIndex === 0 && group.anomalous) return;
       let data = group.points.map((point, index) =>
         (index ? 'L' : 'M') + x(point.time).toFixed(1) + ' ' + y(item.value(point)).toFixed(1)
       ).join(' ');
       let selected = group.id === selectedCycleID;
-      let anomalous = group.anomalous && seriesIndex === 0;
-      svg += svgPath(data, 'fill="none" stroke="' + (anomalous ? 'var(--red)' : item.color) +
+      svg += svgPath(data, 'fill="none" stroke="' + item.color +
         '" stroke-width="' + (selected ? '3' : '2') + '" stroke-opacity="' + (selected ? '1' : '.52') +
-        '"' + (anomalous ? ' stroke-dasharray="5 4"' : '') + ' vector-effect="non-scaling-stroke"');
+        '" vector-effect="non-scaling-stroke"');
     });
     if (seriesIndex === 0) {
-      svg += quotaAnomalySpikePaths(points, seriesData, range, x, y);
+      svg += quotaAnomalySpikePaths(seriesData, range, x, y);
     }
   });
 
@@ -2485,6 +2525,11 @@ function renderCapacityHistory(seriesData, range) {
       svg += svgPath(data, 'fill="none" stroke="' + item.color +
         '" stroke-width="' + (selected ? '3' : '2') + '" stroke-opacity="' + (selected ? '1' : '.52') +
         '" vector-effect="non-scaling-stroke"');
+      let first = group.points[0];
+      if (first && first.break_before) {
+        svg += '<circle cx="' + x(first.time) + '" cy="' + y(item.value(first)) +
+          '" r="3" fill="var(--control)" stroke="' + item.color + '" stroke-width="1.5"/>';
+      }
     });
   });
 

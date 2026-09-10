@@ -25,6 +25,8 @@ type quotaRegimeRun struct {
 	EndedAt       int64
 	FirstUsed     float64
 	LastUsed      float64
+	PeakAt        int64
+	PeakUsed      float64
 	Count         int64
 }
 
@@ -83,13 +85,18 @@ func detectQuotaRegimeAnomalies(cycleID int64, observations []quotaRegimeObserva
 			runs = append(runs, quotaRegimeRun{
 				ResetAt: observation.ResetAt, WindowMinutes: observation.WindowMinutes,
 				StartedAt: observation.RequestedAt, EndedAt: observation.RequestedAt,
-				FirstUsed: observation.UsedPercent, LastUsed: observation.UsedPercent, Count: 1,
+				FirstUsed: observation.UsedPercent, LastUsed: observation.UsedPercent,
+				PeakAt: observation.RequestedAt, PeakUsed: observation.UsedPercent, Count: 1,
 			})
 			continue
 		}
 		run := &runs[len(runs)-1]
 		run.EndedAt = observation.RequestedAt
 		run.LastUsed = observation.UsedPercent
+		if observation.UsedPercent > run.PeakUsed {
+			run.PeakAt = observation.RequestedAt
+			run.PeakUsed = observation.UsedPercent
+		}
 		run.Count++
 	}
 
@@ -105,6 +112,10 @@ func detectQuotaRegimeAnomalies(cycleID int64, observations []quotaRegimeObserva
 			previous := &confirmed[len(confirmed)-1]
 			previous.EndedAt = run.EndedAt
 			previous.LastUsed = run.LastUsed
+			if run.PeakUsed > previous.PeakUsed {
+				previous.PeakAt = run.PeakAt
+				previous.PeakUsed = run.PeakUsed
+			}
 			previous.Count += run.Count
 			continue
 		}
@@ -120,8 +131,10 @@ func detectQuotaRegimeAnomalies(cycleID int64, observations []quotaRegimeObserva
 		}
 		anomalies = append(anomalies, quotaRegimeAnomaly{
 			CycleID: cycleID, Kind: quotaRegimeReverted,
-			BeforeAt: before.EndedAt, StartedAt: anomalous.StartedAt, EndedAt: restored.StartedAt,
+			BeforeAt: before.EndedAt, StartedAt: anomalous.StartedAt,
+			PeakAt: anomalous.PeakAt, EndedAt: restored.StartedAt,
 			BeforeUsedPercent: before.LastUsed, AnomalousUsedPercent: anomalous.FirstUsed,
+			PeakUsedPercent:     anomalous.PeakUsed,
 			RestoredUsedPercent: restored.FirstUsed, BeforeResetAt: before.ResetAt,
 			AnomalousResetAt: anomalous.ResetAt, RestoredResetAt: restored.ResetAt,
 			ObservationCount: anomalous.Count,
@@ -135,6 +148,7 @@ func (s *store) addQuotaAnomalyBoundaryPoints(ctx context.Context, cycle quotaCy
 		boundaries := []quotaPoint{
 			{Time: anomaly.BeforeAt, UsedPercent: anomaly.BeforeUsedPercent, ResetAt: anomaly.BeforeResetAt, WindowMinutes: cycle.WindowMinutes},
 			{Time: anomaly.StartedAt, UsedPercent: anomaly.AnomalousUsedPercent, ResetAt: anomaly.AnomalousResetAt, WindowMinutes: cycle.WindowMinutes, Anomalous: true, BreakBefore: true},
+			{Time: anomaly.PeakAt, UsedPercent: anomaly.PeakUsedPercent, ResetAt: anomaly.AnomalousResetAt, WindowMinutes: cycle.WindowMinutes, Anomalous: true},
 			{Time: anomaly.EndedAt, UsedPercent: anomaly.RestoredUsedPercent, ResetAt: anomaly.RestoredResetAt, WindowMinutes: cycle.WindowMinutes, BreakBefore: true},
 		}
 		for _, boundary := range boundaries {

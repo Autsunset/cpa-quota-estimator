@@ -183,9 +183,11 @@ type quotaRegimeAnomaly struct {
 	Kind                 string  `json:"kind"`
 	BeforeAt             int64   `json:"before_at"`
 	StartedAt            int64   `json:"started_at"`
+	PeakAt               int64   `json:"peak_at"`
 	EndedAt              int64   `json:"ended_at"`
 	BeforeUsedPercent    float64 `json:"before_used_percent"`
 	AnomalousUsedPercent float64 `json:"anomalous_used_percent"`
+	PeakUsedPercent      float64 `json:"peak_used_percent"`
 	RestoredUsedPercent  float64 `json:"restored_used_percent"`
 	BeforeResetAt        int64   `json:"before_reset_at"`
 	AnomalousResetAt     int64   `json:"anomalous_reset_at"`

@@ -691,8 +691,10 @@ func TestTransientQuotaRegimeRecoveryUpdatesCurrentStateAndMarksAnomaly(t *testi
 		t.Fatalf("anomalies = %#v", anomalies)
 	}
 	anomaly := anomalies[0]
-	if anomaly.Kind != quotaRegimeReverted || anomaly.BeforeAt != 200 || anomaly.StartedAt != 300 || anomaly.EndedAt != 500 ||
+	if anomaly.Kind != quotaRegimeReverted || anomaly.BeforeAt != 200 || anomaly.StartedAt != 300 ||
+		anomaly.PeakAt != 400 || anomaly.EndedAt != 500 ||
 		anomaly.BeforeUsedPercent != 50 || anomaly.AnomalousUsedPercent != 70 || anomaly.RestoredUsedPercent != 50 ||
+		anomaly.PeakUsedPercent != 71 ||
 		anomaly.BeforeResetAt != originalReset || anomaly.AnomalousResetAt != anomalousReset ||
 		anomaly.RestoredResetAt != originalReset || anomaly.ObservationCount != 2 {
 		t.Fatalf("anomaly = %#v", anomaly)
@@ -714,8 +716,9 @@ func TestTransientQuotaRegimeRecoveryUpdatesCurrentStateAndMarksAnomaly(t *testi
 		t.Fatalf("anomaly-safe estimate = %#v", estimate)
 	}
 	history := capacityHistory(points)
-	if len(history) != 2 || history[0].FullWindowTokens != 10_000 ||
-		history[1].FullWindowTokens != 10_000 || !history[1].BreakBefore {
+	if len(history) != 3 || history[0].FullWindowTokens != 10_000 ||
+		history[1].Time != 500 || history[1].FullWindowTokens != 10_000 || !history[1].BreakBefore ||
+		history[2].FullWindowTokens != 10_000 || history[2].BreakBefore {
 		t.Fatalf("anomaly-safe capacity history = %#v", history)
 	}
 

@@ -33,6 +33,8 @@ func TestDashboardShowsRemainingQuotaAndExhaustedState(t *testing.T) {
 		[]byte("quotaAnomalyPanel"),
 		[]byte("renderQuotaAnomalies"),
 		[]byte("quotaAnomalyOverlays"),
+		[]byte("quotaAnomalyVisualPoints"),
+		[]byte("quotaAnomalyMiniChart"),
 		[]byte("quotaAnomalySpikePaths"),
 		[]byte("上游额度状态异常"),
 	} {
@@ -380,13 +382,15 @@ func TestManagementExposesRecoveredQuotaRegimeAnomaly(t *testing.T) {
 		var payload struct {
 			Latest         quotaPoint           `json:"latest"`
 			Points         []quotaPoint         `json:"points"`
+			CapacityPoints []capacityPoint      `json:"capacity_points"`
 			Anomalies      []quotaRegimeAnomaly `json:"quota_anomalies"`
 			RangeAnomalies []quotaRegimeAnomaly `json:"range_quota_anomalies"`
 		}
 		if err = json.Unmarshal(response.Body, &payload); err != nil {
 			t.Fatal(err)
 		}
-		if len(payload.Anomalies) != 1 || payload.Anomalies[0].Kind != quotaRegimeReverted {
+		if len(payload.Anomalies) != 1 || payload.Anomalies[0].Kind != quotaRegimeReverted ||
+			payload.Anomalies[0].PeakAt != 400 || payload.Anomalies[0].PeakUsedPercent != 71 {
 			t.Fatalf("%s anomalies=%#v", endpoint, payload.Anomalies)
 		}
 		if endpoint == "/cpa-quota-estimator/summary" &&
@@ -399,6 +403,16 @@ func TestManagementExposesRecoveredQuotaRegimeAnomaly(t *testing.T) {
 			}
 			if len(payload.RangeAnomalies) != 1 {
 				t.Fatalf("series range anomalies=%#v", payload.RangeAnomalies)
+			}
+			var recoveryCapacity *capacityPoint
+			for index := range payload.CapacityPoints {
+				if payload.CapacityPoints[index].Time == 500 {
+					recoveryCapacity = &payload.CapacityPoints[index]
+					break
+				}
+			}
+			if recoveryCapacity == nil || !recoveryCapacity.BreakBefore {
+				t.Fatalf("series recovery capacity=%#v; points=%#v", recoveryCapacity, payload.CapacityPoints)
 			}
 		}
 	}
