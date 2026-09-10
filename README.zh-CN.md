@@ -92,7 +92,7 @@
 
 `reset_at` 表示上游计划的未来重置时间，本身不等同于“已经发生重置”。计划周期切换只有在两个成功观测都一致指向旧周期边界后的新窗口时才会确认。如果计划时间不变，但额度使用率突然回到接近 0%，插件要求同一额度口径下出现三个成功、非递减的低用量读数，且首尾至少跨越 60 秒。失败、陈旧、乱序或很快回弹的读数都不会创建新周期。
 
-额度证据按响应头被观察到的时间排序：流式请求使用“请求时间 + TTFT”，没有 TTFT 时使用总延迟。实际 Token 和自然月请求归属仍按原始请求发生时间计算。采样基线按上游声明的重置计划分别维护，因此服务端确认回滚后，当前百分比可以下降，不会继续卡在临时高值。当重复出现的另一套计划随后恢复为原计划时，API 会报告 `upstream_regime_reverted` 异常；仪表盘用红色保留该区间，在两侧切断估算，并从可信样本继续预测。异常前、开始和恢复三个精确锚点会从保留的原始请求中重建，因此即使旧版插件没有采到恢复后的低百分比，曲线仍会画出完整尖峰，并从第二根红线处立即续上。
+额度证据按响应头被观察到的时间排序：流式请求使用“请求时间 + TTFT”，没有 TTFT 时使用总延迟。实际 Token 和自然月请求归属仍按原始请求发生时间计算。采样基线按上游声明的重置计划分别维护，因此服务端确认回滚后，当前百分比可以下降，不会继续卡在临时高值。当重复出现的另一套计划随后恢复为原计划时，API 会报告 `upstream_regime_reverted` 异常；仪表盘用红色保留该区间，在两侧切断估算，并从可信样本继续预测。异常前、开始、峰值和恢复四个精确锚点会从保留的原始请求中重建。整周期图只画一条细的标准尖峰，不再把密集异常采样重复叠画；异常卡中另有可读的局部迷你曲线。容量估计轨迹在异常区间内保持断开，并在恢复边界沿用最后一份可信估计立即续上，即使旧版插件没有采到恢复后的低百分比也不会留下额外空白。
 
 Spark 使用与 Codex 主额度相互独立的模型专属额度口径和重置计划。检测到 5 小时 Spark Primary 时，它会始终保留为 Spark 5 小时轴；对应的周 Secondary 响应头进入独立的 `spark_weekly` 轴。两个轴的百分比、重置周期和容量估算不会混合，但实际 Token 和计价值都来自同一批 Spark 请求。旧的、只有单个周 Primary 窗口的 Spark 历史观测仍保持单窗口行为。Spark 请求不会进入主额度的自然月实际 Token、请求数、计价值、周期账本、曲线、额度消耗当量或容量估算。Spark 任一轴的计划重置时间如果在旧边界到达前发生修正，而使用率仍连续增长，只会更新对应的当前周期，不会制造重叠周期或重复累计请求。仪表盘默认隐藏 Spark 额度；勾选页面顶部的**显示 Spark 额度**后，会在全部主额度内容下方展示检测到的两个 Spark 轴，并为两者分别绘制额度、累计 Token 和累计计价值曲线及完整月度周期表。周限曲线始终覆盖上游声明的完整 7 天周期，并在图表上方明确显示周期起点与预计重置时间。插件不会主动轮询上游额度，仪表盘的**刷新**按钮也只会重新读取已保存的观测。如果 Spark 计划重置已经到达，但之后没有新的 Spark 请求，插件会在计划边界关闭已过期周期，并按上一周期计划推算当前窗口与下次重置时间；当前使用率会保持为**待采样**，直到下一次成功 Spark 请求返回新的响应头；新的计划窗口仍需两个一致的成功观测才能正式确认。
 
@@ -211,7 +211,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 
 当某账号的最新有效 Primary 观测为 5 小时窗口，并且同时包含更大的 Secondary 窗口时，`summary`、`series` 和 `monthly` 会返回 `five_hour_quota_detected: true`；`series` 会自动增加独立的 `weekly_quota`，`monthly` 会增加 `weekly_summary`，无需额外查询参数。周限额计算只使用带有已检测 5 小时 Primary 窗口的请求，因此只有周限额的 Pro 账号仍保持原来的主额度单窗口响应结构和统计口径。
 
-`summary` 和 `series` 会通过 `quota_anomalies` 返回已确认的主额度临时状态切换；每项包含 `before_at`、异常起止时间、切换前/异常中/恢复后的百分比与重置计划，以及观测数量。`series` 还会按所选曲线范围返回 `range_quota_anomalies`。异常点带有 `anomalous: true`，异常后的首个可信分段带有 `break_before: true`；API 使用方不应跨越这些边界推算容量。
+`summary` 和 `series` 会通过 `quota_anomalies` 返回已确认的主额度临时状态切换；每项包含 `before_at`、`started_at`、`peak_at`、`ended_at`，对应的 `before_used_percent`、`anomalous_used_percent`、`peak_used_percent`、`restored_used_percent`，全部重置计划及观测数量。`series` 还会按所选曲线范围返回 `range_quota_anomalies`。异常点带有 `anomalous: true`，异常后的首个可信额度与容量轨迹分段带有 `break_before: true`；API 使用方不应跨越这些边界推算容量。
 
 在 `series` 中传入 `include_spark=1` 会以 `spark_quota` 返回最新的独立 Spark Primary 周期。当前 Spark 响应为“5 小时 Primary + 周 Secondary”组合时，还会返回 `spark_five_hour_quota_detected: true` 和独立的 `spark_weekly_quota`。在 `monthly` 中传入同一参数会返回 `spark_summary`，双轴形态下还会返回 `spark_weekly_summary`。两份汇总都只使用 Spark 请求，且不会与主额度混合。仪表盘只会在用户启用 Spark 显示开关时传入该参数。
 
@@ -224,7 +224,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.10.4
+make package VERSION=0.10.5
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
