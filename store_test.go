@@ -691,7 +691,7 @@ func TestTransientQuotaRegimeRecoveryUpdatesCurrentStateAndMarksAnomaly(t *testi
 		t.Fatalf("anomalies = %#v", anomalies)
 	}
 	anomaly := anomalies[0]
-	if anomaly.Kind != quotaRegimeReverted || anomaly.StartedAt != 300 || anomaly.EndedAt != 500 ||
+	if anomaly.Kind != quotaRegimeReverted || anomaly.BeforeAt != 200 || anomaly.StartedAt != 300 || anomaly.EndedAt != 500 ||
 		anomaly.BeforeUsedPercent != 50 || anomaly.AnomalousUsedPercent != 70 || anomaly.RestoredUsedPercent != 50 ||
 		anomaly.BeforeResetAt != originalReset || anomaly.AnomalousResetAt != anomalousReset ||
 		anomaly.RestoredResetAt != originalReset || anomaly.ObservationCount != 2 {
@@ -717,6 +717,31 @@ func TestTransientQuotaRegimeRecoveryUpdatesCurrentStateAndMarksAnomaly(t *testi
 	if len(history) != 2 || history[0].FullWindowTokens != 10_000 ||
 		history[1].FullWindowTokens != 10_000 || !history[1].BreakBefore {
 		t.Fatalf("anomaly-safe capacity history = %#v", history)
+	}
+
+	// Reproduce a database written by the old sampler: the restored lower
+	// readings exist in raw usage_events, but their quota_samples are missing.
+	if _, err = s.db.ExecContext(ctx, `DELETE FROM quota_samples WHERE cycle_id=? AND reset_at=? AND sampled_at>=?`, cycle.ID, originalReset, 500); err != nil {
+		t.Fatal(err)
+	}
+	points, _, err = s.pointsForCycle(ctx, account, cycle.ID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recovery *quotaPoint
+	for index := range points {
+		if points[index].Time == anomaly.EndedAt && points[index].ResetAt == originalReset {
+			recovery = &points[index]
+			break
+		}
+	}
+	if recovery == nil || recovery.Anomalous || !recovery.BreakBefore || recovery.UsedPercent != 50 ||
+		recovery.WindowTokens != 500 || recovery.Requests != 5 {
+		t.Fatalf("reconstructed recovery point = %#v; points=%#v", recovery, points)
+	}
+	estimate = estimateCapacity(points)
+	if !estimate.Available || estimate.SampleCount != 2 || estimate.FullWindowTokens != 10_000 || estimate.RemainingTokens != 4_900 {
+		t.Fatalf("estimate after recovery reconstruction = %#v", estimate)
 	}
 }
 

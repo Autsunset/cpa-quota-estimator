@@ -2180,6 +2180,29 @@ function quotaAnomalyOverlays(seriesData, range, x, top, bottom) {
   }).join('');
 }
 
+function quotaAnomalySpikePaths(points, seriesData, range, x, y) {
+  return quotaAnomaliesInRange(seriesData, range).map(anomaly => {
+    let cycleID = String(anomaly.cycle_id || '');
+    let start = Number(anomaly.before_at || anomaly.started_at);
+    let end = Number(anomaly.ended_at);
+    let spike = (points || []).filter(point =>
+      String(point.cycle_id || '') === cycleID && point.time >= start && point.time <= end);
+    let svg = '';
+    for (let index = 1; index < spike.length; index++) {
+      svg += clippedLine(spike[index - 1].time, spike[index - 1].used_percent,
+        spike[index].time, spike[index].used_percent,
+        range.start, range.end, x, y,
+        'fill="none" stroke="var(--red)" stroke-width="3.5" vector-effect="non-scaling-stroke"');
+    }
+    spike.filter(point => point.time >= range.start && point.time <= range.end &&
+      (point.time === Number(anomaly.started_at) || point.time === end)).forEach(point => {
+      svg += '<circle cx="' + x(point.time) + '" cy="' + y(point.used_percent) +
+        '" r="4" fill="var(--red)"/>';
+    });
+    return svg;
+  }).join('');
+}
+
 function clippedLine(t1, v1, t2, v2, viewStart, viewEnd, x, y, attributes) {
   if (t2 <= t1 || t2 < viewStart || t1 > viewEnd) return '';
   let start = Math.max(t1, viewStart);
@@ -2293,6 +2316,7 @@ function renderPace(series, range) {
       '" stroke-width="3"' + (group.anomalous ? ' stroke-dasharray="5 4"' : '') +
       ' vector-effect="non-scaling-stroke"');
   });
+  svg += quotaAnomalySpikePaths(cycleActual, series, {start: start, end: end}, x, y);
   if (cycleActual.length) {
     let last = cycleActual[cycleActual.length - 1];
     let endTime = recentWill ? recentEnd : reset;
@@ -2373,6 +2397,9 @@ function renderCharts(seriesData, range) {
         '" stroke-width="' + (selected ? '3' : '2') + '" stroke-opacity="' + (selected ? '1' : '.52') +
         '"' + (anomalous ? ' stroke-dasharray="5 4"' : '') + ' vector-effect="non-scaling-stroke"');
     });
+    if (seriesIndex === 0) {
+      svg += quotaAnomalySpikePaths(points, seriesData, range, x, y);
+    }
   });
 
   dailyTimeTicks(range.start, range.end, range.anchor).forEach(timestamp => {

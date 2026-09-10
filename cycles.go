@@ -648,6 +648,10 @@ FROM usage_events WHERE cycle_id=? AND quota_scope=? AND requested_at<=?`, cycle
 	if err != nil {
 		return nil, "", err
 	}
+	points, err = s.addQuotaAnomalyBoundaryPoints(ctx, cycle, points, anomalies)
+	if err != nil {
+		return nil, "", err
+	}
 	markQuotaAnomalyPoints(points, anomalies)
 	return points, cycle.PlanType, nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"sort"
 )
 
 const (
@@ -119,7 +120,7 @@ func detectQuotaRegimeAnomalies(cycleID int64, observations []quotaRegimeObserva
 		}
 		anomalies = append(anomalies, quotaRegimeAnomaly{
 			CycleID: cycleID, Kind: quotaRegimeReverted,
-			StartedAt: anomalous.StartedAt, EndedAt: restored.StartedAt,
+			BeforeAt: before.EndedAt, StartedAt: anomalous.StartedAt, EndedAt: restored.StartedAt,
 			BeforeUsedPercent: before.LastUsed, AnomalousUsedPercent: anomalous.FirstUsed,
 			RestoredUsedPercent: restored.FirstUsed, BeforeResetAt: before.ResetAt,
 			AnomalousResetAt: anomalous.ResetAt, RestoredResetAt: restored.ResetAt,
@@ -127,6 +128,43 @@ func detectQuotaRegimeAnomalies(cycleID int64, observations []quotaRegimeObserva
 		})
 	}
 	return anomalies
+}
+
+func (s *store) addQuotaAnomalyBoundaryPoints(ctx context.Context, cycle quotaCycle, points []quotaPoint, anomalies []quotaRegimeAnomaly) ([]quotaPoint, error) {
+	for _, anomaly := range anomalies {
+		boundaries := []quotaPoint{
+			{Time: anomaly.BeforeAt, UsedPercent: anomaly.BeforeUsedPercent, ResetAt: anomaly.BeforeResetAt, WindowMinutes: cycle.WindowMinutes},
+			{Time: anomaly.StartedAt, UsedPercent: anomaly.AnomalousUsedPercent, ResetAt: anomaly.AnomalousResetAt, WindowMinutes: cycle.WindowMinutes, Anomalous: true, BreakBefore: true},
+			{Time: anomaly.EndedAt, UsedPercent: anomaly.RestoredUsedPercent, ResetAt: anomaly.RestoredResetAt, WindowMinutes: cycle.WindowMinutes, BreakBefore: true},
+		}
+		for _, boundary := range boundaries {
+			boundary.CycleID = cycle.ID
+			boundary.CycleStart = cycle.StartedAt
+			var found bool
+			for index := range points {
+				if points[index].Time == boundary.Time && points[index].ResetAt == boundary.ResetAt {
+					points[index].UsedPercent = boundary.UsedPercent
+					points[index].Anomalous = points[index].Anomalous || boundary.Anomalous
+					points[index].BreakBefore = points[index].BreakBefore || boundary.BreakBefore
+					found = true
+					break
+				}
+			}
+			if found {
+				continue
+			}
+			if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),COUNT(*)
+FROM usage_events WHERE cycle_id=? AND quota_scope=? AND requested_at<=?`, cycle.ID, mainQuotaScope, boundary.Time).
+				Scan(&boundary.WindowTokens, &boundary.WindowCostUSD, &boundary.Requests); err != nil {
+				return nil, err
+			}
+			points = append(points, boundary)
+		}
+	}
+	sort.SliceStable(points, func(left, right int) bool {
+		return points[left].Time < points[right].Time
+	})
+	return points, nil
 }
 
 func sameQuotaRegimeKey(run quotaRegimeRun, resetAt, windowMinutes int64) bool {

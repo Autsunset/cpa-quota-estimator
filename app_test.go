@@ -33,6 +33,7 @@ func TestDashboardShowsRemainingQuotaAndExhaustedState(t *testing.T) {
 		[]byte("quotaAnomalyPanel"),
 		[]byte("renderQuotaAnomalies"),
 		[]byte("quotaAnomalyOverlays"),
+		[]byte("quotaAnomalySpikePaths"),
 		[]byte("上游额度状态异常"),
 	} {
 		if !bytes.Contains(dashboardHTML, expected) {

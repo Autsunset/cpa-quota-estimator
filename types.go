@@ -181,6 +181,7 @@ type quotaPoint struct {
 type quotaRegimeAnomaly struct {
 	CycleID              int64   `json:"cycle_id"`
 	Kind                 string  `json:"kind"`
+	BeforeAt             int64   `json:"before_at"`
 	StartedAt            int64   `json:"started_at"`
 	EndedAt              int64   `json:"ended_at"`
 	BeforeUsedPercent    float64 `json:"before_used_percent"`
