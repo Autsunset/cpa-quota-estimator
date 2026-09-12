@@ -175,43 +175,35 @@ func (s *store) historicalEarlyResetConfirmed(ctx context.Context, previous, nex
 	rows, err := s.db.QueryContext(ctx, `SELECT id,requested_at,CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent,reset_at,window_minutes,plan_type,failed
 FROM usage_events
 WHERE cycle_id=? AND quota_scope=? AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0
-ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,id
-LIMIT ?`, next.ID, mainQuotaScope, resetConfirmationSamples)
+ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,id`, next.ID, mainQuotaScope)
 	if err != nil {
 		return false, 0, err
 	}
 	defer rows.Close()
-	events := make([]recordedQuotaEvent, 0, resetConfirmationSamples)
+	var firstObserved int64
+	var previousUsed float64
+	count := 0
 	for rows.Next() {
 		var item recordedQuotaEvent
 		if err = rows.Scan(&item.ID, &item.RequestedAt, &item.ObservedAt, &item.UsedPercent, &item.ResetAt, &item.WindowMinutes, &item.PlanType, &item.Failed); err != nil {
 			return false, 0, err
 		}
-		events = append(events, item)
-	}
-	if err = rows.Err(); err != nil {
-		return false, 0, err
-	}
-	if len(events) == 0 {
-		return false, 0, nil
-	}
-	firstObserved := events[0].ObservedAt
-	first := events[0]
-	if first.Failed || first.ResetAt != next.ResetAt || first.WindowMinutes != next.WindowMinutes || !compatiblePlan(first.PlanType, next.PlanType) || !resetCandidate(previous.PeakPercent, first.UsedPercent) {
-		return false, 0, nil
-	}
-	if len(events) < resetConfirmationSamples || events[len(events)-1].ObservedAt-firstObserved < resetConfirmationMinSeconds {
-		return false, firstObserved, nil
-	}
-	for index, item := range events {
 		if item.Failed || item.ResetAt != next.ResetAt || item.WindowMinutes != next.WindowMinutes || !compatiblePlan(item.PlanType, next.PlanType) || !resetCandidate(previous.PeakPercent, item.UsedPercent) {
 			return false, firstObserved, nil
 		}
-		if index > 0 && item.UsedPercent+resetPercentTolerance < events[index-1].UsedPercent {
+		if count > 0 && item.UsedPercent+resetPercentTolerance < previousUsed {
 			return false, firstObserved, nil
 		}
+		if count == 0 {
+			firstObserved = item.ObservedAt
+		}
+		previousUsed = item.UsedPercent
+		count++
+		if count >= resetConfirmationSamples && item.ObservedAt-firstObserved >= resetConfirmationMinSeconds {
+			return true, firstObserved, nil
+		}
 	}
-	return true, firstObserved, nil
+	return false, firstObserved, rows.Err()
 }
 
 func (s *store) earlyResetReboundAt(ctx context.Context, cycleID int64, previousPeak float64) (int64, error) {

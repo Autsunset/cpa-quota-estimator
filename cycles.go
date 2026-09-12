@@ -244,7 +244,8 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 	}
 
 	peak := current.PeakPercent
-	if !resetAtChanged && peak > 0 && !e.Failed && resetCandidate(peak, *e.UsedPercent) {
+	if !regimeChanged && peak > 0 && !e.Failed && resetCandidate(peak, *e.UsedPercent) &&
+		(!resetAtChanged || advancedEarlyResetObservation(current, e)) {
 		first, confirmed, errConfirm := confirmEarlyReset(ctx, tx, current, e)
 		if errConfirm != nil {
 			return quotaCycle{}, false, errConfirm
@@ -433,31 +434,54 @@ func confirmScheduledReset(ctx context.Context, tx *sql.Tx, current quotaCycle, 
 }
 
 func confirmEarlyReset(ctx context.Context, tx *sql.Tx, current quotaCycle, e event) (recordedQuotaEvent, bool, error) {
-	events, err := recentQuotaEvents(ctx, tx, current.ID, resetConfirmationSamples-1)
-	if err != nil || len(events) < resetConfirmationSamples-1 {
+	// Keep the entire contiguous low run. Looking at only the last two
+	// requests prevents a busy account from ever reaching the 60-second span.
+	rows, err := tx.QueryContext(ctx, `SELECT id,requested_at,CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent,reset_at,window_minutes,plan_type,failed
+FROM usage_events
+WHERE cycle_id=? AND quota_scope=? AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0
+ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END DESC,id DESC`, current.ID, mainQuotaScope)
+	if err != nil {
 		return recordedQuotaEvent{}, false, err
 	}
-	oldest, latest := events[len(events)-1], events[0]
+	defer rows.Close()
 	observedAt := eventObservationTime(e)
-	if latest.ObservedAt > observedAt || observedAt-oldest.ObservedAt < resetConfirmationMinSeconds {
-		return recordedQuotaEvent{}, false, nil
-	}
-	sequence := append([]recordedQuotaEvent(nil), events...)
-	for left, right := 0, len(sequence)-1; left < right; left, right = left+1, right-1 {
-		sequence[left], sequence[right] = sequence[right], sequence[left]
-	}
-	for index, recorded := range sequence {
-		if recorded.Failed || !sameQuotaRegime(recorded, e) || !resetCandidate(current.PeakPercent, recorded.UsedPercent) {
+	oldestObserved := observedAt
+	newerUsed := *e.UsedPercent
+	count := 1
+	var first recordedQuotaEvent
+	for rows.Next() {
+		var recorded recordedQuotaEvent
+		if err = rows.Scan(&recorded.ID, &recorded.RequestedAt, &recorded.ObservedAt, &recorded.UsedPercent, &recorded.ResetAt, &recorded.WindowMinutes, &recorded.PlanType, &recorded.Failed); err != nil {
+			return recordedQuotaEvent{}, false, err
+		}
+		if recorded.ObservedAt > observedAt {
 			return recordedQuotaEvent{}, false, nil
 		}
-		if index > 0 && recorded.UsedPercent+resetPercentTolerance < sequence[index-1].UsedPercent {
-			return recordedQuotaEvent{}, false, nil
+		if recorded.Failed || !sameQuotaRegime(recorded, e) || !resetCandidate(current.PeakPercent, recorded.UsedPercent) ||
+			newerUsed+resetPercentTolerance < recorded.UsedPercent {
+			break
 		}
+		if first.ID == 0 || recorded.RequestedAt < first.RequestedAt || (recorded.RequestedAt == first.RequestedAt && recorded.ID < first.ID) {
+			first = recorded
+		}
+		oldestObserved = recorded.ObservedAt
+		newerUsed = recorded.UsedPercent
+		count++
 	}
-	if *e.UsedPercent+resetPercentTolerance < latest.UsedPercent {
-		return recordedQuotaEvent{}, false, nil
+	if err = rows.Err(); err != nil {
+		return recordedQuotaEvent{}, false, err
 	}
-	return oldest, true, nil
+	return first, count >= resetConfirmationSamples && observedAt-oldestObserved >= resetConfirmationMinSeconds, nil
+}
+
+func advancedEarlyResetObservation(current quotaCycle, e event) bool {
+	// An early refill can allocate a fresh full window before the old one
+	// expires. Preserve the old schedule and peak while confirming its lows.
+	// Moving back to an earlier schedule is handled as regime recovery.
+	declaredStart := e.ResetAt - e.WindowMinutes*60
+	observedAt := eventObservationTime(e)
+	return e.ResetAt > current.ResetAt && observedAt < current.ResetAt-scheduledResetTolerance &&
+		declaredStart > current.StartedAt && declaredStart <= observedAt+scheduledResetTolerance
 }
 
 func recentQuotaEvents(ctx context.Context, tx *sql.Tx, cycleID int64, limit int) ([]recordedQuotaEvent, error) {
