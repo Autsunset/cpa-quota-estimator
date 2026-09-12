@@ -90,7 +90,7 @@ The green line is the pace that reaches exactly 100% at reset. Purple is the cum
 
 ### Cycle and monthly accounting
 
-`reset_at` is treated as the upstream planned reset time, not by itself as proof that a reset has already occurred. A scheduled transition is accepted only after two successful observations consistently describe the new window at the old boundary. If the planned time remains unchanged but used quota abruptly returns near 0%, the plugin requires three successful low readings in the same quota regime, in nondecreasing order, spanning at least 60 seconds. Failed, stale, out-of-order, or quickly rebounding readings do not create a new cycle.
+`reset_at` is treated as the upstream planned reset time, not by itself as proof that a reset has already occurred. A scheduled transition is accepted only after two successful observations consistently describe the new window at the old boundary. When used quota abruptly returns near 0%, an early reset can retain the planned time or allocate a fresh full window with a later reset before the old boundary. The plugin preserves the old cycle's schedule and usage baseline until at least three successful low readings in the same quota regime, in nondecreasing order, span 60 seconds. Confirmation uses the entire uninterrupted low-reading sequence, so frequent requests do not prevent confirmation. The new cycle starts at its first low request. Failed, stale, out-of-order, or quickly rebounding readings do not create a new cycle; a return to an earlier schedule remains a quota-regime recovery.
 
 Quota evidence is ordered by when its response headers were observed: request time plus TTFT for streaming requests, or total latency when TTFT is unavailable. Actual Tokens and monthly request attribution continue to use the original request timestamp. Sampling baselines are tracked per declared reset schedule, so a confirmed server-side rollback can lower the current percentage instead of remaining pinned to a temporary higher value. When a repeated alternate schedule later returns to the prior schedule, the API reports an `upstream_regime_reverted` anomaly; the dashboard preserves that interval in red, breaks estimation across both boundaries, and continues forecasting from trustworthy samples. Exact before/start/peak/recovery anchors are reconstructed from retained raw requests. The full-cycle chart draws one thin canonical spike instead of overplotting every dense anomalous sample, while the anomaly card includes a readable detail sparkline. Capacity history remains disconnected through the anomalous interval and resumes at the recovery boundary with the last trustworthy estimate, even when an older plugin version did not sample the lower restored percentages.
 
@@ -224,7 +224,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.10.5
+make package VERSION=0.10.6
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
