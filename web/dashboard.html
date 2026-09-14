@@ -21,28 +21,33 @@
 .overview .overview-toggle-icon{width:14px;height:14px;flex:0 0 14px}
 .overview .overview-filter{min-width:0}
 
+.collection-settings{margin-bottom:13px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--control)}.collection-header{display:flex;align-items:center;justify-content:space-between;gap:16px}.collection-header h2{margin:0 0 4px;font-size:15px}.collection-account{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.collection-controls{display:flex;align-items:end;gap:8px;flex-shrink:0}.collection-controls label{display:grid;gap:5px;font-size:12px;color:var(--muted)}.collection-controls select{max-width:100%}.collection-explanation{margin:12px 0 6px;font-size:13px;line-height:1.6}.collection-facts{display:flex;flex-wrap:wrap;gap:5px 18px;color:var(--muted);font-size:12px;line-height:1.6}.collection-status{display:block;margin-top:6px;min-height:1em;font-size:12px;color:var(--muted)}.quota-trend-note{margin:0 0 13px}@media(max-width:720px){.collection-header{align-items:stretch;flex-direction:column;gap:12px}.collection-controls{align-items:end}.collection-controls label{flex:1;min-width:0}.collection-controls select{width:100%}.collection-settings{margin-bottom:8px;padding:12px}}
+.collection-limited [data-capacity-view]{display:none!important}.collection-limited .charts,.collection-limited .details{grid-template-columns:1fr}
+.collection-controls button:disabled,.collection-controls select:disabled{opacity:.55;cursor:default}
 </style>
 </head>
 <body><main class="wrap">
 <div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与所选计价口径的等效容量</span></h1><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="预测周期"><option value="">当前预测</option></select><select id="language" aria-label="界面语言"></select><label class="spark-toggle spark-toggle-top"><input id="showSpark" type="checkbox"><span>显示 Spark 额度</span></label><button id="sync">同步价格</button><button id="refresh" class="primary">刷新</button></div></div>
 <section class="pricing-settings"><div class="pricing-settings-copy"><b>费用计算规则</b><span>新用户默认使用优惠前 API 价格；可切换当前 API 价格或订阅 Credits，保存后重算全部历史周期</span></div><div class="pricing-controls"><label class="pricing-mode-control"><span>计价方式</span><select id="pricingMode" aria-label="计价方式"></select></label><label class="pricing-toggle"><input id="applyLongContextPricing" type="checkbox"><span id="longContextPricingLabel">&gt;272K 长上下文加价</span></label><label class="pricing-toggle"><input id="applyFastPricing" type="checkbox" checked><span id="fastPricingLabel">Fast 加价（2.5×）</span></label><div class="model-calibration-control"><div class="model-calibration-inputs"><span class="model-calibration-label">模型额度校准</span><label class="astra-multiplier-control" for="astraMultiplier"><span>Astra ×</span><input id="astraMultiplier" type="number" min="0.01" max="100" step="any" value="1.8" inputmode="decimal" aria-label="Astra 模型倍率" aria-describedby="modelCalibrationHelp"></label></div><small id="modelCalibrationHelp">三种计价方式（含 Credits）均适用；设为 1 不加倍率。仅影响插件估值，不修改 New API 计费。</small></div><button id="savePricingSettings" class="primary">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" aria-live="polite"></span></div></section>
-<section class="chart overview"><div class="section-head"><div><h2>全部账号额度概览</h2><div class="sub">合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；点击有样本的账号查看详情</div></div><div class="overview-head-actions"><span class="sub" id="overviewCount">—</span><button id="overviewClearFilters" type="button">清除筛选</button><button id="overviewToggle" type="button" aria-expanded="true" aria-controls="overviewBody">折叠概览</button></div></div><div class="overview-body" id="overviewBody"><div class="overview-table-wrap"><table class="overview-table"><thead><tr class="overview-heading-row"><th><button class="overview-sort" type="button" data-sort-key="account"><span>账号</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="plan"><span>计划类型</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="remaining"><span>当前剩余额度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="reset"><span>重置时间</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="requests"><span>请求数</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="tokens"><span>Token</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="cost"><span>等价费用</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="capacity"><span>完整周期容量估计</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="confidence"><span>估计置信度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="forecast"><span>预计耗尽 / 状态</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th></tr><tr class="overview-filter-row"><th><input class="overview-filter" data-overview-filter="account"></th><th><input class="overview-filter" data-overview-filter="plan"></th><th><input class="overview-filter" data-overview-filter="remaining"></th><th><input class="overview-filter" data-overview-filter="reset"></th><th><input class="overview-filter" data-overview-filter="requests"></th><th><input class="overview-filter" data-overview-filter="tokens"></th><th><input class="overview-filter" data-overview-filter="cost"></th><th><input class="overview-filter" data-overview-filter="capacity"></th><th><input class="overview-filter" data-overview-filter="confidence"></th><th><input class="overview-filter" data-overview-filter="forecast"></th></tr></thead><tbody id="overviewRows"></tbody></table></div></div></section>
+<section class="chart overview"><div class="section-head"><div><h2>全部账号额度概览</h2><div class="sub">合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；点击有样本的账号查看详情</div></div><div class="overview-head-actions"><span class="sub" id="overviewCount">—</span><button id="overviewClearFilters" type="button">清除筛选</button><button id="overviewToggle" type="button" aria-expanded="true" aria-controls="overviewBody">折叠概览</button></div></div><div class="overview-body" id="overviewBody"><div class="overview-table-wrap"><table class="overview-table"><thead><tr class="overview-heading-row"><th><button class="overview-sort" type="button" data-sort-key="account"><span>账号</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="plan"><span>计划类型</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="remaining"><span>当前剩余额度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="reset"><span>重置时间</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="requests"><span>CPA 请求数</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="tokens"><span>CPA Token</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="cost"><span>CPA 计价值</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="capacity"><span>完整周期容量估计</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="confidence"><span>采样充分程度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="forecast"><span>预计耗尽 / 状态</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th></tr><tr class="overview-filter-row"><th><input class="overview-filter" data-overview-filter="account"></th><th><input class="overview-filter" data-overview-filter="plan"></th><th><input class="overview-filter" data-overview-filter="remaining"></th><th><input class="overview-filter" data-overview-filter="reset"></th><th><input class="overview-filter" data-overview-filter="requests"></th><th><input class="overview-filter" data-overview-filter="tokens"></th><th><input class="overview-filter" data-overview-filter="cost"></th><th><input class="overview-filter" data-overview-filter="capacity"></th><th><input class="overview-filter" data-overview-filter="confidence"></th><th><input class="overview-filter" data-overview-filter="forecast"></th></tr></thead><tbody id="overviewRows"></tbody></table></div></div></section>
+<section class="collection-settings" aria-labelledby="coverageTitle"><div class="collection-header"><div><h2 id="coverageTitle">本账号采集范围</h2><div class="collection-account" id="coverageAccount"></div></div><div class="collection-controls"><label for="coverageMode"><span id="coverageModeLabel">用量入口</span><select id="coverageMode" aria-describedby="coverageExplanation"></select></label><button id="saveCoverageSettings" type="button" class="primary" disabled>保存</button></div></div><p class="collection-explanation" id="coverageExplanation">假设全部用量经过 CPA</p><div class="collection-facts"><span id="coverageSources"></span><span id="coverageObservedAt"></span><span id="coverageSampleQuality"></span></div><span class="collection-status" id="coverageSaveStatus" role="status" aria-live="polite"></span></section>
 <section class="grid">
  <div class="card"><div class="label">所选周期剩余额度</div><div class="value" id="used">—</div><div class="sub" id="window">等待额度样本</div></div>
- <div class="card"><div class="label">所选周期累计 Token</div><div class="value" id="tokens">—</div><div class="sub" id="requests">—</div></div>
- <div class="card"><div class="label">所选周期累计计价值</div><div class="value" id="cost">—</div><div class="sub" id="pricing">—</div></div>
+ <div class="card"><div class="label">所选周期 CPA 累计 Token</div><div class="value" id="tokens">—</div><div class="sub" id="requests">—</div></div>
+ <div class="card"><div class="label">所选周期 CPA 累计计价值</div><div class="value" id="cost">—</div><div class="sub" id="pricing">—</div></div>
  <div class="card"><div class="label">预计额度耗尽</div><div class="value" id="exhaust">—</div><div class="sub" id="confidence">尚无预测</div></div>
 </section>
 <div class="chart-range"><span>曲线范围</span><input id="rangeStart" type="datetime-local"><span>至</span><input id="rangeEnd" type="datetime-local"><button id="resetRange">恢复本周期</button><span class="error" id="rangeError"></span></div>
 <section class="quota-anomaly-panel" id="quotaAnomalyPanel" hidden><div class="quota-anomaly-head"><b id="quotaAnomalyTitle"></b><span id="quotaAnomalyCount"></span></div><div class="quota-anomaly-rows" id="quotaAnomalyRows"></div></section>
 <section class="pace-section"><div class="chart pace-chart"><h2>额度周期进度预测</h2><div id="paceCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>实际额度轨迹</span><span><i class="dot" style="background:var(--green)"></i>可持续基准线（周期内匀速消耗）</span><span><i class="dot" style="background:var(--purple)"></i>累计平均预测（周期开始至预测时点）</span><span><i class="dot" style="background:var(--amber)"></i>近期速率预测（近期采样区间）</span></div></div><div class="chart pace-stats"><h2>所选周期消耗节奏</h2><div class="row"><span>当前状态</span><b id="paceState">—</b></div><div class="row"><span>周期时间进度</span><b id="timeProgress">—</b></div><div class="row"><span>实际用量 / 基准用量（同期）</span><b id="usageVsAverage">—</b></div><div class="row"><span>累计平均速率 / 可持续速率</span><b id="dailyRate">—</b></div><div class="row"><span>近期消耗速率（采样区间）</span><b id="recentRate">—</b></div><div class="row"><span>累计平均模型预计耗尽时间</span><b id="averageEnd">—</b></div><div class="row"><span>近期速率模型预计耗尽时间</span><b id="paceEnd">—</b></div><div class="row"><span>近期速率模型期末预计用量</span><b id="projectedUsage">—</b></div><div class="row"><span>周期计划重置时间</span><b id="nextReset">—</b></div><div class="row"><span>预测时点至重置的剩余时间</span><b id="resetCountdown">—</b></div></div></section>
+<p class="coverage-note quota-trend-note" id="quotaTrendScope"></p>
 <section class="charts"><div class="chart"><h2>额度周期累计曲线</h2><div id="curve"></div><div class="legend"><span><i class="dot" style="background:var(--green)"></i>额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>累计 Token（Token）</span><span><i class="dot" style="background:var(--amber)"></i>累计计价值（按所选口径）</span><span><i class="dot" style="background:var(--purple)"></i>额度周期边界</span><span><i class="dot" style="background:var(--red)"></i><span id="quotaAnomalyLegend">上游额度状态异常</span></span></div></div><div class="chart"><h2>周期等效容量</h2><div id="capacity"></div></div></section>
 <section class="chart capacity-history"><h2>周期等效容量估计轨迹</h2><div id="capacityCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>完整周期等效 Token 容量（Token）</span><span><i class="dot" style="background:var(--amber)"></i>完整周期计价等效容量</span><span><i class="dot" style="background:var(--purple)"></i>额度周期边界</span></div></section>
 <section class="details"><div class="chart rows"><h2>主额度等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="fullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="fullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="remainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="remainCost">—</b></div></div><div class="chart rows"><h2>主额度采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="samples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="span">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="tokenRange">—</b></div><div class="row"><span>完整周期计价等效容量的四分位数区间（Q1–Q3）</span><b id="costRange">—</b></div></div></section>
 <section class="chart model-allowances"><div class="section-head"><div><h2>按模型估算剩余 Token</h2><div class="sub">每一列分别假设剩余计价值全部用于该模型的未缓存输入、输出或缓存命中；Standard、基础上下文口径</div></div><b id="allowanceMode">—</b></div><div class="cycle-table-wrap"><table class="cycle-table allowance-table"><thead><tr><th>模型</th><th>输入单价</th><th>剩余输入 Token</th><th>输出单价</th><th>剩余输出 Token</th><th>缓存命中单价</th><th>剩余缓存命中 Token</th></tr></thead><tbody id="allowanceRows"></tbody></table></div></section>
-<section class="chart monthly"><div class="section-head"><div><h2>主额度月度汇总</h2><div class="sub">仅统计主额度请求；按自然月汇总，并以每次确认的官方重置划分周期</div></div><select id="month" aria-label="统计月份"></select></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="monthTokens">—</b><small id="monthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="monthCost">—</b><small id="monthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="monthCycles">—</b><small id="monthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="monthQuotaEquivalent">—</b><small id="monthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="monthCapacity">—</b><small id="monthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="monthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="monthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="monthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="monthlyNote">仅统计主额度请求；检测到 5 小时额度时，周限额在下方自动独立汇总；Spark 可按需显示。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="cycleRows"></tbody></table></div></section>
-<div class="spark-section weekly-section" id="weeklyQuota" hidden><div class="spark-section-head"><div><h2>Plus 周限额（自动检测）</h2><div class="sub">仅在检测到 5 小时主额度时启用；5 小时和周限额使用各自的响应头、周期与容量估算</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>周限额变化与容量估算</h2><div class="sub">按 Secondary 周限额响应头和周重置时间独立估算；同一主额度请求同时计入 5 小时与周限额</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="weeklyUsed">—</b></div><div class="spark-stat"><span>周限额重置时间</span><b id="weeklyReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="weeklyObservations">—</b></div><div class="spark-stat"><span>估算置信度</span><b id="weeklyConfidence">—</b></div></div><div id="weeklyCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>周限额使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>周限额周期累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>周限额周期累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>周限额等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="weeklyFullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="weeklyFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="weeklyRemainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="weeklyRemainCost">—</b></div></div><div class="chart rows"><h2>周限额采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="weeklyGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="weeklySpan">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="weeklyTokenRange">—</b></div><div class="row"><span>完整周期计价等效容量的四分位数区间（Q1–Q3）</span><b id="weeklyCostRange">—</b></div></div></section><section class="chart model-allowances"><div class="section-head"><div><h2>周限额按模型估算剩余 Token</h2><div class="sub">按当前周限额剩余计价值，分别换算各模型的未缓存输入、输出和缓存命中 Token</div></div><b id="weeklyAllowanceMode">—</b></div><div class="cycle-table-wrap"><table class="cycle-table allowance-table"><thead><tr><th>模型</th><th>输入单价</th><th>剩余输入 Token</th><th>输出单价</th><th>剩余输出 Token</th><th>缓存命中单价</th><th>剩余缓存命中 Token</th></tr></thead><tbody id="weeklyAllowanceRows"></tbody></table></div></section><section class="chart monthly"><div class="section-head"><div><h2>周限额月度汇总</h2><div class="sub">统计会消耗周限额的主额度请求，并按 Secondary 周限额自己的重置时间划分周期</div></div><b id="weeklyMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="weeklyMonthTokens">—</b><small id="weeklyMonthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="weeklyMonthCost">—</b><small id="weeklyMonthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="weeklyMonthCycles">—</b><small id="weeklyMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="weeklyMonthQuotaEquivalent">—</b><small id="weeklyMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="weeklyMonthCapacity">—</b><small id="weeklyMonthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="weeklyMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="weeklyMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="weeklyMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="weeklyMonthlyNote">周限额容量、消耗当量与周期均独立于 5 小时额度计算；实际 Token 和费用来自同一批主额度请求。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="weeklyCycleRows"></tbody></table></div></section></div>
-<div class="spark-section" id="sparkQuota" hidden><div class="spark-section-head"><div><h2>Spark 独立额度</h2><div class="sub">Spark 的容量、消耗当量、周期和月度统计均单独计算，不计入主额度</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>Spark 额度变化与容量估算</h2><div class="sub">按 Spark 自身响应头、重置时间和请求负载独立估算</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="sparkUsed">—</b></div><div class="spark-stat"><span>Spark 重置时间</span><b id="sparkReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="sparkObservations">—</b></div><div class="spark-stat"><span>估算置信度</span><b id="sparkConfidence">—</b></div></div><div id="sparkCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>Spark 额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>Spark 累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>Spark 累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>Spark 等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="sparkFullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="sparkFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="sparkRemainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="sparkRemainCost">—</b></div></div><div class="chart rows"><h2>Spark 采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="sparkGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="sparkSpan">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="sparkTokenRange">—</b></div><div class="row"><span>完整周期计价等效容量的四分位数区间（Q1–Q3）</span><b id="sparkCostRange">—</b></div></div></section><section class="chart monthly"><div class="section-head"><div><h2>Spark 月度额度汇总</h2><div class="sub">仅统计 Spark 请求，并按 Spark 自己的重置时间划分额度周期</div></div><b id="sparkMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="sparkMonthTokens">—</b><small id="sparkMonthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="sparkMonthCost">—</b><small id="sparkMonthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="sparkMonthCycles">—</b><small id="sparkMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="sparkMonthQuotaEquivalent">—</b><small id="sparkMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="sparkMonthCapacity">—</b><small id="sparkMonthCapacityCost">—</small></div><div class="monthly-item"><span>容量估计覆盖率</span><b id="sparkMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="sparkMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="sparkMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="sparkMonthlyNote">仅统计 Spark 请求；所有容量和额度当量均与主额度分开。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>估计置信度</th></tr></thead><tbody id="sparkCycleRows"></tbody></table></div></section></div>
+<section class="chart monthly"><div class="section-head"><div><h2>主额度月度汇总</h2><div class="sub">仅统计主额度请求；按自然月汇总，并以每次确认的官方重置划分周期</div></div><select id="month" aria-label="统计月份"></select></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="monthTokens">—</b><small id="monthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="monthCost">—</b><small id="monthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="monthCycles">—</b><small id="monthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="monthQuotaEquivalent">—</b><small id="monthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="monthCapacity">—</b><small id="monthCapacityCost">—</small></div><div class="monthly-item"><span>可估计周期占比</span><b id="monthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="monthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="monthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="monthlyNote">仅统计主额度请求；检测到 5 小时额度时，周限额在下方自动独立汇总；Spark 可按需显示。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>采样充分程度</th></tr></thead><tbody id="cycleRows"></tbody></table></div></section>
+<div class="spark-section weekly-section" id="weeklyQuota" hidden><div class="spark-section-head"><div><h2>Plus 周限额（自动检测）</h2><div class="sub">仅在检测到 5 小时主额度时启用；5 小时和周限额使用各自的响应头、周期与容量估算</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>周限额变化与容量估算</h2><div class="sub">按 Secondary 周限额响应头和周重置时间独立估算；同一主额度请求同时计入 5 小时与周限额</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="weeklyUsed">—</b></div><div class="spark-stat"><span>周限额重置时间</span><b id="weeklyReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="weeklyObservations">—</b></div><div class="spark-stat"><span>采样充分程度</span><b id="weeklyConfidence">—</b></div></div><div id="weeklyCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>周限额使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>周限额周期累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>周限额周期累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>周限额等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="weeklyFullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="weeklyFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="weeklyRemainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="weeklyRemainCost">—</b></div></div><div class="chart rows"><h2>周限额采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="weeklyGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="weeklySpan">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="weeklyTokenRange">—</b></div><div class="row"><span>完整周期计价等效容量的四分位数区间（Q1–Q3）</span><b id="weeklyCostRange">—</b></div></div></section><section class="chart model-allowances"><div class="section-head"><div><h2>周限额按模型估算剩余 Token</h2><div class="sub">按当前周限额剩余计价值，分别换算各模型的未缓存输入、输出和缓存命中 Token</div></div><b id="weeklyAllowanceMode">—</b></div><div class="cycle-table-wrap"><table class="cycle-table allowance-table"><thead><tr><th>模型</th><th>输入单价</th><th>剩余输入 Token</th><th>输出单价</th><th>剩余输出 Token</th><th>缓存命中单价</th><th>剩余缓存命中 Token</th></tr></thead><tbody id="weeklyAllowanceRows"></tbody></table></div></section><section class="chart monthly"><div class="section-head"><div><h2>周限额月度汇总</h2><div class="sub">统计会消耗周限额的主额度请求，并按 Secondary 周限额自己的重置时间划分周期</div></div><b id="weeklyMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="weeklyMonthTokens">—</b><small id="weeklyMonthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="weeklyMonthCost">—</b><small id="weeklyMonthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="weeklyMonthCycles">—</b><small id="weeklyMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="weeklyMonthQuotaEquivalent">—</b><small id="weeklyMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="weeklyMonthCapacity">—</b><small id="weeklyMonthCapacityCost">—</small></div><div class="monthly-item"><span>可估计周期占比</span><b id="weeklyMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="weeklyMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="weeklyMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="weeklyMonthlyNote">周限额容量、消耗当量与周期均独立于 5 小时额度计算；实际 Token 和费用来自同一批主额度请求。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>采样充分程度</th></tr></thead><tbody id="weeklyCycleRows"></tbody></table></div></section></div>
+<div class="spark-section" id="sparkQuota" hidden><div class="spark-section-head"><div><h2>Spark 独立额度</h2><div class="sub">Spark 的容量、消耗当量、周期和月度统计均单独计算，不计入主额度</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>Spark 额度变化与容量估算</h2><div class="sub">按 Spark 自身响应头、重置时间和请求负载独立估算</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="sparkUsed">—</b></div><div class="spark-stat"><span>Spark 重置时间</span><b id="sparkReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="sparkObservations">—</b></div><div class="spark-stat"><span>采样充分程度</span><b id="sparkConfidence">—</b></div></div><div id="sparkCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>Spark 额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>Spark 累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>Spark 累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>Spark 等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="sparkFullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="sparkFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="sparkRemainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="sparkRemainCost">—</b></div></div><div class="chart rows"><h2>Spark 采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="sparkGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="sparkSpan">—</b></div><div class="row"><span>完整周期 Token 等效容量的四分位数区间（Q1–Q3；中间 50%）</span><b id="sparkTokenRange">—</b></div><div class="row"><span>完整周期计价等效容量的四分位数区间（Q1–Q3）</span><b id="sparkCostRange">—</b></div></div></section><section class="chart monthly"><div class="section-head"><div><h2>Spark 月度额度汇总</h2><div class="sub">仅统计 Spark 请求，并按 Spark 自己的重置时间划分额度周期</div></div><b id="sparkMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="sparkMonthTokens">—</b><small id="sparkMonthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="sparkMonthCost">—</b><small id="sparkMonthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="sparkMonthCycles">—</b><small id="sparkMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="sparkMonthQuotaEquivalent">—</b><small id="sparkMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="sparkMonthCapacity">—</b><small id="sparkMonthCapacityCost">—</small></div><div class="monthly-item"><span>可估计周期占比</span><b id="sparkMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="sparkMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="sparkMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="sparkMonthlyNote">仅统计 Spark 请求；所有容量和额度当量均与主额度分开。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>采样充分程度</th></tr></thead><tbody id="sparkCycleRows"></tbody></table></div></section></div>
 <div class="note" id="note">额度百分比来自上游响应头；计价值按所选口径换算，预测不是 OpenAI 官方标称额度。</div>
 </main>
 <div class="login" id="login"><div class="loginbox"><h2>连接 Management API</h2><div class="sub">请输入 CPA Management Key；可选择在此浏览器中记住。</div><input id="key" type="password" placeholder="CPA Management Key" autocomplete="current-password"><label class="remember-key"><input id="rememberKey" type="checkbox"><span>在此浏览器记住密钥</span></label><div class="sub">共享设备请勿勾选；未勾选时只保留在当前标签页。</div><div class="error" id="loginError"></div><button id="loginBtn" class="primary" style="width:100%">进入仪表盘</button></div></div>
@@ -81,6 +86,11 @@ let chartRange;
 let chartRangeCycleID;
 let chartRangeManual = false;
 let pricingSettingsDirty = false;
+let coverageSettingsDirty = false;
+let coverageSettingsAccount = '';
+let coverageSaving = false;
+let coverageStatus = {key: '', values: {}};
+let loadSequence = 0;
 let showSparkQuota = readShowSparkQuota();
 let overviewState = readOverviewState();
 let overviewSnapshot;
@@ -198,6 +208,34 @@ function storeAuth() {
 
 const messages = {
   'zh-CN': {
+    coverageTitle: "本账号采集范围",
+    coverageModeLabel: "用量入口",
+    coverageAccount: "账号：{account}",
+    coverageNoAccount: "等待账号样本",
+    coverageCPAOnly: "假设全部用量经过 CPA",
+    coverageMixed: "混合入口（CPA + 直连等）",
+    coverageUnknown: "覆盖范围未知",
+    coverageAssumption: "假设全部用量经过 CPA。容量估算依赖此假设；更多样本或固定倍率不能验证其他入口是否被采集。",
+    coverageMixedReason: "仅采集部分入口，无法估算账号完整容量",
+    coverageUnknownReason: "采集覆盖范围未知，无法估算账号完整容量",
+    coverageMixedHelp: "混合入口：额度池还包含未经过 CPA 的消耗。保留实测数据和额度趋势，停用完整周期、剩余容量及按模型换算。",
+    coverageUnknownHelp: "覆盖范围未知：保留实测数据和额度趋势，待明确覆盖范围后再启用容量换算。",
+    coverageSources: "额度百分比与重置时间：账号额度池；Token、请求和计价值：仅 CPA 采集。",
+    coverageObservedAt: "最近额度观测：{time}",
+    sampleQuality: "采样充分程度：{level}",
+    sampleQualityHigh: "高",
+    sampleQualityMedium: "中",
+    sampleQualityLow: "低",
+    sampleQualityInsufficient: "样本不足",
+    coverageSave: "保存",
+    coverageSaving: "保存中…",
+    coverageSaved: "已保存此账号的采集范围",
+    coverageUnsaved: "待保存；当前数据仍按已保存的设置展示。",
+    coverageSavedRefreshFailed: "设置已保存，数据刷新失败，请重试刷新。",
+    quotaTrendScope: "消耗趋势反映整个账号额度池在已观测区间内的历史节奏；其他入口比例或未来使用方式改变时，预测也会改变。",
+    quotaUsedOnly: "账号额度池已使用",
+    sampleHeading: "采样充分程度",
+    capacityAssumptionShort: "假设全部用量经过 CPA",
     autoLanguage: '自动（跟随面板）',
     chinese: '中文',
     english: 'English',
@@ -245,7 +283,7 @@ const messages = {
     usableUntilReset: '可用至重置',
     recentRate: '近期 {rate}%/天',
     averageRate: '周期累计平均 {rate}%/天',
-    confidence: '{level}置信度',
+    confidence: '采样充分程度：{level}',
     confidenceHigh: '高',
     confidenceMedium: '中',
     confidenceLow: '低',
@@ -300,7 +338,7 @@ const messages = {
     sparkWeeklyUsed: '周限额使用率',
     sparkWeeklyReset: '周限额重置时间',
     sparkWeeklyObservations: '周限额观测样本',
-    sparkWeeklyConfidence: '周限额估算置信度',
+    sparkWeeklyConfidence: '周限额采样充分程度',
     sparkWeeklyFullTokens: '完整周限额等效 Token',
     sparkWeeklyRemainTokens: '剩余周限额等效 Token',
     sparkWeeklyFullValue: '完整周限额计价等效容量',
@@ -401,6 +439,34 @@ const messages = {
     quotaAwaitingRefresh: '等待重置后新样本'
   },
   en: {
+    coverageTitle: "Collection coverage for this account",
+    coverageModeLabel: "Usage routes",
+    coverageAccount: "Account: {account}",
+    coverageNoAccount: "Awaiting account samples",
+    coverageCPAOnly: "Assume all usage goes through CPA",
+    coverageMixed: "Mixed routes (CPA + direct, etc.)",
+    coverageUnknown: "Coverage unknown",
+    coverageAssumption: "Assume all usage goes through CPA. Capacity estimates depend on this assumption; more samples or a fixed multiplier cannot verify collection of other routes.",
+    coverageMixedReason: "Partial usage collection; account capacity unavailable",
+    coverageUnknownReason: "Collection coverage unknown; account capacity unavailable",
+    coverageMixedHelp: "Mixed routes: the quota pool includes consumption outside CPA. Observed usage and quota trends remain available; full-cycle capacity, remaining capacity, and model conversions are disabled.",
+    coverageUnknownHelp: "Coverage unknown: observed usage and quota trends remain available. Establish collection coverage before enabling capacity conversions.",
+    coverageSources: "Quota percentage and reset time: account quota pool. Tokens, requests, and pricing value: CPA observations only.",
+    coverageObservedAt: "Latest quota observation: {time}",
+    sampleQuality: "Sample sufficiency: {level}",
+    sampleQualityHigh: "High",
+    sampleQualityMedium: "Medium",
+    sampleQualityLow: "Low",
+    sampleQualityInsufficient: "Insufficient samples",
+    coverageSave: "Save",
+    coverageSaving: "Saving…",
+    coverageSaved: "Account collection coverage saved",
+    coverageUnsaved: "Unsaved; displayed data still uses the saved setting.",
+    coverageSavedRefreshFailed: "Setting saved, but data refresh failed. Please refresh again.",
+    quotaTrendScope: "Trends describe the entire account quota pool over observed historical intervals. Forecasts can change when the route mix or future usage changes.",
+    quotaUsedOnly: "Account quota pool used",
+    sampleHeading: "Sample sufficiency",
+    capacityAssumptionShort: "Assume all usage goes through CPA",
     autoLanguage: 'Auto (follow panel)',
     chinese: '中文',
     english: 'English',
@@ -448,7 +514,7 @@ const messages = {
     usableUntilReset: 'Available until reset',
     recentRate: 'Recent {rate}%/day',
     averageRate: 'Cycle-to-date avg {rate}%/day',
-    confidence: '{level} confidence',
+    confidence: 'Sample sufficiency: {level}',
     confidenceHigh: 'High',
     confidenceMedium: 'Medium',
     confidenceLow: 'Low',
@@ -503,7 +569,7 @@ const messages = {
     sparkWeeklyUsed: 'Weekly quota used',
     sparkWeeklyReset: 'Weekly reset time',
     sparkWeeklyObservations: 'Weekly observations',
-    sparkWeeklyConfidence: 'Weekly estimate confidence',
+    sparkWeeklyConfidence: 'Weekly sample sufficiency',
     sparkWeeklyFullTokens: 'Full weekly equivalent Tokens',
     sparkWeeklyRemainTokens: 'Remaining weekly equivalent Tokens',
     sparkWeeklyFullValue: 'Full weekly pricing-value capacity',
@@ -606,8 +672,11 @@ const messages = {
 };
 
 const staticEnglish = {
+  'CPA 计价值': 'CPA pricing value',
+  'CPA Token': 'CPA Tokens',
+  'CPA 请求数': 'CPA requests',
   '把额度百分比变化映射为 Token 与所选计价口径的等效容量': 'Map quota percentage changes to Token and selected-pricing-basis equivalents',
-  '所选周期累计计价值': 'Selected-cycle cumulative pricing value',
+  '所选周期 CPA 累计计价值': 'Selected-cycle CPA pricing value',
   '累计计价值（按所选口径）': 'Cumulative pricing value (selected basis)',
   '完整周期计价等效容量': 'Full-cycle pricing-value-equivalent capacity',
   '完整周期计价等效容量（100% 额度；中位数）': 'Full-cycle pricing-value-equivalent capacity (100% quota; median)',
@@ -663,8 +732,7 @@ const staticEnglish = {
   '预测周期': 'Forecast cycle',
   '所选周期剩余额度': 'Selected-cycle quota remaining',
   '等待额度样本': 'Waiting for quota samples',
-  '所选周期累计 Token': 'Selected-cycle cumulative Tokens',
-  '所选周期累计计价值': 'Selected-cycle cumulative estimated cost',
+  '所选周期 CPA 累计 Token': 'Selected-cycle CPA Tokens',
   '预计额度耗尽': 'Estimated quota exhaustion',
   '尚无预测': 'No forecast yet',
   '额度周期进度预测': 'Quota-cycle progress forecast',
@@ -700,7 +768,7 @@ const staticEnglish = {
   '当前使用率': 'Current usage',
   'Spark 重置时间': 'Spark reset time',
   '观测样本': 'Observed samples',
-  '估算置信度': 'Estimate confidence',
+  '采样充分程度': 'Sample sufficiency',
   '剩余额度等效 Token': 'Remaining-quota equivalent Tokens',
   '完整周期等效费用': 'Full-cycle equivalent cost',
   '剩余额度等效费用': 'Remaining-quota equivalent cost',
@@ -750,7 +818,7 @@ const staticEnglish = {
   '本月涉及的额度周期': 'Quota cycles overlapping this month',
   '本月额度消耗当量': 'Monthly quota-consumption equivalent',
   '本月新周期估计总容量': 'Estimated total capacity of cycles starting this month',
-  '容量估计覆盖率': 'Capacity-estimate coverage',
+  '可估计周期占比': 'Capacity-estimate coverage',
   '已估计周期数 / 本月新周期数': 'Estimated cycles / cycles starting this month',
   '重置时未消耗额度合计': 'Total unconsumed quota at resets',
   '各次重置分别累加，可能超过 100%': 'Summed across resets; may exceed 100%',
@@ -763,7 +831,6 @@ const staticEnglish = {
   '本月计价值': 'Monthly estimated cost',
   '本月请求': 'Monthly requests',
   '完整周期等效 Token': 'Full-cycle equivalent Tokens',
-  '估计置信度': 'Estimate confidence',
   '额度百分比来自上游响应头；计价值按所选口径换算，预测不是 OpenAI 官方标称额度。': 'Quota percentages come from upstream response headers and USD values use models.dev pricing. Forecasts are not official OpenAI quota values.',
   '连接 Management API': 'Connect to Management API',
   '请输入 CPA Management Key；可选择在此浏览器中记住。': 'Enter the CPA Management Key. You can choose to remember it in this browser.',
@@ -883,6 +950,7 @@ function applyLanguage(nextLanguage) {
   $('#applyLongContextPricing').setAttribute('aria-label', tr('longContextPricingLabel', {threshold: pricingThresholdK(state && state.config)}));
   $('#applyFastPricing').setAttribute('aria-label', fastPricingLabel(state && state.config));
   renderPricingSettings(state && state.config, true);
+  renderCoverageSettings(state);
   renderLanguageSelect();
   renderOverviewControls();
 }
@@ -1028,6 +1096,7 @@ function dailyTimeTicks(start, end, anchor) {
 
 async function applyChartRange() {
   if (!seriesState) return;
+  const requestID = loadSequence;
   let start = shanghaiInputTimestamp($('#rangeStart').value);
   let end = shanghaiInputTimestamp($('#rangeEnd').value);
   if (!start || !end || start >= end) {
@@ -1051,9 +1120,12 @@ async function applyChartRange() {
       end_at: String(end)
     });
     if (showSparkQuota) query.set('include_spark', '1');
-    seriesState = await api('/series?' + query);
+    const series = await api('/series?' + query);
+    if (requestID !== loadSequence) return;
+    seriesState = series;
     renderSeriesVisuals(seriesState);
   } catch (error) {
+    if (requestID !== loadSequence) return;
     $('#rangeError').textContent = tr('loadFailed', {message: error.message});
   } finally {
     $('#rangeStart').disabled = false;
@@ -1237,6 +1309,7 @@ function showLogin(message) {
 }
 
 async function load() {
+  const requestID = ++loadSequence;
   try {
     let query = new URLSearchParams();
     let account = $('#account').value;
@@ -1248,6 +1321,7 @@ async function load() {
       api('/summary' + (query.size ? '?' + query : '')),
       loadConfiguredCodexAccounts()
     ]);
+    if (requestID !== loadSequence) return false;
     if (initial[1].status === 'rejected') throw initial[1].reason;
     let summary = initial[1].value;
     state = summary;
@@ -1283,6 +1357,7 @@ async function load() {
       api('/series?' + seriesQuery),
       api('/monthly' + (monthlyQuery.size ? '?' + monthlyQuery : ''))
     ]);
+    if (requestID !== loadSequence) return false;
     if (results[0].status === 'rejected') throw results[0].reason;
     let series = results[0].value;
     seriesState = series;
@@ -1294,12 +1369,16 @@ async function load() {
     } else {
       $('#monthlyNote').textContent = tr('loadFailed', {message: results[1].reason && results[1].reason.message || tr('requestFailed')});
     }
+    if (coverageStatus.key === 'coverageSavedRefreshFailed') setCoverageStatus('coverageSaved');
+    return true;
   } catch (error) {
+    if (requestID !== loadSequence) return false;
     if (error.auth || !key) {
       showLogin(error.message);
     } else {
       $('#note').textContent = tr('loadFailed', {message: error.message});
     }
+    return false;
   }
 }
 
@@ -1582,18 +1661,20 @@ function overviewRowData(item) {
   let resets = snapshots.map(snapshot => snapshot.resetAt).filter(value => value > 0);
   let estimates = snapshots.filter(snapshot => snapshot.estimate.available);
   let confidenceRank = confidence => ({insufficient: 0, low: 1, medium: 2, high: 3}[confidence] || 0);
-  let weakestConfidence = estimates.length
-    ? Math.min(...estimates.map(snapshot => confidenceRank(snapshot.estimate.confidence))) : 0;
+  let weakestConfidence = snapshots.length
+    ? Math.min(...snapshots.map(snapshot => confidenceRank(snapshot.estimate.sample_confidence || snapshot.estimate.confidence))) : 0;
   let urgentForecast = forecasts.slice().sort((left, right) => right.forecast.rank - left.forecast.rank)[0];
   let point = primary && primary.point;
   let capacityText = overviewScopeLines(snapshots, snapshot => {
     let estimate = snapshot.estimate;
-    if (!estimate.available) return tr('insufficientSamples');
+    if (!estimate.available) return unavailableEstimateText(estimate);
     return tr('overviewCapacityTokens', {value: fmt(estimate.full_window_tokens)}) + ' · ' +
       tr('overviewCapacityCost', {value: usd(estimate.full_window_cost_usd)});
   });
-  let confidenceText = overviewScopeLines(snapshots, snapshot => snapshot.estimate.available
-    ? confidenceLabel(snapshot.estimate.confidence) : tr('insufficientSamples'));
+  if (item.sampled !== false && (!item.collection_coverage || item.collection_coverage.mode === 'cpa_only')) {
+    capacityText += '\n' + tr('capacityAssumptionShort');
+  }
+  let confidenceText = overviewScopeLines(snapshots, snapshot => sampleQualityText(snapshot.estimate));
   let forecastText = forecasts.map(entry =>
     (snapshots.length > 1 ? entry.snapshot.label + ': ' : '') + entry.forecast.text).join('\n');
   if (item.sampled && (item.disabled || item.unavailable)) {
@@ -1885,7 +1966,7 @@ function renderMonthlySummary(summary, ids, noteKey) {
   $(ids.capacity).textContent = summary.estimated_cycle_count
     ? fmt(summary.estimated_tokens) : '—';
   $(ids.capacityCost).textContent = summary.estimated_cycle_count
-    ? usd(summary.estimated_cost_usd) : tr('insufficientSamples');
+    ? usd(summary.estimated_cost_usd) : unavailableEstimateText(summary);
   $(ids.estimateCoverage).textContent = tr('estimateCoverage', {
     estimated: summary.estimated_cycle_count || 0,
     allocated: summary.allocated_cycle_count || 0
@@ -1894,11 +1975,16 @@ function renderMonthlySummary(summary, ids, noteKey) {
   $(ids.coverage).textContent = summary.cycle_count
     ? (summary.quota_coverage_complete ? tr('coverageComplete') : tr('coveragePartial'))
     : tr('insufficientSamples');
-  $(ids.note).textContent = tr(noteKey);
+  const coverage = summary.collection_coverage || {};
+  if (coverage.capacity_estimation_enabled === false) {
+    $(ids.estimateCoverage).textContent = '—';
+  }
+  $(ids.note).textContent = tr(noteKey) + ' ' + coverageExplanation(coverage);
 
   let rows = summary.cycles || [];
   if (!rows.length) {
     $(ids.rows).innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">' + tr('noCycleRecords') + '</td></tr>';
+    markCapacityViews();
     return;
   }
   $(ids.rows).innerHTML = rows.map(cycle => {
@@ -1914,9 +2000,109 @@ function renderMonthlySummary(summary, ids, noteKey) {
       '<td>' + usd(cycle.month_cost_usd) + '</td>' +
       '<td>' + fmt(cycle.month_requests) + '</td>' +
       '<td>' + (cycle.capacity_available ? fmt(cycle.full_window_tokens) : '—') + '</td>' +
-      '<td>' + (cycle.capacity_available ? confidenceLabel(cycle.confidence) : tr('insufficientSamples')) + '</td>' +
+      '<td>' + sampleQualityText(cycle) + '</td>' +
       '</tr>';
   }).join('');
+  markCapacityViews();
+}
+
+function unavailableEstimateText(value) {
+  let reason = value && value.unavailable_reason;
+  if (reason === 'partial_usage_collection') return tr('coverageMixedReason');
+  if (reason === 'usage_coverage_unknown') return tr('coverageUnknownReason');
+  return tr('insufficientSamples');
+}
+
+function sampleQualityText(value) {
+  let level = value && (value.sample_confidence || value.confidence);
+  return tr(level === 'high' ? 'sampleQualityHigh' : level === 'medium'
+    ? 'sampleQualityMedium' : level === 'low' ? 'sampleQualityLow' : 'sampleQualityInsufficient');
+}
+
+function coverageExplanation(coverage) {
+  return tr(coverage && coverage.mode === 'mixed' ? 'coverageMixedHelp'
+    : coverage && coverage.mode === 'unknown' ? 'coverageUnknownHelp' : 'coverageAssumption');
+}
+
+function markCapacityViews() {
+  ['fullTokens', 'capacity', 'capacityCurve', 'allowanceRows', 'weeklyAllowanceRows'].forEach(id => {
+    let element = document.getElementById(id);
+    let panel = element && (id.endsWith('Rows') ? element.closest('section') : element.closest('.chart'));
+    if (panel) panel.dataset.capacityView = 'true';
+  });
+  document.querySelectorAll('.spark-stat, .monthly-item, .row').forEach(element => {
+    let values = Array.from(element.querySelectorAll('[id]'));
+    if (values.some(value => /(?:FullTokens|RemainTokens|FullCost|RemainCost|FullValue|RemainValue|TokenRange|CostRange|MonthCapacity|MonthEstimateCoverage)$/.test(value.id) ||
+      ['tokenRange', 'costRange', 'monthCapacity', 'monthEstimateCoverage'].includes(value.id))) {
+      element.dataset.capacityView = 'true';
+    }
+  });
+  document.querySelectorAll('.monthly .cycle-table th:nth-child(7), .monthly .cycle-table td:nth-child(7)').forEach(element => {
+    element.dataset.capacityView = 'true';
+  });
+}
+
+function setCoverageStatus(key, values) {
+  coverageStatus = {key: key || '', values: values || {}};
+  $('#coverageSaveStatus').textContent = key ? tr(key, values) : '';
+}
+
+function renderCoverageSettings(summary) {
+  summary = summary || {};
+  let coverage = summary.collection_coverage || {mode: 'cpa_only', capacity_estimation_enabled: true};
+  let select = $('#coverageMode');
+  let selection = select.value;
+  if (coverageSettingsAccount !== (summary.account || '')) {
+    coverageSettingsAccount = summary.account || '';
+    coverageSettingsDirty = false;
+    setCoverageStatus('');
+  }
+  $('#coverageTitle').textContent = tr('coverageTitle');
+  $('#coverageAccount').textContent = summary.account ? tr('coverageAccount', {account: summary.account}) : tr('coverageNoAccount');
+  $('#coverageModeLabel').textContent = tr('coverageModeLabel');
+  select.replaceChildren();
+  [['cpa_only', 'coverageCPAOnly'], ['mixed', 'coverageMixed'], ['unknown', 'coverageUnknown']].forEach(([mode, label]) => {
+    let option = document.createElement('option');
+    option.value = mode;
+    option.textContent = tr(label);
+    select.append(option);
+  });
+  select.value = coverageSettingsDirty ? selection : coverage.mode;
+  select.disabled = coverageSaving || !summary.account;
+  $('#saveCoverageSettings').disabled = coverageSaving || !summary.account || !coverageSettingsDirty;
+  $('#saveCoverageSettings').textContent = tr(coverageSaving ? 'coverageSaving' : 'coverageSave');
+  $('#coverageExplanation').textContent = coverageExplanation(coverage);
+  $('#coverageSources').textContent = tr('coverageSources');
+  $('#coverageObservedAt').textContent = tr('coverageObservedAt', {time: summary.latest ? dt(summary.latest.time) : '—'});
+  $('#coverageSampleQuality').textContent = tr('sampleQuality', {level: sampleQualityText(summary.estimate)});
+  $('#quotaTrendScope').textContent = tr('quotaTrendScope');
+  $('#coverageSaveStatus').textContent = coverageStatus.key ? tr(coverageStatus.key, coverageStatus.values) : '';
+  document.body.classList.toggle('collection-limited', coverage.capacity_estimation_enabled === false);
+  markCapacityViews();
+}
+
+// Reflect a successful settings write immediately, including when a following
+// refresh fails. Cached capacity must not remain visible under a mixed mode.
+function acceptCoverageSetting(account, coverage) {
+  if (state && state.account === account) {
+    state.collection_coverage = coverage;
+    renderCoverageSettings(state);
+  }
+  if (overviewSnapshot) {
+    (overviewSnapshot.data.accounts || []).filter(item => item.account === account).forEach(item => {
+      item.collection_coverage = coverage;
+      if (!coverage.capacity_estimation_enabled) {
+        [item, item.weekly_quota].filter(Boolean).forEach(scope => {
+          scope.estimate = Object.assign({}, scope.estimate, {
+            available: false, unavailable_reason: coverage.unavailable_reason,
+            sample_confidence: scope.estimate && (scope.estimate.sample_confidence || scope.estimate.confidence),
+            confidence: 'unavailable'
+          });
+        });
+      }
+    });
+    renderOverviewFromSnapshot();
+  }
 }
 
 function confidenceLabel(confidence) {
@@ -1925,7 +2111,8 @@ function confidenceLabel(confidence) {
 }
 
 function estimateExplanation(estimate) {
-  return tr(estimate && estimate.available ? 'estimateExplanation' : 'estimateInsufficient');
+  if (estimate && estimate.unavailable_reason) return unavailableEstimateText(estimate);
+  return tr(estimate && estimate.available ? 'estimateExplanation' : 'estimateInsufficient') + ' ' + tr('coverageAssumption');
 }
 
 function pricingThresholdK(config) {
@@ -2005,11 +2192,11 @@ function allowanceRate(value, item) {
   }) + '</small>';
 }
 
-function renderModelAllowances(rows, rowsSelector, modeSelector, available) {
+function renderModelAllowances(rows, rowsSelector, modeSelector, available, estimate) {
   rows = rows || [];
   $(modeSelector).textContent = pricingModeText(activePricingMode());
   if (!rows.length) {
-    $(rowsSelector).innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted)">' + tr('allowanceNoData') + '</td></tr>';
+    $(rowsSelector).innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted)">' + (estimate && estimate.unavailable_reason ? unavailableEstimateText(estimate) : tr('allowanceNoData')) + '</td></tr>';
     return;
   }
   $(rowsSelector).innerHTML = rows.map(item => '<tr>' +
@@ -2026,6 +2213,7 @@ function renderModelAllowances(rows, rowsSelector, modeSelector, available) {
 function renderSummary(summary) {
   renderAccounts(summary);
   renderPeriods(summary);
+  renderCoverageSettings(summary);
   let point = summary.latest;
   let estimate = summary.estimate || {};
   let burn = summary.burn_forecast || {};
@@ -2086,7 +2274,7 @@ function renderSummary(summary) {
     ? fmt(estimate.token_low) + ' — ' + fmt(estimate.token_high) : '—';
   $('#costRange').textContent = estimate.available
     ? usd(estimate.cost_low) + ' — ' + usd(estimate.cost_high) : '—';
-  renderModelAllowances(summary.remaining_by_model, '#allowanceRows', '#allowanceMode', !!estimate.available);
+  renderModelAllowances(summary.remaining_by_model, '#allowanceRows', '#allowanceMode', !!estimate.available, estimate);
   $('#note').textContent = (historical ? tr('historyReview') : '') + estimateExplanation(estimate);
 }
 
@@ -2466,7 +2654,7 @@ function renderCapacityCard(points, estimate) {
     '<circle cx="150" cy="150" r="' + radius + '" fill="none" stroke="var(--green)" stroke-width="18" stroke-linecap="round" stroke-dasharray="' +
     dash + ' ' + (circumference - dash) + '" transform="rotate(-90 150 150)"/>' +
     svgText(150, 145, used.toFixed(0) + '%', 'fill="var(--text)" text-anchor="middle" font-size="42" font-weight="700"') +
-    svgText(150, 174, tr('usedConfidence', {confidence: confidenceLabel(estimate.confidence)}),
+    svgText(150, 174, tr('quotaUsedOnly'),
       'fill="var(--muted)" text-anchor="middle" font-size="13"') +
     '</svg>' +
     '<div class="capacity-bar"><i style="width:' + Math.min(100, Math.max(0, used)) + '%"></i></div>' +
@@ -2486,6 +2674,10 @@ function capacityItem(label, value) {
 }
 
 function renderCapacityHistory(seriesData, range) {
+  if (seriesData.collection_coverage && !seriesData.collection_coverage.capacity_estimation_enabled) {
+    $('#capacityCurve').innerHTML = '<div class="empty">' + unavailableEstimateText(seriesData.estimate) + '</div>';
+    return;
+  }
   let points = (seriesData.range_capacity_points || seriesData.capacity_points || [])
     .filter(point => point.time >= range.start && point.time <= range.end);
   if (points.length < 2) {
@@ -2623,7 +2815,7 @@ function renderWeeklyQuota(seriesData) {
     : tr('weeklySampleCount', {count: observationCount});
   observationNode.title = inferred && weekly.last_observed_at
     ? tr('weeklyLastObservedAt', {time: dt(weekly.last_observed_at)}) : '';
-  $('#weeklyConfidence').textContent = estimate.available ? confidenceLabel(estimate.confidence) : tr('insufficientSamples');
+  $('#weeklyConfidence').textContent = sampleQualityText(estimate);
   $('#weeklyFullTokens').textContent = estimate.available ? fmt(estimate.full_window_tokens) : '—';
   $('#weeklyRemainTokens').textContent = estimate.available ? fmt(estimate.remaining_tokens) : '—';
   $('#weeklyFullCost').textContent = estimate.available ? usd(estimate.full_window_cost_usd) : '—';
@@ -2634,7 +2826,7 @@ function renderWeeklyQuota(seriesData) {
     ? fmt(estimate.token_low) + ' — ' + fmt(estimate.token_high) : '—';
   $('#weeklyCostRange').textContent = estimate.available
     ? usd(estimate.cost_low) + ' — ' + usd(estimate.cost_high) : '—';
-  renderModelAllowances(weekly.remaining_by_model, '#weeklyAllowanceRows', '#weeklyAllowanceMode', !!estimate.available);
+  renderModelAllowances(weekly.remaining_by_model, '#weeklyAllowanceRows', '#weeklyAllowanceMode', !!estimate.available, estimate);
   renderScopedQuotaCurve('#weeklyCurve', weekly, 'weeklyNoSamples', 'weeklyInferredNoSamples');
 }
 
@@ -2682,14 +2874,14 @@ function ensureSparkWeeklyMonthlyPanel() {
     '<div class="monthly-item"><span data-zh="本月涉及的额度周期"></span><b id="sparkWeeklyMonthCycles">—</b><small id="sparkWeeklyMonthResets">—</small></div>' +
     '<div class="monthly-item"><span data-zh="本月额度消耗当量"></span><b id="sparkWeeklyMonthQuotaEquivalent">—</b><small id="sparkWeeklyMonthQuotaPercent">—</small></div>' +
     '<div class="monthly-item"><span data-zh="本月新周期估计总容量"></span><b id="sparkWeeklyMonthCapacity">—</b><small id="sparkWeeklyMonthCapacityCost">—</small></div>' +
-    '<div class="monthly-item"><span data-zh="容量估计覆盖率"></span><b id="sparkWeeklyMonthEstimateCoverage">—</b><small data-zh="已估计周期数 / 本月新周期数"></small></div>' +
+    '<div class="monthly-item"><span data-zh="可估计周期占比"></span><b id="sparkWeeklyMonthEstimateCoverage">—</b><small data-zh="已估计周期数 / 本月新周期数"></small></div>' +
     '<div class="monthly-item"><span data-zh="重置时未消耗额度合计"></span><b id="sparkWeeklyMonthUnused">—</b><small data-zh="各次重置分别累加，可能超过 100%"></small></div>' +
     '<div class="monthly-item"><span data-zh="额度当量统计质量"></span><b id="sparkWeeklyMonthCoverage">—</b><small data-zh="是否覆盖各周期月初基线"></small></div></div>' +
     '<div class="coverage-note" id="sparkWeeklyMonthlyNote"></div>' +
     '<div class="cycle-table-wrap"><table class="cycle-table"><thead><tr>' +
     '<th data-zh="额度周期"></th><th data-zh="结束原因"></th><th data-zh="周期峰值使用率"></th>' +
     '<th data-zh="本月 Token"></th><th data-zh="本月计价值"></th><th data-zh="本月请求"></th>' +
-    '<th data-zh="完整周期等效 Token"></th><th data-zh="估计置信度"></th>' +
+    '<th data-zh="完整周期等效 Token"></th><th data-zh="采样充分程度"></th>' +
     '</tr></thead><tbody id="sparkWeeklyCycleRows"></tbody></table></div>';
   let primaryMonthly = $('#sparkMonthTokens').closest('section');
   primaryMonthly.parentNode.insertBefore(monthlyPanel, primaryMonthly);
@@ -2742,7 +2934,7 @@ function renderSparkWeeklyQuota(seriesData, detected) {
     : tr('weeklySampleCount', {count: observationCount});
   observationNode.title = inferred && weekly.last_observed_at
     ? tr('weeklyLastObservedAt', {time: dt(weekly.last_observed_at)}) : '';
-  $('#sparkWeeklyConfidence').textContent = estimate.available ? confidenceLabel(estimate.confidence) : tr('insufficientSamples');
+  $('#sparkWeeklyConfidence').textContent = sampleQualityText(estimate);
   $('#sparkWeeklyFullTokens').textContent = estimate.available ? fmt(estimate.full_window_tokens) : '—';
   $('#sparkWeeklyRemainTokens').textContent = estimate.available ? fmt(estimate.remaining_tokens) : '—';
   $('#sparkWeeklyFullValue').textContent = estimate.available ? usd(estimate.full_window_cost_usd) : '—';
@@ -2754,6 +2946,7 @@ function renderSparkWeeklyQuota(seriesData, detected) {
   $('#sparkWeeklyCostRange').textContent = estimate.available
     ? usd(estimate.cost_low) + ' — ' + usd(estimate.cost_high) : '—';
   renderScopedQuotaCurve('#sparkWeeklyCurve', weekly, 'sparkWeeklyNoSamples', 'sparkWeeklyInferredNoSamples');
+  markCapacityViews();
 }
 
 function renderSparkWeeklyMonthlySummary(data) {
@@ -2809,7 +3002,7 @@ function renderSparkQuota(seriesData) {
     : tr('sparkSampleCount', {count: observationCount});
   observationNode.title = inferred && spark.last_observed_at
     ? tr('sparkLastObservedAt', {time: dt(spark.last_observed_at)}) : '';
-  $('#sparkConfidence').textContent = estimate.available ? confidenceLabel(estimate.confidence) : tr('insufficientSamples');
+  $('#sparkConfidence').textContent = sampleQualityText(estimate);
   $('#sparkFullTokens').textContent = estimate.available ? fmt(estimate.full_window_tokens) : '—';
   $('#sparkRemainTokens').textContent = estimate.available ? fmt(estimate.remaining_tokens) : '—';
   $('#sparkFullCost').textContent = estimate.available ? usd(estimate.full_window_cost_usd) : '—';
@@ -2917,6 +3110,38 @@ $('#key').onkeydown = event => {
   if (event.key === 'Enter') $('#loginBtn').click();
 };
 $('#refresh').onclick = load;
+$('#coverageMode').onchange = () => {
+  let coverage = state && state.collection_coverage || {mode: 'cpa_only'};
+  coverageSettingsDirty = $('#coverageMode').value !== coverage.mode;
+  $('#saveCoverageSettings').disabled = coverageSaving || !state || !state.account || !coverageSettingsDirty;
+  setCoverageStatus(coverageSettingsDirty ? 'coverageUnsaved' : '');
+};
+$('#saveCoverageSettings').onclick = async () => {
+  if (coverageSaving || !state || !state.account || !coverageSettingsDirty) return;
+  const account = state.account;
+  const mode = $('#coverageMode').value;
+  coverageSaving = true;
+  renderCoverageSettings(state);
+  setCoverageStatus('coverageSaving');
+  try {
+    let result = await api('/coverage-settings?' + new URLSearchParams({account}), {
+      method: 'POST', body: JSON.stringify({mode})
+    });
+    if (state.account === account && $('#account').value === account) {
+      coverageSettingsDirty = false;
+      acceptCoverageSetting(account, result.collection_coverage);
+      let refreshed = await load();
+      if (state.account === account) {
+        setCoverageStatus(refreshed ? 'coverageSaved' : 'coverageSavedRefreshFailed');
+      }
+    }
+  } catch (error) {
+    if (state.account === account) setCoverageStatus('loadFailed', {message: error.message});
+  } finally {
+    coverageSaving = false;
+    renderCoverageSettings(state);
+  }
+};
 $('#account').onchange = () => {
   $('#period').value = '';
   $('#month').value = '';

@@ -63,6 +63,8 @@ func TestManagementRegistrationIncludesAllHandledRoutes(t *testing.T) {
 		"POST /cpa-quota-estimator/prices/sync",
 		"GET /cpa-quota-estimator/pricing-settings",
 		"POST /cpa-quota-estimator/pricing-settings",
+		"GET /cpa-quota-estimator/coverage-settings",
+		"POST /cpa-quota-estimator/coverage-settings",
 	} {
 		if !registered[expected] {
 			t.Fatalf("management route %q is handled but not registered", expected)

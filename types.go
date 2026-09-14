@@ -207,19 +207,20 @@ type scopedQuotaPoint struct {
 }
 
 type scopedQuotaSeries struct {
-	Scope            string             `json:"scope"`
-	StartedAt        int64              `json:"started_at"`
-	ResetAt          int64              `json:"reset_at"`
-	WindowMinutes    int64              `json:"window_minutes"`
-	PlanType         string             `json:"plan_type"`
-	UsedPercent      float64            `json:"used_percent"`
-	ObservationCount int64              `json:"observation_count"`
-	LastObservedAt   int64              `json:"last_observed_at,omitempty"`
-	ScheduleInferred bool               `json:"schedule_inferred,omitempty"`
-	Points           []scopedQuotaPoint `json:"points"`
-	CapacityPoints   []capacityPoint    `json:"capacity_points"`
-	Estimate         estimate           `json:"estimate"`
-	RemainingByModel []modelAllowance   `json:"remaining_by_model,omitempty"`
+	CollectionCoverage *collectionCoverage `json:"collection_coverage,omitempty"`
+	Scope              string              `json:"scope"`
+	StartedAt          int64               `json:"started_at"`
+	ResetAt            int64               `json:"reset_at"`
+	WindowMinutes      int64               `json:"window_minutes"`
+	PlanType           string              `json:"plan_type"`
+	UsedPercent        float64             `json:"used_percent"`
+	ObservationCount   int64               `json:"observation_count"`
+	LastObservedAt     int64               `json:"last_observed_at,omitempty"`
+	ScheduleInferred   bool                `json:"schedule_inferred,omitempty"`
+	Points             []scopedQuotaPoint  `json:"points"`
+	CapacityPoints     []capacityPoint     `json:"capacity_points"`
+	Estimate           estimate            `json:"estimate"`
+	RemainingByModel   []modelAllowance    `json:"remaining_by_model,omitempty"`
 }
 
 type quotaCycle struct {
@@ -258,6 +259,10 @@ type quotaWindow struct {
 }
 
 type estimate struct {
+	CoverageMode       string  `json:"coverage_mode,omitempty"`
+	Assumption         string  `json:"assumption,omitempty"`
+	SampleConfidence   string  `json:"sample_confidence,omitempty"`
+	UnavailableReason  string  `json:"unavailable_reason,omitempty"`
 	Available          bool    `json:"available"`
 	PercentSpan        float64 `json:"percent_span"`
 	SampleCount        int     `json:"sample_count"`
@@ -339,6 +344,7 @@ type accountQuotaOverview struct {
 }
 
 type accountOverview struct {
+	CollectionCoverage    *collectionCoverage   `json:"collection_coverage,omitempty"`
 	Account               string                `json:"account"`
 	PlanType              string                `json:"plan_type"`
 	SelectedCycleID       int64                 `json:"selected_cycle_id,omitempty"`
@@ -365,6 +371,9 @@ type overviewResponse struct {
 
 type monthlyCycle struct {
 	quotaCycle
+	CoverageMode      string  `json:"coverage_mode,omitempty"`
+	SampleConfidence  string  `json:"sample_confidence,omitempty"`
+	UnavailableReason string  `json:"unavailable_reason,omitempty"`
 	MonthTokens       int64   `json:"month_tokens"`
 	MonthCostUSD      float64 `json:"month_cost_usd"`
 	MonthRequests     int64   `json:"month_requests"`
@@ -379,27 +388,29 @@ type monthlyCycle struct {
 }
 
 type monthlySummary struct {
-	Month                   string         `json:"month"`
-	Timezone                string         `json:"timezone"`
-	StartAt                 int64          `json:"start_at"`
-	EndAt                   int64          `json:"end_at"`
-	ActualTokens            int64          `json:"actual_tokens"`
-	ActualCostUSD           float64        `json:"actual_cost_usd"`
-	Requests                int64          `json:"requests"`
-	CycleCount              int            `json:"cycle_count"`
-	ResetCount              int            `json:"reset_count"`
-	EarlyResetCount         int            `json:"early_reset_count"`
-	AllocatedCycleCount     int            `json:"allocated_cycle_count"`
-	EstimatedCycleCount     int            `json:"estimated_cycle_count"`
-	ConsumedQuotaPercent    float64        `json:"consumed_quota_percent"`
-	ConsumedQuotaEquivalent float64        `json:"consumed_quota_equivalent"`
-	QuotaCoverageComplete   bool           `json:"quota_coverage_complete"`
-	UnusedQuotaAtReset      float64        `json:"unused_quota_at_reset"`
-	EstimatedTokens         float64        `json:"estimated_tokens"`
-	EstimatedTokenLow       float64        `json:"estimated_token_low"`
-	EstimatedTokenHigh      float64        `json:"estimated_token_high"`
-	EstimatedCostUSD        float64        `json:"estimated_cost_usd"`
-	EstimatedCostLow        float64        `json:"estimated_cost_low"`
-	EstimatedCostHigh       float64        `json:"estimated_cost_high"`
-	Cycles                  []monthlyCycle `json:"cycles"`
+	CollectionCoverage      *collectionCoverage `json:"collection_coverage,omitempty"`
+	UnavailableReason       string              `json:"unavailable_reason,omitempty"`
+	Month                   string              `json:"month"`
+	Timezone                string              `json:"timezone"`
+	StartAt                 int64               `json:"start_at"`
+	EndAt                   int64               `json:"end_at"`
+	ActualTokens            int64               `json:"actual_tokens"`
+	ActualCostUSD           float64             `json:"actual_cost_usd"`
+	Requests                int64               `json:"requests"`
+	CycleCount              int                 `json:"cycle_count"`
+	ResetCount              int                 `json:"reset_count"`
+	EarlyResetCount         int                 `json:"early_reset_count"`
+	AllocatedCycleCount     int                 `json:"allocated_cycle_count"`
+	EstimatedCycleCount     int                 `json:"estimated_cycle_count"`
+	ConsumedQuotaPercent    float64             `json:"consumed_quota_percent"`
+	ConsumedQuotaEquivalent float64             `json:"consumed_quota_equivalent"`
+	QuotaCoverageComplete   bool                `json:"quota_coverage_complete"`
+	UnusedQuotaAtReset      float64             `json:"unused_quota_at_reset"`
+	EstimatedTokens         float64             `json:"estimated_tokens"`
+	EstimatedTokenLow       float64             `json:"estimated_token_low"`
+	EstimatedTokenHigh      float64             `json:"estimated_token_high"`
+	EstimatedCostUSD        float64             `json:"estimated_cost_usd"`
+	EstimatedCostLow        float64             `json:"estimated_cost_low"`
+	EstimatedCostHigh       float64             `json:"estimated_cost_high"`
+	Cycles                  []monthlyCycle      `json:"cycles"`
 }

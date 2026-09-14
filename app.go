@@ -91,6 +91,8 @@ func managementRegistration() any {
 			{"Method": "POST", "Path": base + "/prices/sync"},
 			{"Method": "GET", "Path": base + "/pricing-settings"},
 			{"Method": "POST", "Path": base + "/pricing-settings"},
+			{"Method": "GET", "Path": base + "/coverage-settings"},
+			{"Method": "POST", "Path": base + "/coverage-settings"},
 		},
 		"resources": []map[string]any{{"Path": "/dashboard", "Menu": "额度容量预测", "Description": "按额度增长反推周期 Token 与美元等效容量，并绘制趋势曲线。"}},
 	}

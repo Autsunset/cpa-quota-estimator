@@ -17,7 +17,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	if strings.HasSuffix(req.Path, "/dashboard") {
 		return managementResponse{StatusCode: 200, Headers: map[string][]string{"Content-Type": {"text/html; charset=utf-8"}, "Cache-Control": {"no-store"}}, Body: dashboardHTML}
 	}
-	if (strings.HasSuffix(req.Path, "/repair/early-resets") || strings.HasSuffix(req.Path, "/pricing-settings")) && strings.EqualFold(req.Method, "POST") {
+	if (strings.HasSuffix(req.Path, "/repair/early-resets") || strings.HasSuffix(req.Path, "/pricing-settings") || strings.HasSuffix(req.Path, "/coverage-settings")) && strings.EqualFold(req.Method, "POST") {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 	} else {
@@ -45,6 +45,15 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			item, errOverview := a.buildAccountOverview(ctx, account, now)
 			if errOverview != nil {
 				return textResponse(500, errOverview.Error())
+			}
+			coverage, errCoverage := a.store.accountCoverage(ctx, account)
+			if errCoverage != nil {
+				return textResponse(500, errCoverage.Error())
+			}
+			item.CollectionCoverage = &coverage
+			item.Estimate = estimateForCoverage(item.Estimate, coverage)
+			if item.WeeklyQuota != nil {
+				item.WeeklyQuota.Estimate = estimateForCoverage(item.WeeklyQuota.Estimate, coverage)
 			}
 			items = append(items, item)
 		}
@@ -111,7 +120,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				resp["quota_status"] = "awaiting_refresh"
 			}
 		}
-		return jsonResponse(200, resp)
+		return a.coverageResponse(ctx, account, resp)
 	case strings.HasSuffix(req.Path, "/series"):
 		account := req.Query.Get("account")
 		if account == "" {
@@ -195,7 +204,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				response["spark_weekly_quota"] = sparkWeeklySeries
 			}
 		}
-		return jsonResponse(200, response)
+		return a.coverageResponse(ctx, account, response)
 	case strings.HasSuffix(req.Path, "/monthly"):
 		account := req.Query.Get("account")
 		if account == "" {
@@ -251,7 +260,30 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				response["spark_weekly_summary"] = sparkWeeklyMonthly
 			}
 		}
-		return jsonResponse(200, response)
+		return a.coverageResponse(ctx, account, response)
+	case strings.HasSuffix(req.Path, "/coverage-settings"):
+		account := req.Query.Get("account")
+		if strings.TrimSpace(account) == "" {
+			return textResponse(400, "account is required")
+		}
+		if strings.EqualFold(req.Method, "POST") {
+			var update struct {
+				Mode string `json:"mode"`
+			}
+			if err := json.Unmarshal(req.Body, &update); err != nil || !validCoverageMode(update.Mode) {
+				return textResponse(400, "mode must be cpa_only, mixed, or unknown")
+			}
+			if err := a.store.saveAccountCoverage(ctx, account, update.Mode); err != nil {
+				return textResponse(500, err.Error())
+			}
+		} else if !strings.EqualFold(req.Method, "GET") {
+			return textResponse(405, "method not allowed")
+		}
+		coverage, err := a.store.accountCoverage(ctx, account)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		return jsonResponse(200, map[string]any{"account": account, "collection_coverage": coverage})
 	case strings.HasSuffix(req.Path, "/repair/early-resets"):
 		account := req.Query.Get("account")
 		if account == "" {
