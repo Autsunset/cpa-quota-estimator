@@ -188,7 +188,7 @@ ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,id`, nex
 		if err = rows.Scan(&item.ID, &item.RequestedAt, &item.ObservedAt, &item.UsedPercent, &item.ResetAt, &item.WindowMinutes, &item.PlanType, &item.Failed); err != nil {
 			return false, 0, err
 		}
-		if item.Failed || item.ResetAt != next.ResetAt || item.WindowMinutes != next.WindowMinutes || !compatiblePlan(item.PlanType, next.PlanType) || !resetCandidate(previous.PeakPercent, item.UsedPercent) {
+		if item.Failed || item.ResetAt != next.ResetAt || item.WindowMinutes != next.WindowMinutes || !compatiblePlan(item.PlanType, next.PlanType) || !earlyResetPercentCandidate(previous.PeakPercent, item.UsedPercent, previous.ResetAt != next.ResetAt) {
 			return false, firstObserved, nil
 		}
 		if count > 0 && item.UsedPercent+resetPercentTolerance < previousUsed {

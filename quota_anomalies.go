@@ -104,9 +104,23 @@ func detectQuotaRegimeAnomalies(cycleID int64, observations []quotaRegimeObserva
 	// changes that were independently repeated, and merge matching runs that
 	// become adjacent after those one-off responses are discarded.
 	confirmed := make([]quotaRegimeRun, 0, len(runs))
-	for _, run := range runs {
+	for index, run := range runs {
 		if run.Count < quotaRegimeConfirmationSamples {
-			continue
+			// The first retained response can be the only pre-change sample.
+			// A later repeated restoration corroborates that original plan;
+			// temporary and restored runs still require repeated observations.
+			corroborated := false
+			if index == 0 {
+				for _, later := range runs[index+1:] {
+					if later.Count >= quotaRegimeConfirmationSamples && sameQuotaRegimeKey(later, run.ResetAt, run.WindowMinutes) {
+						corroborated = true
+						break
+					}
+				}
+			}
+			if !corroborated {
+				continue
+			}
 		}
 		if len(confirmed) > 0 && sameQuotaRegimeKey(confirmed[len(confirmed)-1], run.ResetAt, run.WindowMinutes) {
 			previous := &confirmed[len(confirmed)-1]

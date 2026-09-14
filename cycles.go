@@ -164,6 +164,9 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 	if !hasQuota {
 		return current, false, nil
 	}
+	if recovered, sampleQuota, errRecovery := s.recoverAdvancedEarlyReset(ctx, tx, current, e); errRecovery != nil || recovered.ID != 0 {
+		return recovered, sampleQuota, errRecovery
+	}
 
 	resetAtChanged := current.ResetAt != e.ResetAt
 	regimeChanged := (current.WindowMinutes > 0 && current.WindowMinutes != e.WindowMinutes) ||
@@ -244,8 +247,15 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 	}
 
 	peak := current.PeakPercent
-	if !regimeChanged && peak > 0 && !e.Failed && resetCandidate(peak, *e.UsedPercent) &&
-		(!resetAtChanged || advancedEarlyResetObservation(current, e)) {
+	advancedCandidate := false
+	if resetAtChanged && !regimeChanged && !e.Failed {
+		advancedCandidate, err = advancedEarlyResetCandidate(ctx, tx, current, e)
+		if err != nil {
+			return quotaCycle{}, false, err
+		}
+	}
+	if !regimeChanged && peak > 0 && !e.Failed &&
+		((!resetAtChanged && resetCandidate(peak, *e.UsedPercent)) || advancedCandidate) {
 		first, confirmed, errConfirm := confirmEarlyReset(ctx, tx, current, e)
 		if errConfirm != nil {
 			return quotaCycle{}, false, errConfirm
@@ -457,7 +467,7 @@ ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END DESC,id 
 		if recorded.ObservedAt > observedAt {
 			return recordedQuotaEvent{}, false, nil
 		}
-		if recorded.Failed || !sameQuotaRegime(recorded, e) || !resetCandidate(current.PeakPercent, recorded.UsedPercent) ||
+		if recorded.Failed || !sameQuotaRegime(recorded, e) || !earlyResetPercentCandidate(current.PeakPercent, recorded.UsedPercent, current.ResetAt != e.ResetAt) ||
 			newerUsed+resetPercentTolerance < recorded.UsedPercent {
 			break
 		}
