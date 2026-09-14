@@ -36,6 +36,7 @@
 
 - 提供全部账号额度概览，集中展示当前剩余额度、重置状态、请求数、Token、计价值、完整周期容量、置信度和消耗预测；检测到双额度时，同一行会同时显示 5 小时与周额度，点击已有样本的账号即可进入原有详细预测。
 - 监听 CPA 原生 `usage.handle` 事件，不发送探测请求，也不会额外消耗额度。
+- 区分账号整体额度观测与仅经 CPA 的用量，并按账号持久化采集范围。默认保留现有估算并明确标注“假设全部用量经过 CPA”；混合入口和范围未知模式会停用容量换算，保留实测用量和额度趋势。
 - 将 Token 数、模型、`service_tier`、所选口径计价值和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
@@ -87,6 +88,24 @@
 ```
 
 绿色线表示在重置时恰好达到 100% 的可持续基准速率；紫色线表示累计平均预测；橙色线表示近期约 24 小时的速率预测，近期样本不足时回退到累计平均预测。如果官方提前补充额度但 `reset_at` 没有改变，新周期会从首次确认的低用量观测开始，并以缩短后的剩余区间进行预测。
+
+### 采集覆盖范围
+
+额度百分比和重置时间反映上游账号的整个额度池；Token、请求数和计价值只包含经过 CPA 采集的流量。仪表盘会分别标明这两种来源，并展示最近额度观测时间。
+
+在 **本账号采集范围** 中选择模式并保存，设置按当前 AuthID 分别生效：
+
+| 模式 | 界面选项 | 容量换算 |
+|---|---|---|
+| `cpa_only` | 假设全部用量经过 CPA | 在明确标注此假设的前提下启用；未配置账号默认使用此模式，保留现有估算 |
+| `mixed` | 混合入口（CPA + 直连等） | 因部分用量未被采集而停用 |
+| `unknown` | 覆盖范围未知 | 在明确采集范围前停用 |
+
+设置保存在 SQLite 中，插件和浏览器重启后仍会保留，并应用于该账号当前与历史的主额度、周额度和 Spark 视图。保存只改变估算的展示和解释，不会改写原始请求、计价值、采样或周期边界。切回 `cpa_only` 后，会从保留的数据恢复现有计算结果。
+
+例如，CPA 记录 60 万 Token，账号额度池却消耗了 12 个百分点，即使其中只有 6 个百分点来自 CPA，公式仍会得到 500 万 Token 的估计。插件无法仅凭百分比补回直连入口的 Token。更多样本或模型价格倍率都不能确认采集是否完整，因此界面将 **采样充分程度** 与覆盖假设分开展示：前者只衡量有效增长区间和百分比跨度，不代表所有入口都已采集。
+
+混合和未知模式会保留账号额度观测、CPA 实际用量、重置历史及基于百分比的消耗趋势；停用完整周期容量、剩余 Token/计价值、按模型换算、容量轨迹和月度容量汇总。趋势反映整个额度池已观测区间的历史节奏，会随入口比例和未来使用方式变化；直连活动也只有在后续 CPA 请求带来新响应头时才能被观察到。
 
 ### 周期识别与月度统计口径
 
@@ -201,6 +220,8 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即触发 models.dev 价格同步 |
 | GET | `/v0/management/cpa-quota-estimator/pricing-settings` | 读取已保存的计价口径、长上下文与 Fast 开关 |
 | POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 保存计价口径与开关，并在事务中重算全部保留历史周期计价值 |
+| GET | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | 读取账号采集模式和容量估算假设 |
+| POST | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | 保存 `{"mode":"cpa_only"}`、`{"mode":"mixed"}` 或 `{"mode":"unknown"}`，不改写用量 |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | 嵌入式仪表盘资源 |
 
 `overview` 为每个已采样账号返回一条轻量的当前周期记录，包括计划类型、当前剩余额度、请求数、Token、计价值、完整周期 Token/计价值容量估计、置信度和消耗预测。主额度字段保留在账号记录顶层；检测到 5 小时 Primary 与周 Secondary 组合时，同一记录还会返回 `five_hour_quota_detected: true` 和独立的 `weekly_quota` 快照。响应顶层的 `pricing_mode` 与 `value_unit` 用于说明兼容字段 `_cost_usd` 当前实际表示 USD 还是 Credits。
@@ -208,6 +229,8 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 仪表盘还会只读查询 CPA 的 Codex OAuth 清单，把未采样账号合并进同一张表格。账号只按精确的 `id`/`name` 别名匹配，不读取或暴露凭证秘密；已停用、当前不可用与仍在等待首次样本的凭证会分别展示。对于双额度账号，剩余、重置、容量、置信度和预测单元格会同时列出 5 小时与周额度，排序则使用约束更紧或状态更紧急的额度。概览支持折叠；每一列都有独立的浏览器端筛选框，点击列名可按字段类型切换升序/降序。拖动表头列边界可在 `40px` 技术下限至 `2000px` 之间调整列宽，双击拖动手柄可恢复该列默认宽度；键盘用户可聚焦分隔条后使用方向键调整（按住 `Shift` 增大步长），或按 `Home` 重置。数字和时间筛选支持 `>`、`>=`、`<`、`<=`、`=` 比较符，显示偏好和列宽会保存在当前浏览器。点击有样本的账号行即可进入现有详情视图，整个过程不会发起 AI 请求。若父面板未提供受限桥接且浏览器没有可复用的 Management Key，仪表盘仍会正常展示已采样账号，并明确提示 OAuth 清单暂不可读。
 
 使用 `?account=<AuthID>` 可选择指定凭证；在 `summary` 或 `series` 中使用 `?cycle_id=<ID>` 可选择预测周期；在 `monthly` 中使用 `?month=YYYY-MM` 可选择月份。`series` 还可传入 Unix 秒级的 `?start_at=<时间戳>&end_at=<时间戳>`，返回该范围内所有重叠额度周期的曲线采样点和容量估计轨迹。
+
+`summary`、`series`、月度汇总和概览账号记录会返回 `collection_coverage`，包含 `mode`、`configured`、`usage_source: "cpa"`、`quota_source: "account_quota_pool"` 及 `capacity_estimation_enabled`。默认返回 `configured: false` 和 `assumption: "all_usage_through_cpa"`，表示假设而非已验证的覆盖范围。估算还会返回 `coverage_mode`、`assumption` 和 `sample_confidence`。混合/未知模式下，`available` 为 false，`confidence` 为 `"unavailable"`，`unavailable_reason` 分别为 `"partial_usage_collection"` 或 `"usage_coverage_unknown"`。容量数值及区间使用 JSON `null`，容量轨迹数组为空，按模型换算清空；`sample_confidence` 和样本数仍独立保留。月度容量字段采用同样规则；`quota_coverage_complete` 仍只表示月初时间基线是否完整，不代表采集到了其他入口的用量。
 
 `summary` 和 `series` 会返回 `remaining_by_model`；自动检测到的 `weekly_quota` 也包含自己的模型余量列表。计价设置会返回 `pricing_mode` 与 `value_unit`；通过 `POST /pricing-settings` 切换口径时，接口只会在全部保留历史周期完成重算后返回成功。
 
@@ -226,10 +249,18 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.10.7
+make package VERSION=0.11.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
+
+可选的浏览器集成测试需要 Node.js 22+ 和 Chrome 或 Chromium，覆盖中英文、手机布局、混合/未知模式、账号隔离、设置持久化、保存或刷新失败，以及切换账号时的旧响应保护：
+
+```bash
+CPA_BROWSER_TESTS=1 go test -run TestCoverageBrowser -v ./...
+```
+
+可通过 `CPA_BROWSER_ARTIFACT_DIR` 指定截图保留目录。
 
 ## 隐私
 

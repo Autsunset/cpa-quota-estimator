@@ -36,6 +36,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 
 - Provides an all-account quota overview with current remaining quota, reset state, requests, Tokens, pricing value, full-cycle capacity, confidence, and burn forecast. For detected dual-quota accounts, the same row shows both 5-hour and weekly status; selecting a sampled row opens the existing detailed forecast.
 - Listens to CPA's native `usage.handle`; it does not send probe requests or consume additional quota.
+- Separates account-wide quota observations from CPA-only usage, with persistent per-account collection coverage. Existing estimates remain enabled with an explicit all-traffic-through-CPA assumption; mixed and unknown modes disable capacity conversions while keeping observed usage and quota trends.
 - Persists Token counts, model, `service_tier`, selected-basis pricing value, and `X-Codex-Primary-*` quota metadata in a private SQLite database.
 - Syncs OpenAI model pricing from `https://models.dev/catalog.json` by default.
 - Accounts for cached reads/writes, output Tokens, and the context pricing tier above 272K input Tokens.
@@ -87,6 +88,24 @@ estimated exhaustion  = cycle start + elapsed time × 100 / used percent
 ```
 
 The green line is the pace that reaches exactly 100% at reset. Purple is the cumulative-average projection. Orange is the recent approximately 24-hour projection, falling back to the cumulative average when recent evidence is insufficient. For an early refill that keeps the same `reset_at`, the new cycle begins at the first confirmed low-usage observation and forecasts over the shortened remaining interval.
+
+### Collection coverage
+
+Quota percentages and reset times describe the entire upstream account quota pool. Tokens, requests, and pricing values describe only traffic recorded through CPA. The dashboard shows these sources separately, together with the latest quota observation time.
+
+Use **Collection coverage for this account** to select a mode and save it for the selected AuthID:
+
+| Mode | Dashboard choice | Capacity conversions |
+|---|---|---|
+| `cpa_only` | Assume all usage goes through CPA | Enabled under this explicit assumption; this is the default for unconfigured accounts and preserves existing estimates |
+| `mixed` | Mixed routes (CPA + direct, etc.) | Disabled because some usage is not collected |
+| `unknown` | Coverage unknown | Disabled until collection coverage is established |
+
+The selection persists in SQLite across plugin and browser restarts. It applies to that account's current and historical main, weekly, and Spark views. Saving it changes the visibility and interpretation of estimates without rewriting recorded requests, pricing values, samples, or cycle boundaries. Selecting `cpa_only` again restores the existing calculations from the retained data.
+
+For example, 600,000 CPA Tokens divided by 12 percentage points of account-wide consumption produces a 5,000,000-Token estimate, even if only six of those points came from CPA. The plugin cannot recover the missing direct-route Tokens from percentages. More samples or model-price calibration do not establish collection coverage. **Sample sufficiency** is therefore shown separately from the coverage assumption; it measures usable growth intervals and percentage span, not whether every route was collected.
+
+Mixed and unknown modes keep account quota observations, CPA actual usage, reset history, and percentage-based burn trends. Full-cycle capacity, remaining Token/value capacity, per-model conversions, capacity history, and monthly capacity totals are disabled. Trends describe the whole quota pool's observed historical pace; they can change with the route mix and future usage, and direct activity is only observed when a later CPA request brings fresh headers.
 
 ### Cycle and monthly accounting
 
@@ -201,6 +220,8 @@ All management routes are protected by CPA Management Key:
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | Trigger an immediate models.dev sync |
 | GET | `/v0/management/cpa-quota-estimator/pricing-settings` | Read the saved pricing basis plus long-context and Fast switches |
 | POST | `/v0/management/cpa-quota-estimator/pricing-settings` | Save the pricing basis and switches, then transactionally recalculate all retained historical cycle values |
+| GET | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | Read the account's collection mode and capacity assumption |
+| POST | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | Save `{"mode":"cpa_only"}`, `{"mode":"mixed"}`, or `{"mode":"unknown"}` without rewriting usage |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | Embedded dashboard resource |
 
 `overview` returns one lightweight current-cycle record per sampled account, including plan type, remaining quota, requests, Tokens, pricing value, full-cycle Token/pricing-value capacity estimates, confidence, and burn forecast. Primary-quota fields stay at the account level; when a 5-hour Primary plus weekly Secondary pair is detected, the record also contains `five_hour_quota_detected: true` and an independent `weekly_quota` snapshot. The response-level `pricing_mode` and `value_unit` identify whether compatibility fields ending in `_cost_usd` currently hold USD or Credits.
@@ -208,6 +229,8 @@ All management routes are protected by CPA Management Key:
 The dashboard additionally reads CPA's Codex OAuth inventory and merges credentials without samples into the same table. Exact `id` and `name` aliases are matched without exposing secrets; disabled and unavailable credentials are shown separately from enabled credentials awaiting their first sample. For dual-quota accounts, the remaining, reset, capacity, confidence, and forecast cells show both the 5-hour and weekly scopes while sorting uses the most constrained or most urgent scope. The overview can be collapsed, every column has its own client-side filter, and selecting a column heading toggles type-aware ascending/descending sorting. Drag a heading boundary to resize that column from the 40 px technical minimum up to 2000 px, or double-click the resize handle to restore its default width; keyboard users can focus the separator and use the arrow keys (`Shift` for a larger step) or `Home` to reset it. Number and time filters accept `>`, `>=`, `<`, `<=`, and `=` comparisons; view preferences and column widths persist in the current browser. Selecting a sampled row opens that account in the existing detailed view without issuing AI requests. If neither the restricted parent bridge nor a reusable Management Key can read the inventory, sampled accounts remain available and the dashboard explicitly reports that the OAuth inventory is unavailable.
 
 Use `?account=<AuthID>` to select a credential, `?cycle_id=<ID>` on `summary` or `series` to select the forecast cycle, and `?month=YYYY-MM` on `monthly` to select a month. On `series`, pass Unix-second `?start_at=<timestamp>&end_at=<timestamp>` values to return chart samples and capacity trajectories across every quota cycle overlapping that range.
+
+`summary`, `series`, monthly summaries, and overview account records expose `collection_coverage`: `mode`, `configured`, `usage_source: "cpa"`, `quota_source: "account_quota_pool"`, and `capacity_estimation_enabled`. The default has `configured: false` and `assumption: "all_usage_through_cpa"`; this is an assumption, not verified coverage. Estimates also expose `coverage_mode`, `assumption`, and `sample_confidence`. In mixed/unknown modes, `available` is false, `confidence` is `"unavailable"`, and `unavailable_reason` is `"partial_usage_collection"` or `"usage_coverage_unknown"`. Capacity amounts and ranges serialize as JSON `null`, capacity-history arrays are empty, and model allowances are cleared. `sample_confidence` and sample counts remain available independently. Monthly capacity fields follow the same policy; `quota_coverage_complete` still refers only to month-boundary baseline coverage, not collection of external routes.
 
 `summary` and `series` include `remaining_by_model`, while an automatically detected `weekly_quota` includes its own list. Pricing settings expose `pricing_mode` and `value_unit`; changing the mode through `POST /pricing-settings` recalculates all retained historical cycles before the response succeeds.
 
@@ -226,10 +249,18 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.10.7
+make package VERSION=0.11.0
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
+
+The optional browser integration test requires Node.js 22+ and Chrome or Chromium. It covers both languages, mobile layout, mixed/unknown modes, account isolation, saved preferences, failed saves/refreshes, and stale responses during account switching:
+
+```bash
+CPA_BROWSER_TESTS=1 go test -run TestCoverageBrowser -v ./...
+```
+
+Set `CPA_BROWSER_ARTIFACT_DIR` to retain screenshots in a chosen directory.
 
 ## Privacy
 
