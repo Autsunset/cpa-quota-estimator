@@ -112,7 +112,13 @@ func TestCoverageModesSuppressCapacityWithoutChangingTheLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for mode, reason := range map[string]string{"mixed": "partial_usage_collection", "unknown": "usage_coverage_unknown"} {
+	// The persistence check below expects the last saved mode to be unknown.
+	// Map iteration order cannot define this sequence.
+	for _, scenario := range []struct{ mode, reason string }{
+		{"mixed", "partial_usage_collection"},
+		{"unknown", "usage_coverage_unknown"},
+	} {
+		mode, reason := scenario.mode, scenario.reason
 		settings := coverageRequest(t, a, "POST", "coverage-settings", "mixed", `{"mode":"`+mode+`"}`)
 		if settings["collection_coverage"].(map[string]any)["configured"] != true {
 			t.Fatal("saved coverage was not marked as configured")
@@ -163,7 +169,7 @@ func TestCoverageModesSuppressCapacityWithoutChangingTheLedger(t *testing.T) {
 	a.store = s
 	settings := coverageRequest(t, a, "GET", "coverage-settings", "mixed", "")
 	if settings["collection_coverage"].(map[string]any)["mode"] != "unknown" {
-		t.Fatal("coverage setting did not survive restart")
+		t.Fatalf("coverage setting did not survive restart: %#v", settings["collection_coverage"])
 	}
 	coverageRequest(t, a, "POST", "coverage-settings", "mixed", `{"mode":"cpa_only"}`)
 	restored := coverageRequest(t, a, "GET", "summary", "mixed", "")
