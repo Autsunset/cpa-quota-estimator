@@ -230,14 +230,20 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 			return current, false, nil
 		}
 		startedAt := current.ResetAt
-		if err = closeCycle(ctx, tx, current.ID, startedAt, "scheduled_reset"); err != nil {
+		// An idle account may activate its replacement window well after the
+		// old deadline. Close at the old deadline, but use the declared start
+		// for the new window instead of charging its idle gap to that window.
+		if declaredStart := e.ResetAt - e.WindowMinutes*60; declaredStart > startedAt+scheduledResetTolerance {
+			startedAt = declaredStart
+		}
+		if err = closeCycle(ctx, tx, current.ID, current.ResetAt, "scheduled_reset"); err != nil {
 			return quotaCycle{}, false, err
 		}
 		created, errCreate := createCycle(ctx, tx, e.Account, startedAt, e)
 		if errCreate != nil {
 			return quotaCycle{}, false, errCreate
 		}
-		if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND quota_scope=? AND requested_at>=?`, created.ID, current.ID, mainQuotaScope, startedAt); err != nil {
+		if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND quota_scope=? AND requested_at>=?`, created.ID, current.ID, mainQuotaScope, current.ResetAt); err != nil {
 			return quotaCycle{}, false, err
 		}
 		return created, true, nil
@@ -425,8 +431,8 @@ func scheduledResetObservation(current quotaCycle, e event) bool {
 		return false
 	}
 	declaredStart := e.ResetAt - e.WindowMinutes*60
-	return absInt64(declaredStart-current.ResetAt) <= scheduledResetTolerance &&
-		eventObservationTime(e) >= current.ResetAt-scheduledResetTolerance
+	return (absInt64(declaredStart-current.ResetAt) <= scheduledResetTolerance &&
+		eventObservationTime(e) >= current.ResetAt-scheduledResetTolerance) || expiredScheduleAdvance(current, e)
 }
 
 func confirmScheduledReset(ctx context.Context, tx *sql.Tx, current quotaCycle, e event) (bool, error) {
