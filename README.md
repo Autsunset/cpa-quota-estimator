@@ -180,6 +180,8 @@ Open **额度容量预测 / Quota Estimator** from CPAMP. The dashboard first tr
 
 Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history or bulk-rewrite historical cycles. Fresh observations can trigger two targeted boundary corrections: the exhausted-5-hour carry-over fix, and reversal of an inferred early reset when the original schedule and usage level are confirmed to return before the old boundary. Saving dashboard pricing switches intentionally recalculates historical pricing values and derived capacity estimates, without changing Token counts or quota-cycle boundaries. Other historical false early-reset chains require the explicit repair POST described below; upgrading does not automatically split historical missed resets. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
 
+GPT-6 Sol and Luna use the [official OpenAI rates](https://developers.openai.com/api/docs/pricing), verified on September 23, 2026. Per million Tokens, input/cache read/cache write/output cost `$2/$0.20/$2.50/$10` for Sol and `$0.10/$0.01/$0.125/$0.50` for Luna. These rates are built in and take precedence over catalog entries. Both API pricing bases use these same rates; when enabled, Fast uses the saved quota-estimation multiplier (default **2.5×**) in both API pricing bases, including source mode; the official API Fast rate is **2×**, but this plugin intentionally retains **2.5×** pending further quota observations, and long context uses **2× input/cache and 1.5× output**. Fast and long-context surcharges combine. Batch/Flex API requests use 50% rates. Existing surcharge switches remain effective. Credits retain the plugin’s existing conversion and saved Fast multiplier; this is not a newly verified subscription rate card. Both models appear in remaining-Token allowances. Use **Save and recalculate** to reprice retained requests after upgrading.
+
 ## Token and pricing-value rules
 
 The Token charts use input + output Tokens. Cached Tokens are normally included in input Tokens and are therefore not added again. Pricing-value calculation still applies cache rates independently:
@@ -251,7 +253,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.11.1
+make package VERSION=0.12.0
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

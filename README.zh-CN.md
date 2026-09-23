@@ -180,6 +180,8 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量，也不会批量改写历史周期。新鲜观测可触发两类定向边界修正：“已耗尽 5 小时额度沿用 100%”的修复，以及在旧边界到期前确认恢复原计划和原用量水平后，撤销推断出的提前重置。在仪表盘保存费用开关时，会重算历史计价值及派生容量估计，但不会修改 Token 数或额度周期边界。其他历史伪提前重置链仍需显式调用下述修复 POST；升级不会自动补拆历史漏掉的提前重置。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
 
+GPT-6 Sol 和 Luna 使用 2026 年 9 月 23 日核实的 [OpenAI 官方价格](https://developers.openai.com/api/docs/pricing)。每百万 Token 的输入／缓存读取／缓存写入／输出价格，Sol 为 `$2/$0.20/$2.50/$10`，Luna 为 `$0.10/$0.01/$0.125/$0.50`。内置价格优先于目录同步条目。两种 API 计价口径使用相同价格；启用加价时，Fast 在两种 API 计价口径（含 source 模式）中均使用已保存的额度估算倍率（默认 **2.5 倍**）；官方 API Fast 价格为 **2 倍**，但插件暂保留 **2.5 倍**，待后续实际额度观测再校准，长上下文使用**输入及缓存 2 倍、输出 1.5 倍**，两项加价叠加。Batch/Flex API 请求按 50% 计价。现有加价开关继续生效。Credits 沿用插件现有换算和已保存的 Fast 倍率，不代表新核实的订阅费率。两个模型均加入剩余 Token 换算。升级后可点击**保存并重算**更新保留的历史请求估值。
+
 ## Token 与计价值计算规则
 
 Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已经包含在输入 Token 中，因此不会重复相加；计价值计算仍会单独应用缓存费率：
@@ -251,7 +253,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.11.1
+make package VERSION=0.12.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
