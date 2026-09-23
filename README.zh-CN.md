@@ -40,9 +40,10 @@
 - 将 Token 数、模型、`service_tier`、所选口径计价值和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
-- 仪表盘提供三种可持久化计价口径：**优惠前 API 价格（新用户默认）**、当前 API 价格和 Codex Credits。升级时保留已有用户保存的选择。Credits 口径对已列出的模型采用[官方 Codex Token 价目表](https://learn.chatgpt.com/docs/pricing)；未收录模型保留 API 价格推算值。Credits 单价本身不能确定 Pro 套餐内含额度的实际扣减。保存计价方式或加价开关后，会在单个事务中重算全部保留请求、当前与历史额度周期采样、月度汇总和计价等效容量；切回任意口径时都从原始 Token 字段重新计算。
-- 新增按账号的 **近期模型用量** 表，可查看最近 24 小时、7 天或 30 天各模型的请求、失败、未缓存输入、缓存读写、输出及总 Token、按官方单价折算的 Credits 参考值和当前口径计价值。账号总体额度增长单独列在汇总中；模型混用时不会把额度百分比错误分摊到各模型。没有官方 Credits 单价的模型标为未收录。
-- 提供独立的 **模型额度校准** 常驻 Astra 倍率输入项（默认 **1.8×**，范围 **0.01–100**；设为 **1×** 即不校准），官方/价格源基础价格保持不变（每百万 Token：输入 $10、缓存读取 $1、输出 $50）。仪表盘分别显示原价、模型倍率和折算价格（$18/$1.8/$90），并把 Astra 加入剩余 Token 换算表。倍率在所有计价口径中仅应用一次，与已有可选 Fast/长上下文规则叠加。升级时从原始 Token 在事务中重算 Astra 历史估值及受影响周期采样，不改变其他模型。这是相对 Sol 的暂定负载校准，不是官方涨价。
+- 仪表盘提供四种可持久化计价口径：**优惠前 API 价格（新用户默认）**、当前 API 价格、Codex Credits 和**自学习额度权重**。升级时保留已有选择。Credits 口径对已列出的模型采用[官方 Codex Token 价目表](https://learn.chatgpt.com/docs/pricing)；未收录模型保留 API 价格推算值。Credits 单价本身不能确定 Pro 套餐内含额度的实际扣减。学习器有可用拟合后才能选择 learned，单位为「百万 GPT-5.6 Sol 未缓存输入 Token 等效」。保存计价方式会从原始 Token 在事务中重算历史请求与周期估值。
+- 按账号的 **近期模型用量** 表可查看最近 24 小时、7 天或 30 天各模型的请求、失败、未缓存输入、缓存读写、输出及总 Token、官方 Credits 参考值、学习器估计的分模型额度消耗和当前口径计价值。实测额度增长仍属于整个账号；分模型份额明确标为估计。没有官方 Credits 单价的模型标为未收录。
+- 为主额度、周额度、Spark 与 Spark 周额度建立首次跨整数读数的 `quota_segments`，保存 lag 0/1/2 特征及失败、未知模型、重置、异常、长空档标记。升级时一次性回填历史，后续跨越仅刷新受影响周期。后台学习器在 log 参数上用高斯先验、Huber 损失、默认 21 天时间衰减和 Laplace 区间拟合模型、Token 类型、Fast、长上下文及账号/窗口尺度。仪表盘展示权重与三张公开表及 learned 的滚动回测；样本少或参数高度相关时标明不确定。逐请求额度百分比是估计值，不是上游逐请求账单。
+- 提供独立的 **模型额度校准** 常驻 Astra 倍率输入项（默认 **1.8×**，范围 **0.01–100**；设为 **1×** 即不校准），官方/价格源基础价格保持不变（每百万 Token：输入 $10、缓存读取 $1、输出 $50）。该倍率用于 API 与 Credits 口径；learned 直接使用拟合出的 Astra 权重。仪表盘展示所选口径的基础及有效价格。这是暂定的负载校准，不是官方涨价。
 - 支持两种可配置的 Fast 定价方式：
   - `multiplier`：在普通或长上下文价格上应用倍数，默认 **2.5×**；
   - `source`：使用 models.dev 中明确提供的 `experimental.modes.fast.cost` 价格。
@@ -158,12 +159,15 @@ plugins:
       price_sync_interval_minutes: 1440
       fast_pricing_mode: multiplier
       fast_multiplier: 2.5
-      pricing_mode: legacy_api # legacy_api (default) | current_api | credits
+      pricing_mode: legacy_api # legacy_api (default) | current_api | credits | learned
       apply_fast_pricing: true
       astra_multiplier: 1.8
       long_context_threshold: 272000
       apply_long_context_pricing: false
       history_days: 365
+      capture_codex_headers: false
+      weight_half_life_days: 21
+      weight_fit_interval_minutes: 60
   enabled: true
 ```
 
@@ -197,15 +201,16 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
        + 输出 × 输出费率
 ```
 
-当前计价值按每一百万 Token 计算，单位可以是 USD，也可以是订阅 Credits。`ReasoningTokens` 已包含在输出 Token 中，不会重复计量。记录的 `service_tier` 为 `priority` 或 `fast` 时使用配置的 Fast 策略；`auto` 和 `default` 保持 1×。当 `InputTokens > long_context_threshold` 时使用长上下文档位，默认阈值为 272,000。
+当前计价值按每一百万 Token 计算，单位可为 USD、Codex Credits，或 learned 口径下的 Sol 输入等效。`ReasoningTokens` 已包含在输出 Token 中，不会重复计量。API/Credits 口径使用配置的 Fast 与长上下文策略；learned 使用拟合出的倍率。长上下文阈值默认 272,000 输入 Token。
 
 仪表盘计价方式包括：
 
 - `current_api`：models.dev/API 当前价格，包含现行优惠；
 - `legacy_api`：优惠前 API 等效价；GPT-5.6 Sol/Terra/Luna 的输入/缓存命中/输出分别使用 `$5/$0.50/$30`、`$2.50/$0.25/$15`、`$1/$0.10/$6`；
 - `credits`：按每百万未缓存输入／缓存读取／输出 Token 使用公开 Codex Credits 单价。GPT-6 Sol 为 `50/5/250`，GPT-6 Luna 为 `2.5/0.25/12.5`，GPT-5.6 Sol 为 `100/10/500`。缓存写入没有单独的 Credits 费用。官方表未列长上下文加价，因此 Credits 口径超过 272K 输入 Token 仍按 Standard 费率计算。Fast 使用已保存的倍率（默认 2.5 倍）；独立的近期用量表在官方有明确规则的模型上固定使用官方 2.5 倍 Fast Credits 费率，且不叠加 Astra 额度校准倍率。未列于官方价目表的模型在 Credits 口径保留 API 价格推算值；近期用量表将其官方 Credits 参考值留空。
+- `learned`：最新拟合给出的相对额度权重，以 GPT-5.6 Sol 每百万未缓存输入 Token 为 1 单位。Fast 和长上下文采用学习倍率，不再叠加手动 Astra 倍率。没有独立证据的参数靠近 Credits 形状先验，并在界面上标记。
 
-仪表盘同时保留 **>272K 长上下文加价** 和 **Fast 加价** 开关。点击**保存并重算**后，三项设置会保存到 SQLite，并在单个事务中重建全部保留的 `usage_events.cost_usd` 兼容值和所有额度采样累计值。当前周期、任意历史周期、跨周期曲线、5 小时与周限额区域、月度汇总都会统一使用新口径；再次切回时从原始输入/输出/缓存 Token 重算，不会在上一次结果上继续换算。JSON 中带 `_cost_usd` 的字段为兼容旧客户端而保留，实际单位由 `pricing_mode` 和 `value_unit` 指明。
+仪表盘仍为 API/Credits 口径提供 **>272K 长上下文加价** 和 **Fast 加价** 开关。点击**保存并重算**后，设置会保存到 SQLite，并在单个事务中重建全部保留的 `usage_events.cost_usd` 兼容值和所有额度采样累计值。当前周期、任意历史周期、跨周期曲线、5 小时与周限额区域、月度汇总都会统一使用新口径；再次切回时从原始输入/输出/缓存 Token 重算。JSON 中带 `_cost_usd` 的字段为兼容旧客户端而保留，实际单位由 `pricing_mode` 和 `value_unit` 指明，可为 USD、Credits 或 Sol 输入等效。
 
 对于所选主额度周期，以及检测到的独立周限额周期，仪表盘会列出各 Codex 模型的剩余未缓存输入、输出和缓存命中 Token。每一列都是独立假设：剩余计价值全部用于该模型及该 Token 类型，并采用 Standard、基础上下文单价。
 
@@ -217,6 +222,8 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 |---|---|---|
 | GET | `/v0/management/cpa-quota-estimator/overview` | 所有已记录账号的当前主额度及已检测周额度概览 |
 | GET | `/v0/management/cpa-quota-estimator/usage?account=<AuthID>&days=7` | 最近 1、7 或 30 天的分模型用量、官方 Credits 参考值及账号总体额度增长 |
+| GET | `/v0/management/cpa-quota-estimator/weights` | 最新学习权重、区间、倍率及诊断 |
+| GET | `/v0/management/cpa-quota-estimator/weights/backtest` | 最新滚动回测四口径对照与 lag 诊断 |
 | GET | `/v0/management/cpa-quota-estimator/summary` | 所选额度周期与预测摘要 |
 | GET | `/v0/management/cpa-quota-estimator/series` | 所选额度周期图表采样数据 |
 | GET | `/v0/management/cpa-quota-estimator/monthly` | 自然月用量、重置与容量汇总 |
@@ -255,7 +262,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.13.0
+make package VERSION=0.14.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。

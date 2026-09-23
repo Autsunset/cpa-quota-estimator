@@ -91,6 +91,30 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			return textResponse(500, err.Error())
 		}
 		return jsonResponse(200, usage)
+	case strings.HasSuffix(req.Path, "/weights/backtest"):
+		if !strings.EqualFold(req.Method, "GET") {
+			return textResponse(405, "method not allowed")
+		}
+		result, ok, err := a.store.latestWeightFit(ctx)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		if !ok {
+			return jsonResponse(200, weightBacktest{Lags: []backtestLagResult{}, Scores: []backtestScore{}})
+		}
+		return jsonResponse(200, result)
+	case strings.HasSuffix(req.Path, "/weights"):
+		if !strings.EqualFold(req.Method, "GET") {
+			return textResponse(405, "method not allowed")
+		}
+		result, ok, err := a.store.latestWeightFit(ctx)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		if !ok {
+			return jsonResponse(200, weightFit{Models: []learnedModelWeights{}})
+		}
+		return jsonResponse(200, result.FittedWeights)
 	case strings.HasSuffix(req.Path, "/summary"):
 		account := req.Query.Get("account")
 		accounts, err := a.store.accounts(ctx)
@@ -342,7 +366,10 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			mode = a.cfg.PricingMode
 		}
 		if !validPricingMode(mode) {
-			return textResponse(400, "pricing_mode must be current_api, legacy_api, or credits")
+			return textResponse(400, "pricing_mode must be current_api, legacy_api, credits, or learned")
+		}
+		if normalizePricingMode(mode) == pricingModeLearned && (a.cfg.LearnedFit == nil || !a.cfg.LearnedFit.Available) {
+			return textResponse(400, "learned pricing requires a completed weight fit")
 		}
 		settings := a.cfg.pricingSettings()
 		settings.ApplyLongContext, settings.ApplyFast, settings.PricingMode = *update.ApplyLongContext, *update.ApplyFast, normalizePricingMode(mode)

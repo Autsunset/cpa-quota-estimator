@@ -67,10 +67,13 @@ func pluginRegistration() any {
 				{"Name": "sample_interval_minutes", "Type": "integer", "Description": "额度未变化时的最小采样间隔"},
 				{"Name": "fast_pricing_mode", "Type": "enum", "EnumValues": []string{"multiplier", "source"}, "Description": "Fast 按倍率或价格源显式价格计费"},
 				{"Name": "fast_multiplier", "Type": "number", "Description": "Fast 倍率，默认 2.5"},
-				{"Name": "pricing_mode", "Type": "enum", "EnumValues": []string{pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits}, "Description": "计价口径：优惠前 API（新用户默认）、当前 API 或 Credits"},
+				{"Name": "pricing_mode", "Type": "enum", "EnumValues": []string{pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits, pricingModeLearned}, "Description": "计价口径：优惠前 API（新用户默认）、当前 API、Credits 或自学习权重"},
 				{"Name": "astra_multiplier", "Type": "number", "Description": "Astra 额度倍率，默认 1.8，范围 0.01–100"},
 				{"Name": "apply_fast_pricing", "Type": "boolean", "Description": "是否应用 Fast 加价，默认开启；仪表盘保存值会覆盖此初始值"},
 				{"Name": "apply_long_context_pricing", "Type": "boolean", "Description": "是否应用长上下文加价，默认关闭；仪表盘保存值会覆盖此初始值"},
+				{"Name": "capture_codex_headers", "Type": "boolean", "Description": "原样记录 X-Codex-* 响应头，默认关闭"},
+				{"Name": "weight_half_life_days", "Type": "number", "Description": "学习器时间衰减半衰期，默认 21 天"},
+				{"Name": "weight_fit_interval_minutes", "Type": "integer", "Description": "后台重拟合间隔，默认 60 分钟"},
 			},
 		},
 		"capabilities": map[string]any{"usage_plugin": true, "management_api": true},
@@ -83,6 +86,8 @@ func managementRegistration() any {
 		"routes": []map[string]any{
 			{"Method": "GET", "Path": base + "/overview"},
 			{"Method": "GET", "Path": base + "/usage"},
+			{"Method": "GET", "Path": base + "/weights"},
+			{"Method": "GET", "Path": base + "/weights/backtest"},
 			{"Method": "GET", "Path": base + "/summary"},
 			{"Method": "GET", "Path": base + "/series"},
 			{"Method": "GET", "Path": base + "/monthly"},
@@ -134,6 +139,12 @@ func parseConfig(raw []byte) (config, error) {
 	if cfg.HistoryDays < 7 {
 		cfg.HistoryDays = 365
 	}
+	if cfg.WeightHalfLifeDays <= 0 {
+		cfg.WeightHalfLifeDays = 21
+	}
+	if cfg.WeightFitIntervalMinutes < 5 {
+		cfg.WeightFitIntervalMinutes = 60
+	}
 	return cfg, nil
 }
 
@@ -150,6 +161,9 @@ func (a *app) configure(raw []byte) error {
 			return errLoad
 		}
 		cfg = cfg.withPricingSettings(settings)
+		if savedFit, ok, errFit := a.store.latestWeightFit(context.Background()); errFit == nil && ok {
+			cfg.LearnedFit = &savedFit.FittedWeights
+		}
 		a.cfg = cfg
 		if a.cancel != nil {
 			a.cancel()
@@ -185,6 +199,25 @@ func (a *app) configure(raw []byte) error {
 		_ = s.close()
 		return fmt.Errorf("calibrate Astra history: %w", err)
 	}
+	fitResult, hasFit, errFit := s.latestWeightFit(context.Background())
+	if errFit == nil && (!hasFit || time.Now().Unix()-fitResult.GeneratedAt > int64(cfg.WeightFitIntervalMinutes*60)) {
+		refreshed, refreshErr := s.refreshWeightFit(context.Background(), weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80})
+		if refreshErr == nil {
+			fitResult, hasFit = refreshed, true
+			if fitResult.FittedWeights.Available {
+				_, _ = s.updateWeightAttributions(context.Background(), &fitResult.FittedWeights, cfg.LongContextThreshold)
+			}
+		}
+	}
+	if errFit == nil && hasFit && fitResult.FittedWeights.Available {
+		cfg.LearnedFit = &fitResult.FittedWeights
+		if normalizePricingMode(cfg.PricingMode) == pricingModeLearned {
+			if _, err = s.savePricingSettingsAndRecalculate(context.Background(), cfg.pricingSettings(), cfg); err != nil {
+				_ = s.close()
+				return fmt.Errorf("recalculate learned history: %w", err)
+			}
+		}
+	}
 	a.cfg, a.store = cfg, s
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
@@ -199,6 +232,8 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 	defer ticker.Stop()
 	cleanup := time.NewTicker(24 * time.Hour)
 	defer cleanup.Stop()
+	weights := time.NewTicker(time.Duration(cfg.WeightFitIntervalMinutes) * time.Minute)
+	defer weights.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -207,6 +242,32 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 			_, _ = syncPrices(ctx, s, cfg)
 		case <-cleanup.C:
 			_ = s.cleanup(ctx, cfg.HistoryDays)
+			_ = s.rebuildAllQuotaSegments(ctx)
+		case <-weights.C:
+			var newestSegment int64
+			if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(end_at),0) FROM quota_segments`).Scan(&newestSegment); err != nil {
+				continue
+			}
+			previous, hasPrevious, err := s.latestWeightFit(ctx)
+			if err != nil {
+				continue
+			}
+			if hasPrevious && newestSegment <= previous.GeneratedAt && time.Now().Unix()-previous.GeneratedAt < 24*3600 {
+				continue
+			}
+			fitResult, err := s.refreshWeightFit(ctx, weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80})
+			if err != nil || !fitResult.FittedWeights.Available {
+				continue
+			}
+			a.mu.Lock()
+			if a.store == s {
+				a.cfg.LearnedFit = &fitResult.FittedWeights
+				_, _ = s.updateWeightAttributions(ctx, a.cfg.LearnedFit, a.cfg.LongContextThreshold)
+				if normalizePricingMode(a.cfg.PricingMode) == pricingModeLearned {
+					_, _ = s.savePricingSettingsAndRecalculate(ctx, a.cfg.pricingSettings(), a.cfg)
+				}
+			}
+			a.mu.Unlock()
 		}
 	}
 }
@@ -296,6 +357,31 @@ func (a *app) recordUsage(r usageRecord) error {
 		account = "unknown"
 	}
 	e := event{RequestedAt: requested, ObservedAt: observed, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, SecondaryUsedPercent: secondaryUsedPtr, SecondaryResetAt: secondaryReset, SecondaryWindowMinutes: secondaryWindow, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type"), QuotaScope: quotaScopeForUsage(r.Model, r.Alias)}
+	if a.cfg.LearnedFit != nil && !r.Failed {
+		e.LearnedQuotaPct = learnedQuotaAttribution(a.cfg.LearnedFit, account, e.QuotaScope, r.Model, r.ServiceTier, r.Detail, a.cfg.LongContextThreshold)
+		if secondaryUsedPtr != nil {
+			secondaryScope := weeklyQuotaScope
+			if e.QuotaScope == sparkQuotaScope {
+				secondaryScope = sparkWeeklyQuotaScope
+			}
+			e.LearnedSecondaryPct = learnedQuotaAttribution(a.cfg.LearnedFit, account, secondaryScope, r.Model, r.ServiceTier, r.Detail, a.cfg.LongContextThreshold)
+		}
+	}
+	if a.cfg.CaptureCodexHeaders {
+		captured := make(map[string][]string)
+		for name, values := range r.ResponseHeaders {
+			if strings.HasPrefix(strings.ToLower(name), "x-codex-") {
+				captured[name] = append([]string(nil), values...)
+			}
+		}
+		if len(captured) > 0 {
+			raw, err := json.Marshal(captured)
+			if err != nil {
+				return err
+			}
+			e.CodexHeadersJSON = string(raw)
+		}
+	}
 	return a.store.insertEvent(ctx, e, time.Duration(a.cfg.SampleIntervalMinutes)*time.Minute)
 }
 

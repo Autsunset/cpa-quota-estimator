@@ -133,7 +133,7 @@ func TestOldSettingsDefaultCalibrationAndConfigValidation(t *testing.T) {
 
 func TestCalibrationControlIsAlwaysAvailable(t *testing.T) {
 	html := string(dashboardHTML)
-	for _, text := range []string{`id="astraMultiplier"`, "三种计价方式（含 Credits）均适用", "Set 1 for no multiplier", "apply_model_calibration: true"} {
+	for _, text := range []string{`id="astraMultiplier"`, "Astra 手动倍率用于 API 和 Credits 口径", "learned mode uses fitted weights", "apply_model_calibration: true"} {
 		if !strings.Contains(html, text) {
 			t.Fatalf("missing always-on control detail %q", text)
 		}

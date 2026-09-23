@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -19,6 +20,7 @@ type usageBreakdownRow struct {
 	TotalTokens      int64    `json:"total_tokens"`
 	CurrentValue     float64  `json:"current_value"`
 	OfficialCredits  *float64 `json:"official_credits,omitempty"`
+	LearnedQuotaPct  *float64 `json:"learned_quota_pct,omitempty"`
 }
 
 type usageBreakdown struct {
@@ -37,6 +39,8 @@ type usageBreakdown struct {
 	UnpricedRequests      int64               `json:"unpriced_requests"`
 	QuotaGrowthPercent    float64             `json:"quota_growth_percent"`
 	QuotaCoverageComplete bool                `json:"quota_coverage_complete"`
+	LearnedQuotaPct       float64             `json:"learned_quota_pct"`
+	UnattributedRequests  int64               `json:"unattributed_requests"`
 }
 
 func officialCreditsForUsage(model, tier string, input, cached, written, output int64) (float64, bool) {
@@ -79,7 +83,8 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT model,service_tier,COUNT(*),COALESCE(SUM(failed),0),
 		COALESCE(SUM(input_tokens),0),COALESCE(SUM(cache_read_tokens),0),COALESCE(SUM(cache_write_tokens),0),
-		COALESCE(SUM(output_tokens),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0)
+		COALESCE(SUM(output_tokens),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),
+		SUM(learned_quota_pct),COUNT(learned_quota_pct)
 		FROM usage_events WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<?
 		GROUP BY model,service_tier`, account, mainQuotaScope, startAt, endAt)
 	if err != nil {
@@ -88,14 +93,21 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 	byKey := make(map[string]*usageBreakdownRow)
 	for rows.Next() {
 		var row usageBreakdownRow
+		var learned sql.NullFloat64
+		var attributed int64
 		if err = rows.Scan(&row.Model, &row.ServiceTier, &row.Requests, &row.Failed,
 			&row.InputTokens, &row.CacheReadTokens, &row.CacheWriteTokens,
-			&row.OutputTokens, &row.TotalTokens, &row.CurrentValue); err != nil {
+			&row.OutputTokens, &row.TotalTokens, &row.CurrentValue, &learned, &attributed); err != nil {
 			rows.Close()
 			return result, err
 		}
 		row.Model = normalizeModel(row.Model)
 		row.ServiceTier = strings.ToLower(strings.TrimSpace(row.ServiceTier))
+		if learned.Valid {
+			v := learned.Float64
+			row.LearnedQuotaPct = &v
+		}
+		result.UnattributedRequests += row.Requests - attributed
 		key := row.Model + "\x00" + row.ServiceTier
 		if existing := byKey[key]; existing != nil {
 			existing.Requests += row.Requests
@@ -106,6 +118,14 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 			existing.OutputTokens += row.OutputTokens
 			existing.TotalTokens += row.TotalTokens
 			existing.CurrentValue += row.CurrentValue
+			if row.LearnedQuotaPct != nil {
+				if existing.LearnedQuotaPct == nil {
+					v := *row.LearnedQuotaPct
+					existing.LearnedQuotaPct = &v
+				} else {
+					*existing.LearnedQuotaPct += *row.LearnedQuotaPct
+				}
+			}
 		} else {
 			copy := row
 			byKey[key] = &copy
@@ -129,6 +149,9 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 		result.Failed += row.Failed
 		result.TotalTokens += row.TotalTokens
 		result.CurrentValue += row.CurrentValue
+		if row.LearnedQuotaPct != nil {
+			result.LearnedQuotaPct += *row.LearnedQuotaPct
+		}
 		result.Rows = append(result.Rows, *row)
 	}
 	sort.Slice(result.Rows, func(i, j int) bool {

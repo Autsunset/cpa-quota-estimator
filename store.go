@@ -68,7 +68,10 @@ CREATE TABLE IF NOT EXISTS usage_events (
  secondary_reset_at INTEGER NOT NULL DEFAULT 0,
  secondary_window_minutes INTEGER NOT NULL DEFAULT 0,
  plan_type TEXT NOT NULL DEFAULT '',
- quota_scope TEXT NOT NULL DEFAULT 'main'
+ quota_scope TEXT NOT NULL DEFAULT 'main',
+ codex_headers_json TEXT NOT NULL DEFAULT '',
+ learned_quota_pct REAL,
+ learned_secondary_pct REAL
 );
 CREATE INDEX IF NOT EXISTS idx_usage_account_time ON usage_events(account, requested_at);
 CREATE INDEX IF NOT EXISTS idx_usage_model_time ON usage_events(model, requested_at);
@@ -144,6 +147,15 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err = ensureColumn(s.db, "usage_events", "secondary_window_minutes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err = ensureColumn(s.db, "usage_events", "codex_headers_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err = ensureColumn(s.db, "usage_events", "learned_quota_pct", "REAL"); err != nil {
+		return err
+	}
+	if err = ensureColumn(s.db, "usage_events", "learned_secondary_pct", "REAL"); err != nil {
+		return err
+	}
 	if _, err = s.db.Exec(`UPDATE usage_events SET quota_scope='spark' WHERE quota_scope='main' AND (LOWER(model) LIKE '%codex-spark%' OR LOWER(alias) LIKE '%codex-spark%')`); err != nil {
 		return err
 	}
@@ -156,7 +168,10 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err = s.backfillCycles(); err != nil {
 		return err
 	}
-	return s.reconcileOpenCycleQuotaRegimes()
+	if err = s.reconcileOpenCycleQuotaRegimes(); err != nil {
+		return err
+	}
+	return s.migrateSegments()
 }
 
 func (s *store) close() error { return s.db.Close() }
@@ -179,11 +194,11 @@ func (s *store) insertEvent(ctx context.Context, e event, sampleInterval time.Du
 		secondaryUsed = *e.SecondaryUsedPercent
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO usage_events
-	(cycle_id,requested_at,observed_at,account,provider,model,alias,service_tier,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,failed,status_code,used_percent,reset_at,window_minutes,secondary_used_percent,secondary_reset_at,secondary_window_minutes,plan_type,quota_scope)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	(cycle_id,requested_at,observed_at,account,provider,model,alias,service_tier,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,failed,status_code,used_percent,reset_at,window_minutes,secondary_used_percent,secondary_reset_at,secondary_window_minutes,plan_type,quota_scope,codex_headers_json,learned_quota_pct,learned_secondary_pct)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		cycle.ID, e.RequestedAt, eventObservationTime(e), e.Account, e.Provider, e.Model, e.Alias, e.ServiceTier,
 		e.InputTokens, e.OutputTokens, e.ReasoningTokens, e.CacheReadTokens, e.CacheWriteTokens,
-		e.TotalTokens, e.CostUSD, e.Failed, e.StatusCode, used, e.ResetAt, e.WindowMinutes, secondaryUsed, e.SecondaryResetAt, e.SecondaryWindowMinutes, e.PlanType, eventQuotaScope(e))
+		e.TotalTokens, e.CostUSD, e.Failed, e.StatusCode, used, e.ResetAt, e.WindowMinutes, secondaryUsed, e.SecondaryResetAt, e.SecondaryWindowMinutes, e.PlanType, eventQuotaScope(e), e.CodexHeadersJSON, e.LearnedQuotaPct, e.LearnedSecondaryPct)
 	if err != nil {
 		return err
 	}
@@ -211,6 +226,9 @@ ORDER BY sampled_at DESC,id DESC LIMIT 1`, cycle.ID, e.ResetAt, e.WindowMinutes)
 				return err
 			}
 		}
+	}
+	if err = s.refreshSegmentsForEvent(ctx, tx, e, cycle.ID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

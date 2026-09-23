@@ -14,6 +14,7 @@ const (
 	pricingModeCurrentAPI = "current_api"
 	pricingModeLegacyAPI  = "legacy_api"
 	pricingModeCredits    = "credits"
+	pricingModeLearned    = "learned"
 )
 
 // modelPriceMultiplier is a quota-equivalence calibration, not an upstream
@@ -31,7 +32,7 @@ func (c config) modelPriceMultipliers() map[string]float64 {
 
 func validPricingMode(mode string) bool {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits:
+	case pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits, pricingModeLearned:
 		return true
 	default:
 		return false
@@ -44,12 +45,17 @@ func normalizePricingMode(mode string) string {
 		return pricingModeCurrentAPI
 	case pricingModeCredits:
 		return pricingModeCredits
+	case pricingModeLearned:
+		return pricingModeLearned
 	default:
 		return pricingModeLegacyAPI
 	}
 }
 
 func pricingValueUnit(mode string) string {
+	if normalizePricingMode(mode) == pricingModeLearned {
+		return "sol_input_equiv"
+	}
 	if normalizePricingMode(mode) == pricingModeCredits {
 		return "credits"
 	}
@@ -60,6 +66,18 @@ func priceForPricingMode(p price, mode string) price {
 	mode = normalizePricingMode(mode)
 	if mode == pricingModeCurrentAPI {
 		return p
+	}
+	if mode == pricingModeLearned {
+		prior := priceForPricingMode(p, pricingModeCredits)
+		prior.Input /= 100
+		prior.CacheRead /= 100
+		prior.Output /= 100
+		prior.CacheWrite /= 100
+		prior.LongInput /= 100
+		prior.LongRead /= 100
+		prior.LongOutput /= 100
+		prior.LongWrite /= 100
+		return prior
 	}
 	if mode == pricingModeCredits {
 		if official, ok := officialCodexCreditPrice(p.Model); ok {
@@ -288,6 +306,20 @@ func seedPrices(ctx context.Context, s *store) error {
 }
 
 func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float64 {
+	if normalizePricingMode(cfg.PricingMode) == pricingModeLearned {
+		if value, ok := learnedEquivalentForUsage(cfg.LearnedFit, p.Model, d, serviceTier, cfg.LongContextThreshold); ok {
+			return value
+		}
+		// Before the first fit, use the published credit shape as a disclosed
+		// prior. Learned mode is rejected by the API until a fit exists.
+		prior := priceForPricingMode(p, pricingModeLearned)
+		read := max(d.CacheReadTokens, d.CachedTokens)
+		input := d.InputTokens - read
+		if input < 0 {
+			input = 0
+		}
+		return (float64(input)*prior.Input + float64(read)*prior.CacheRead + float64(d.OutputTokens)*prior.Output) / 1_000_000
+	}
 	p = priceForPricingMode(p, cfg.PricingMode)
 	in, out, read, write := p.Input, p.Output, p.CacheRead, p.CacheWrite
 	if cfg.ApplyLongContextPricing && d.InputTokens > cfg.LongContextThreshold && p.LongInput > 0 {

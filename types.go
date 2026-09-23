@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.13.0"
+var pluginVersion = "0.14.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -84,20 +84,24 @@ type managementResponse struct {
 }
 
 type config struct {
-	ApplyModelCalibration    bool    `yaml:"apply_model_calibration"`
-	AstraMultiplier          float64 `yaml:"astra_multiplier"`
-	Enabled                  bool    `yaml:"enabled"`
-	DataPath                 string  `yaml:"data_path"`
-	SampleIntervalMinutes    int     `yaml:"sample_interval_minutes"`
-	PriceSourceURL           string  `yaml:"price_source_url"`
-	PriceSyncIntervalMinutes int     `yaml:"price_sync_interval_minutes"`
-	FastPricingMode          string  `yaml:"fast_pricing_mode"`
-	FastMultiplier           float64 `yaml:"fast_multiplier"`
-	PricingMode              string  `yaml:"pricing_mode"`
-	ApplyFastPricing         bool    `yaml:"apply_fast_pricing"`
-	LongContextThreshold     int64   `yaml:"long_context_threshold"`
-	ApplyLongContextPricing  bool    `yaml:"apply_long_context_pricing"`
-	HistoryDays              int     `yaml:"history_days"`
+	ApplyModelCalibration    bool       `yaml:"apply_model_calibration"`
+	AstraMultiplier          float64    `yaml:"astra_multiplier"`
+	Enabled                  bool       `yaml:"enabled"`
+	DataPath                 string     `yaml:"data_path"`
+	SampleIntervalMinutes    int        `yaml:"sample_interval_minutes"`
+	PriceSourceURL           string     `yaml:"price_source_url"`
+	PriceSyncIntervalMinutes int        `yaml:"price_sync_interval_minutes"`
+	FastPricingMode          string     `yaml:"fast_pricing_mode"`
+	FastMultiplier           float64    `yaml:"fast_multiplier"`
+	PricingMode              string     `yaml:"pricing_mode"`
+	ApplyFastPricing         bool       `yaml:"apply_fast_pricing"`
+	LongContextThreshold     int64      `yaml:"long_context_threshold"`
+	ApplyLongContextPricing  bool       `yaml:"apply_long_context_pricing"`
+	HistoryDays              int        `yaml:"history_days"`
+	CaptureCodexHeaders      bool       `yaml:"capture_codex_headers"`
+	WeightHalfLifeDays       float64    `yaml:"weight_half_life_days"`
+	WeightFitIntervalMinutes int        `yaml:"weight_fit_interval_minutes"`
+	LearnedFit               *weightFit `yaml:"-"`
 }
 
 func defaultConfig() config {
@@ -116,6 +120,8 @@ func defaultConfig() config {
 		LongContextThreshold:     272000,
 		ApplyLongContextPricing:  false,
 		HistoryDays:              365,
+		WeightHalfLifeDays:       21,
+		WeightFitIntervalMinutes: 60,
 	}
 }
 
@@ -162,6 +168,9 @@ type event struct {
 	SecondaryWindowMinutes int64
 	PlanType               string
 	QuotaScope             string
+	CodexHeadersJSON       string
+	LearnedQuotaPct        *float64
+	LearnedSecondaryPct    *float64
 }
 
 type quotaPoint struct {
