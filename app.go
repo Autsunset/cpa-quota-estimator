@@ -82,6 +82,7 @@ func managementRegistration() any {
 	return map[string]any{
 		"routes": []map[string]any{
 			{"Method": "GET", "Path": base + "/overview"},
+			{"Method": "GET", "Path": base + "/usage"},
 			{"Method": "GET", "Path": base + "/summary"},
 			{"Method": "GET", "Path": base + "/series"},
 			{"Method": "GET", "Path": base + "/monthly"},

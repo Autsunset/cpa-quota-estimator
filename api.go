@@ -63,6 +63,34 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			ValueUnit:     pricingValueUnit(a.cfg.PricingMode),
 			Accounts:      items,
 		})
+	case strings.HasSuffix(req.Path, "/usage"):
+		if !strings.EqualFold(req.Method, "GET") {
+			return textResponse(405, "method not allowed")
+		}
+		account := req.Query.Get("account")
+		if account == "" {
+			accounts, err := a.store.accounts(ctx)
+			if err != nil {
+				return textResponse(500, err.Error())
+			}
+			if len(accounts) > 0 {
+				account = accounts[0]
+			}
+		}
+		days := 7
+		if raw := req.Query.Get("days"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed != 1 && parsed != 7 && parsed != 30 {
+				return textResponse(400, "days must be 1, 7, or 30")
+			}
+			days = parsed
+		}
+		endAt := time.Now().Unix() + 1
+		usage, err := a.store.usageBreakdown(ctx, account, endAt-int64(days)*86400, endAt, days, a.cfg)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		return jsonResponse(200, usage)
 	case strings.HasSuffix(req.Path, "/summary"):
 		account := req.Query.Get("account")
 		accounts, err := a.store.accounts(ctx)
