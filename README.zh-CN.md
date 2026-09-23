@@ -40,7 +40,8 @@
 - 将 Token 数、模型、`service_tier`、所选口径计价值和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
-- 仪表盘提供三种可持久化计价口径：**优惠前 API 价格（新用户默认）**、当前 API 价格和订阅 Credits。升级时保留已有用户保存的选择。订阅 Credits 固定采用无促销的 Codex Rate Card（`优惠前价格 × 25`），绝不使用临时 API/购买 Credits 优惠。保存计价方式或加价开关后，会在单个事务中重算全部保留请求、当前与历史额度周期采样、月度汇总和计价等效容量；切回任意口径时都从原始 Token 字段重新计算。
+- 仪表盘提供三种可持久化计价口径：**优惠前 API 价格（新用户默认）**、当前 API 价格和 Codex Credits。升级时保留已有用户保存的选择。Credits 口径对已列出的模型采用[官方 Codex Token 价目表](https://learn.chatgpt.com/docs/pricing)；未收录模型保留 API 价格推算值。Credits 单价本身不能确定 Pro 套餐内含额度的实际扣减。保存计价方式或加价开关后，会在单个事务中重算全部保留请求、当前与历史额度周期采样、月度汇总和计价等效容量；切回任意口径时都从原始 Token 字段重新计算。
+- 新增按账号的 **近期模型用量** 表，可查看最近 24 小时、7 天或 30 天各模型的请求、失败、未缓存输入、缓存读写、输出及总 Token、按官方单价折算的 Credits 参考值和当前口径计价值。账号总体额度增长单独列在汇总中；模型混用时不会把额度百分比错误分摊到各模型。没有官方 Credits 单价的模型标为未收录。
 - 提供独立的 **模型额度校准** 常驻 Astra 倍率输入项（默认 **1.8×**，范围 **0.01–100**；设为 **1×** 即不校准），官方/价格源基础价格保持不变（每百万 Token：输入 $10、缓存读取 $1、输出 $50）。仪表盘分别显示原价、模型倍率和折算价格（$18/$1.8/$90），并把 Astra 加入剩余 Token 换算表。倍率在所有计价口径中仅应用一次，与已有可选 Fast/长上下文规则叠加。升级时从原始 Token 在事务中重算 Astra 历史估值及受影响周期采样，不改变其他模型。这是相对 Sol 的暂定负载校准，不是官方涨价。
 - 支持两种可配置的 Fast 定价方式：
   - `multiplier`：在普通或长上下文价格上应用倍数，默认 **2.5×**；
@@ -180,7 +181,7 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量，也不会批量改写历史周期。新鲜观测可触发两类定向边界修正：“已耗尽 5 小时额度沿用 100%”的修复，以及在旧边界到期前确认恢复原计划和原用量水平后，撤销推断出的提前重置。在仪表盘保存费用开关时，会重算历史计价值及派生容量估计，但不会修改 Token 数或额度周期边界。其他历史伪提前重置链仍需显式调用下述修复 POST；升级不会自动补拆历史漏掉的提前重置。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
 
-GPT-6 Sol 和 Luna 使用 2026 年 9 月 23 日核实的 [OpenAI 官方价格](https://developers.openai.com/api/docs/pricing)。每百万 Token 的输入／缓存读取／缓存写入／输出价格，Sol 为 `$2/$0.20/$2.50/$10`，Luna 为 `$0.10/$0.01/$0.125/$0.50`。内置价格优先于目录同步条目。两种 API 计价口径使用相同价格；启用加价时，Fast 在两种 API 计价口径（含 source 模式）中均使用已保存的额度估算倍率（默认 **2.5 倍**）；官方 API Fast 价格为 **2 倍**，但插件暂保留 **2.5 倍**，待后续实际额度观测再校准，长上下文使用**输入及缓存 2 倍、输出 1.5 倍**，两项加价叠加。Batch/Flex API 请求按 50% 计价。现有加价开关继续生效。Credits 沿用插件现有换算和已保存的 Fast 倍率，不代表新核实的订阅费率。两个模型均加入剩余 Token 换算。升级后可点击**保存并重算**更新保留的历史请求估值。
+GPT-6 Sol 和 Luna 使用 2026 年 9 月 23 日核实的 [OpenAI 官方 API 价格](https://developers.openai.com/api/docs/pricing)。每百万 Token 的输入／缓存读取／缓存写入／输出价格，Sol 为 `$2/$0.20/$2.50/$10`，Luna 为 `$0.10/$0.01/$0.125/$0.50`。内置价格优先于目录同步条目。两种 API 计价口径使用相同价格；启用加价时，Fast 在两种 API 计价口径（含 source 模式）中均使用已保存的额度估算倍率（默认 **2.5 倍**）；官方 API Fast 价格为 **2 倍**，但插件暂保留 **2.5 倍**，待后续实际额度观测再校准，长上下文使用**输入及缓存 2 倍、输出 1.5 倍**，两项加价叠加。Batch/Flex API 请求按 50% 计价。独立的 Credits 口径现已对这些模型和 GPT-5.6 Sol 使用官方 Codex 价目表。两个 GPT-6 模型均加入剩余 Token 换算。升级后可点击**保存并重算**更新保留的历史请求估值。
 
 ## Token 与计价值计算规则
 
@@ -202,7 +203,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 
 - `current_api`：models.dev/API 当前价格，包含现行优惠；
 - `legacy_api`：优惠前 API 等效价；GPT-5.6 Sol/Terra/Luna 的输入/缓存命中/输出分别使用 `$5/$0.50/$30`、`$2.50/$0.25/$15`、`$1/$0.10/$6`；
-- `credits`：订阅套餐内、无促销的 Codex Credits，严格按优惠前价格 × 25 计算；Sol/Terra/Luna 每百万输入/缓存命中/输出分别为 `125/12.5/750`、`62.5/6.25/375`、`25/2.5/150` Credits，明确排除购买 Credits 的临时优惠；缓存写入按订阅 Rate Card 记为 0 Credits。
+- `credits`：按每百万未缓存输入／缓存读取／输出 Token 使用公开 Codex Credits 单价。GPT-6 Sol 为 `50/5/250`，GPT-6 Luna 为 `2.5/0.25/12.5`，GPT-5.6 Sol 为 `100/10/500`。缓存写入没有单独的 Credits 费用。官方表未列长上下文加价，因此 Credits 口径超过 272K 输入 Token 仍按 Standard 费率计算。Fast 使用已保存的倍率（默认 2.5 倍）；独立的近期用量表在官方有明确规则的模型上固定使用官方 2.5 倍 Fast Credits 费率，且不叠加 Astra 额度校准倍率。未列于官方价目表的模型在 Credits 口径保留 API 价格推算值；近期用量表将其官方 Credits 参考值留空。
 
 仪表盘同时保留 **>272K 长上下文加价** 和 **Fast 加价** 开关。点击**保存并重算**后，三项设置会保存到 SQLite，并在单个事务中重建全部保留的 `usage_events.cost_usd` 兼容值和所有额度采样累计值。当前周期、任意历史周期、跨周期曲线、5 小时与周限额区域、月度汇总都会统一使用新口径；再次切回时从原始输入/输出/缓存 Token 重算，不会在上一次结果上继续换算。JSON 中带 `_cost_usd` 的字段为兼容旧客户端而保留，实际单位由 `pricing_mode` 和 `value_unit` 指明。
 
@@ -215,6 +216,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | GET | `/v0/management/cpa-quota-estimator/overview` | 所有已记录账号的当前主额度及已检测周额度概览 |
+| GET | `/v0/management/cpa-quota-estimator/usage?account=<AuthID>&days=7` | 最近 1、7 或 30 天的分模型用量、官方 Credits 参考值及账号总体额度增长 |
 | GET | `/v0/management/cpa-quota-estimator/summary` | 所选额度周期与预测摘要 |
 | GET | `/v0/management/cpa-quota-estimator/series` | 所选额度周期图表采样数据 |
 | GET | `/v0/management/cpa-quota-estimator/monthly` | 自然月用量、重置与容量汇总 |
@@ -253,7 +255,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.12.0
+make package VERSION=0.13.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
