@@ -61,28 +61,65 @@ func priceForPricingMode(p price, mode string) price {
 	if mode == pricingModeCurrentAPI {
 		return p
 	}
-	// Subscription Credits deliberately derive from the non-promotional
-	// Codex rate card. Temporary purchased-credit/API discounts must never
-	// leak into this mode.
-	base := legacyAPIPrice(p)
-	if mode != pricingModeCredits {
+	if mode == pricingModeCredits {
+		if official, ok := officialCodexCreditPrice(p.Model); ok {
+			return official
+		}
+		// Keep a clearly documented estimate for models without a published
+		// Codex credit rate, so older history is not silently valued at zero.
+		base := legacyAPIPrice(p)
+		base.Input *= 25
+		base.Output *= 25
+		base.CacheRead *= 25
+		base.CacheWrite = 0
+		base.LongInput *= 25
+		base.LongOutput *= 25
+		base.LongRead *= 25
+		base.LongWrite = 0
+		base.FastInput, base.FastOutput, base.FastRead, base.FastWrite = 0, 0, 0, 0
 		return base
 	}
-	base.Input *= 25
-	base.Output *= 25
-	base.CacheRead *= 25
-	base.CacheWrite = 0 // The subscription Credits rate card does not charge cache writes.
-	base.LongInput *= 25
-	base.LongOutput *= 25
-	base.LongRead *= 25
-	base.LongWrite = 0
-	// Credits use the saved Fast multiplier rather than the current API
-	// source-mode prices, which may contain temporary promotional rates.
-	base.FastInput = 0
-	base.FastOutput = 0
-	base.FastRead = 0
-	base.FastWrite = 0
-	return base
+	return legacyAPIPrice(p)
+}
+
+// Published Standard-speed Codex credit rates per million tokens, verified
+// 2026-09-23: https://learn.chatgpt.com/docs/pricing. Included Pro quota is
+// account-wide and cannot be inferred from these credit prices alone.
+func officialCodexCreditPrice(model string) (price, bool) {
+	model = normalizeModel(model)
+	var input, cached, output float64
+	switch model {
+	case "gpt-6-astra":
+		input, cached, output = 250, 25, 1250
+	case "gpt-6-sol":
+		input, cached, output = 50, 5, 250
+	case "gpt-6-luna":
+		input, cached, output = 2.5, .25, 12.5
+	case "gpt-5.6", "gpt-5.6-sol", "daybreak-blue", "gpt-daybreak-blue-latest":
+		input, cached, output = 100, 10, 500
+	case "daybreak-red", "gpt-5.6-cyber", "gpt-daybreak-red-latest":
+		input, cached, output = 312.5, 31.25, 1875
+	case "gpt-5.6-terra":
+		input, cached, output = 50, 5, 300
+	case "gpt-5.6-luna":
+		input, cached, output = 5, .5, 30
+	case "gpt-rosalind-research":
+		input, cached, output = 125, 12.5, 625
+	case "gpt-5.5":
+		input, cached, output = 125, 12.5, 750
+	case "gpt-5.4":
+		input, cached, output = 62.5, 6.25, 375
+	case "gpt-5.4-mini":
+		input, cached, output = 18.75, 1.875, 113
+	default:
+		return price{}, false
+	}
+	return price{
+		Model: model, Input: input, CacheRead: cached, Output: output,
+		// Codex lists no separate cache-write or long-context credit charge.
+		LongInput: input, LongRead: cached, LongOutput: output,
+		Source: "https://learn.chatgpt.com/docs/pricing",
+	}, true
 }
 
 func legacyAPIPrice(p price) price {

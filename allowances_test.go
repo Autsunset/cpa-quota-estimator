@@ -35,9 +35,9 @@ func TestRemainingModelAllowancesFollowSelectedPricingMode(t *testing.T) {
 		model                 string
 		input, output, cached float64
 	}{
-		{"gpt-5.6-sol", 1_000_000, 125.0e6 / 750, 10_000_000},
-		{"gpt-5.6-terra", 2_000_000, 125.0e6 / 375, 20_000_000},
-		{"gpt-5.6-luna", 5_000_000, 125.0e6 / 150, 50_000_000},
+		{"gpt-5.6-sol", 125.0e6 / 100, 125.0e6 / 500, 125.0e6 / 10},
+		{"gpt-5.6-terra", 125.0e6 / 50, 125.0e6 / 300, 125.0e6 / 5},
+		{"gpt-5.6-luna", 125.0e6 / 5, 125.0e6 / 30, 125.0e6 / .5},
 	}
 	for _, check := range checks {
 		row, ok := byModel[check.model]

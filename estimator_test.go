@@ -267,7 +267,7 @@ func TestDecodeCatalog(t *testing.T) {
 	}
 }
 
-func TestSubscriptionCreditsUseNonPromotionalRates(t *testing.T) {
+func TestSubscriptionCreditsUsePublishedCodexRates(t *testing.T) {
 	p := price{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5}
 	detail := usageDetail{InputTokens: 1_000_000, OutputTokens: 100_000, CacheReadTokens: 500_000}
 	cfg := defaultConfig()
@@ -282,17 +282,26 @@ func TestSubscriptionCreditsUseNonPromotionalRates(t *testing.T) {
 		t.Fatalf("legacy API value = %f, want 5.75", got)
 	}
 	cfg.PricingMode = pricingModeCredits
-	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-143.75) > 1e-9 {
-		t.Fatalf("subscription credits = %f, want 143.75", got)
+	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-105) > 1e-9 {
+		t.Fatalf("subscription credits = %f, want 105", got)
 	}
 
 	for _, check := range []struct {
 		model                 string
 		input, cached, output float64
 	}{
-		{"gpt-5.6-sol", 125, 12.5, 750},
-		{"gpt-5.6-terra", 62.5, 6.25, 375},
-		{"gpt-5.6-luna", 25, 2.5, 150},
+		{"gpt-6-astra", 250, 25, 1250},
+		{"gpt-6-sol", 50, 5, 250},
+		{"gpt-6-luna", 2.5, .25, 12.5},
+		{"gpt-5.6-sol", 100, 10, 500},
+		{"gpt-daybreak-blue-latest", 100, 10, 500},
+		{"gpt-daybreak-red-latest", 312.5, 31.25, 1875},
+		{"gpt-5.6-terra", 50, 5, 300},
+		{"gpt-5.6-luna", 5, .5, 30},
+		{"gpt-rosalind-research", 125, 12.5, 625},
+		{"gpt-5.5", 125, 12.5, 750},
+		{"gpt-5.4", 62.5, 6.25, 375},
+		{"gpt-5.4-mini", 18.75, 1.875, 113},
 	} {
 		got := priceForPricingMode(price{Model: check.model, Input: .01, Output: .01, CacheRead: .01}, pricingModeCredits)
 		if got.Input != check.input || got.CacheRead != check.cached || got.Output != check.output || got.CacheWrite != 0 {

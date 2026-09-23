@@ -25,11 +25,10 @@ func TestAstraMultiplierPreservesBasePricesAndAppliesExactlyOnce(t *testing.T) {
 					cfg.ApplyFastPricing = fast
 					for _, tier := range []string{"auto", "fast", "priority"} {
 						d := usageDetail{InputTokens: 300000, OutputTokens: 10000, CacheReadTokens: 200000, CacheCreationTokens: 10000}
-						// This otherwise identical model has no quota calibration.
-						base := p
-						base.Model = "gpt-test"
 						got := calculateCost(p, d, tier, cfg)
-						want := calculateCost(base, d, tier, cfg) * 1.8
+						withoutCalibration := cfg
+						withoutCalibration.ApplyModelCalibration = false
+						want := calculateCost(p, d, tier, withoutCalibration) * 1.8
 						if math.Abs(got-want) > 1e-9 {
 							t.Fatalf("%s/%s/%t/%t/%s got %f want %f", mode, fastMode, long, fast, tier, got, want)
 						}

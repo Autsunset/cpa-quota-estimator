@@ -100,7 +100,7 @@ func TestPricingModePersistsAndCanSwitchBack(t *testing.T) {
 	checks := []struct {
 		mode string
 		want float64
-	}{{pricingModeLegacyAPI, 5.75}, {pricingModeCredits, 143.75}, {pricingModeCurrentAPI, 4.2}}
+	}{{pricingModeLegacyAPI, 5.75}, {pricingModeCredits, 105}, {pricingModeCurrentAPI, 4.2}}
 	for _, check := range checks {
 		settings := pricingSettings{PricingMode: check.mode}
 		cfg := defaultConfig().withPricingSettings(settings)
@@ -153,7 +153,7 @@ func TestPricingModeRecalculatesEveryHistoricalCycle(t *testing.T) {
 	for _, check := range []struct {
 		mode string
 		want float64
-	}{{pricingModeCredits, 143.75}, {pricingModeLegacyAPI, 5.75}, {pricingModeCurrentAPI, 4.2}} {
+	}{{pricingModeCredits, 105}, {pricingModeLegacyAPI, 5.75}, {pricingModeCurrentAPI, 4.2}} {
 		settings := pricingSettings{PricingMode: check.mode}
 		cfg := defaultConfig().withPricingSettings(settings)
 		if _, err = s.savePricingSettingsAndRecalculate(ctx, settings, cfg); err != nil {
