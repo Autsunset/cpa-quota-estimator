@@ -208,6 +208,10 @@ func decodeCatalog(r io.Reader) ([]price, error) {
 			p.FastRead = fast.Cost.CacheRead
 			p.FastWrite = fast.Cost.CacheWrite
 		}
+		// Keep the verified launch rate card authoritative over catalog lag.
+		if official, ok := officialGPT6Price(p.Model); ok {
+			p = official
+		}
 		out = append(out, p)
 	}
 	if len(out) == 0 {
@@ -216,9 +220,29 @@ func decodeCatalog(r io.Reader) ([]price, error) {
 	return out, nil
 }
 
+// Official OpenAI rates verified 2026-09-23:
+// https://developers.openai.com/api/docs/pricing
+func officialGPT6Price(model string) (price, bool) {
+	p := price{Model: normalizeModel(model), Source: "https://developers.openai.com/api/docs/pricing", UpdatedAt: time.Now().Unix()}
+	switch p.Model {
+	case "gpt-6-sol":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = 2, 10, .2, 2.5
+	case "gpt-6-luna":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = .1, .5, .01, .125
+	default:
+		return price{}, false
+	}
+	p.LongInput, p.LongOutput, p.LongRead, p.LongWrite = p.Input*2, p.Output*1.5, p.CacheRead*2, p.CacheWrite*2
+	p.FastInput, p.FastOutput, p.FastRead, p.FastWrite = p.Input*2, p.Output*2, p.CacheRead*2, p.CacheWrite*2
+	return p, true
+}
+
 func seedPrices(ctx context.Context, s *store) error {
 	now := time.Now().Unix()
+	sol, _ := officialGPT6Price("gpt-6-sol")
+	luna, _ := officialGPT6Price("gpt-6-luna")
 	return s.upsertPrices(ctx, []price{
+		sol, luna,
 		{Model: "gpt-6-astra", Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5, LongInput: 20, LongOutput: 75, LongRead: 2, LongWrite: 25, FastInput: 20, FastOutput: 100, FastRead: 2, FastWrite: 25, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5, LongInput: 8, LongOutput: 30, LongRead: .8, LongWrite: 10, FastInput: 8, FastOutput: 40, FastRead: .8, FastWrite: 10, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-luna", Input: .2, Output: 1.2, CacheRead: .02, CacheWrite: .25, LongInput: .4, LongOutput: 1.8, LongRead: .04, LongWrite: .5, FastInput: .4, FastOutput: 2.4, FastRead: .04, FastWrite: .5, Source: "built-in fallback", UpdatedAt: now},
@@ -233,13 +257,21 @@ func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float
 		in, out, read, write = p.LongInput, p.LongOutput, p.LongRead, p.LongWrite
 	}
 	if cfg.ApplyFastPricing && isFastTier(serviceTier) {
-		if normalizePricingMode(cfg.PricingMode) == pricingModeCurrentAPI && strings.EqualFold(cfg.FastPricingMode, "source") && p.FastInput > 0 {
+		if _, official := officialGPT6Price(p.Model); official && normalizePricingMode(cfg.PricingMode) != pricingModeCredits {
+			in, out, read, write = in*cfg.FastMultiplier, out*cfg.FastMultiplier, read*cfg.FastMultiplier, write*cfg.FastMultiplier
+		} else if normalizePricingMode(cfg.PricingMode) == pricingModeCurrentAPI && strings.EqualFold(cfg.FastPricingMode, "source") && p.FastInput > 0 {
 			in, out, read, write = p.FastInput, p.FastOutput, p.FastRead, p.FastWrite
 		} else {
 			in *= cfg.FastMultiplier
 			out *= cfg.FastMultiplier
 			read *= cfg.FastMultiplier
 			write *= cfg.FastMultiplier
+		}
+	}
+	if _, official := officialGPT6Price(p.Model); official && normalizePricingMode(cfg.PricingMode) != pricingModeCredits {
+		switch strings.ToLower(strings.TrimSpace(serviceTier)) {
+		case "batch", "flex":
+			in, out, read, write = in*.5, out*.5, read*.5, write*.5
 		}
 	}
 	cacheRead := max(d.CacheReadTokens, d.CachedTokens)
