@@ -73,6 +73,7 @@ func pluginRegistration() any {
 				{"Name": "apply_long_context_pricing", "Type": "boolean", "Description": "是否应用长上下文加价，默认关闭；仪表盘保存值会覆盖此初始值"},
 				{"Name": "capture_codex_headers", "Type": "boolean", "Description": "原样记录 X-Codex-* 响应头，默认关闭"},
 				{"Name": "weight_half_life_days", "Type": "number", "Description": "学习器时间衰减半衰期，默认 21 天"},
+				{"Name": "weight_random_walk_sigma", "Type": "number", "Description": "周期间 log 尺度随机游走标准差，默认 0.35"},
 				{"Name": "weight_fit_interval_minutes", "Type": "integer", "Description": "后台重拟合间隔，默认 60 分钟"},
 			},
 		},
@@ -142,10 +143,23 @@ func parseConfig(raw []byte) (config, error) {
 	if cfg.WeightHalfLifeDays <= 0 {
 		cfg.WeightHalfLifeDays = 21
 	}
+	if cfg.WeightRandomWalkSigma <= 0 {
+		cfg.WeightRandomWalkSigma = .35
+	}
 	if cfg.WeightFitIntervalMinutes < 5 {
 		cfg.WeightFitIntervalMinutes = 60
 	}
 	return cfg, nil
+}
+
+func fitNeedsRefresh(result weightBacktest, hasFit bool, cfg config) bool {
+	if !hasFit {
+		return true
+	}
+	if result.FittedWeights.RandomWalkSigma != cfg.WeightRandomWalkSigma || result.FittedWeights.HalfLifeDays != cfg.WeightHalfLifeDays {
+		return true
+	}
+	return time.Now().Unix()-result.GeneratedAt > int64(cfg.WeightFitIntervalMinutes*60)
 }
 
 func (a *app) configure(raw []byte) error {
@@ -161,7 +175,11 @@ func (a *app) configure(raw []byte) error {
 			return errLoad
 		}
 		cfg = cfg.withPricingSettings(settings)
-		if savedFit, ok, errFit := a.store.latestWeightFit(context.Background()); errFit == nil && ok {
+		savedFit, ok, errFit := a.store.latestWeightFit(context.Background())
+		if errFit != nil {
+			return errFit
+		}
+		if ok && savedFit.FittedWeights.Available {
 			cfg.LearnedFit = &savedFit.FittedWeights
 		}
 		a.cfg = cfg
@@ -200,23 +218,13 @@ func (a *app) configure(raw []byte) error {
 		return fmt.Errorf("calibrate Astra history: %w", err)
 	}
 	fitResult, hasFit, errFit := s.latestWeightFit(context.Background())
-	if errFit == nil && (!hasFit || time.Now().Unix()-fitResult.GeneratedAt > int64(cfg.WeightFitIntervalMinutes*60)) {
-		refreshed, refreshErr := s.refreshWeightFit(context.Background(), weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80})
-		if refreshErr == nil {
-			fitResult, hasFit = refreshed, true
-			if fitResult.FittedWeights.Available {
-				_, _ = s.updateWeightAttributions(context.Background(), &fitResult.FittedWeights, cfg.LongContextThreshold)
-			}
-		}
+	if errFit != nil {
+		_ = s.close()
+		return errFit
 	}
-	if errFit == nil && hasFit && fitResult.FittedWeights.Available {
+	if hasFit && fitResult.FittedWeights.Available {
 		cfg.LearnedFit = &fitResult.FittedWeights
-		if normalizePricingMode(cfg.PricingMode) == pricingModeLearned {
-			if _, err = s.savePricingSettingsAndRecalculate(context.Background(), cfg.pricingSettings(), cfg); err != nil {
-				_ = s.close()
-				return fmt.Errorf("recalculate learned history: %w", err)
-			}
-		}
+		_ = s.seedOnlineCycleScales(context.Background(), cfg.LearnedFit)
 	}
 	a.cfg, a.store = cfg, s
 	ctx, cancel := context.WithCancel(context.Background())
@@ -226,6 +234,7 @@ func (a *app) configure(raw []byte) error {
 }
 
 func (a *app) background(ctx context.Context, s *store, cfg config) {
+	a.refreshWeightsIfNeeded(ctx, s, cfg)
 	_, _ = syncPrices(ctx, s, cfg)
 	_, _ = s.db.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES('last_price_sync_attempt',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.FormatInt(time.Now().Unix(), 10))
 	ticker := time.NewTicker(time.Duration(cfg.PriceSyncIntervalMinutes) * time.Minute)
@@ -244,31 +253,37 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 			_ = s.cleanup(ctx, cfg.HistoryDays)
 			_ = s.rebuildAllQuotaSegments(ctx)
 		case <-weights.C:
-			var newestSegment int64
-			if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(end_at),0) FROM quota_segments`).Scan(&newestSegment); err != nil {
-				continue
-			}
-			previous, hasPrevious, err := s.latestWeightFit(ctx)
-			if err != nil {
-				continue
-			}
-			if hasPrevious && newestSegment <= previous.GeneratedAt && time.Now().Unix()-previous.GeneratedAt < 24*3600 {
-				continue
-			}
-			fitResult, err := s.refreshWeightFit(ctx, weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80})
-			if err != nil || !fitResult.FittedWeights.Available {
-				continue
-			}
-			a.mu.Lock()
-			if a.store == s {
-				a.cfg.LearnedFit = &fitResult.FittedWeights
-				_, _ = s.updateWeightAttributions(ctx, a.cfg.LearnedFit, a.cfg.LongContextThreshold)
-				if normalizePricingMode(a.cfg.PricingMode) == pricingModeLearned {
-					_, _ = s.savePricingSettingsAndRecalculate(ctx, a.cfg.pricingSettings(), a.cfg)
-				}
-			}
-			a.mu.Unlock()
+			a.refreshWeightsIfNeeded(ctx, s, cfg)
 		}
+	}
+}
+
+func (a *app) refreshWeightsIfNeeded(ctx context.Context, s *store, cfg config) {
+	var newestSegment int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(end_at),0) FROM quota_segments`).Scan(&newestSegment); err != nil {
+		return
+	}
+	previous, hasPrevious, err := s.latestWeightFit(ctx)
+	if err != nil {
+		return
+	}
+	if hasPrevious && newestSegment <= previous.GeneratedAt && !fitNeedsRefresh(previous, hasPrevious, cfg) && time.Now().Unix()-previous.GeneratedAt < 24*3600 {
+		return
+	}
+	fitResult, err := s.refreshWeightFit(ctx, weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80, RandomWalkSigma: cfg.WeightRandomWalkSigma})
+	if err != nil || !fitResult.FittedWeights.Available || ctx.Err() != nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.store != s || ctx.Err() != nil {
+		return
+	}
+	a.cfg.LearnedFit = &fitResult.FittedWeights
+	_ = s.seedOnlineCycleScales(ctx, a.cfg.LearnedFit)
+	_, _ = s.updateWeightAttributions(ctx, a.cfg.LearnedFit, a.cfg.LongContextThreshold)
+	if normalizePricingMode(a.cfg.PricingMode) == pricingModeLearned {
+		_, _ = s.savePricingSettingsAndRecalculate(ctx, a.cfg.pricingSettings(), a.cfg)
 	}
 }
 
@@ -358,13 +373,14 @@ func (a *app) recordUsage(r usageRecord) error {
 	}
 	e := event{RequestedAt: requested, ObservedAt: observed, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, SecondaryUsedPercent: secondaryUsedPtr, SecondaryResetAt: secondaryReset, SecondaryWindowMinutes: secondaryWindow, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type"), QuotaScope: quotaScopeForUsage(r.Model, r.Alias)}
 	if a.cfg.LearnedFit != nil && !r.Failed {
-		e.LearnedQuotaPct = learnedQuotaAttribution(a.cfg.LearnedFit, account, e.QuotaScope, r.Model, r.ServiceTier, r.Detail, a.cfg.LongContextThreshold)
+		e.LearnedFit = a.cfg.LearnedFit
+		e.LearnedQuotaPct = a.store.learnedQuotaAttributionLive(ctx, a.cfg.LearnedFit, account, e.QuotaScope, r.Model, r.ServiceTier, e.ResetAt, r.Detail, a.cfg.LongContextThreshold)
 		if secondaryUsedPtr != nil {
 			secondaryScope := weeklyQuotaScope
 			if e.QuotaScope == sparkQuotaScope {
 				secondaryScope = sparkWeeklyQuotaScope
 			}
-			e.LearnedSecondaryPct = learnedQuotaAttribution(a.cfg.LearnedFit, account, secondaryScope, r.Model, r.ServiceTier, r.Detail, a.cfg.LongContextThreshold)
+			e.LearnedSecondaryPct = a.store.learnedQuotaAttributionLive(ctx, a.cfg.LearnedFit, account, secondaryScope, r.Model, r.ServiceTier, e.SecondaryResetAt, r.Detail, a.cfg.LongContextThreshold)
 		}
 	}
 	if a.cfg.CaptureCodexHeaders {

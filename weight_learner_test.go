@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 )
 
@@ -28,10 +29,21 @@ func TestWeightLearnerRecoversKnownSyntheticWeights(t *testing.T) {
 		}
 		segments[i] = segment
 	}
-	model := newWeightModel(segments, nil)
+	opts := defaultWeightLearnerOptions()
+	opts.CacheShareMinSD, opts.OutputShareMinSD, opts.TypeMinFisher = .001, .001, .001
+	opts.ModelShareMinSD, opts.ModelMinFisher = .001, .001
+	opts.CacheCycleRatioMinRange, opts.OutputCycleRatioMinRange = .001, .001
+	model := newWeightModel(segments, nil, now, opts)
 	truth := append([]float64(nil), model.priorMean...)
+	for name, index := range model.index {
+		if strings.HasPrefix(name, "scale:a|main|") {
+			truth[index] = math.Log(.45)
+		}
+		if strings.HasPrefix(name, "scale:b|weekly|") {
+			truth[index] = math.Log(.3)
+		}
+	}
 	for name, value := range map[string]float64{
-		"scale:a|main": .45, "scale:b|weekly": .3,
 		"model:gpt-6-astra": 1.4, "model:gpt-6-sol": 1.1,
 		"model:gpt-6-luna": 2.0, "model:gpt-5.6-terra": 1.3,
 		"type:cache": .8, "type:output": 1.2,
@@ -46,7 +58,7 @@ func TestWeightLearnerRecoversKnownSyntheticWeights(t *testing.T) {
 	for i := range segments {
 		segments[i].DP, _ = model.predict(segments[i], truth)
 	}
-	fit, err := fitQuotaWeights(segments, nil, now, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, now, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,5 +83,43 @@ func TestWeightLearnerRecoversKnownSyntheticWeights(t *testing.T) {
 	}
 	if !fit.Fast.Identified || !fit.LongContext.Identified {
 		t.Fatalf("synthetic factors should be identified: fast=%#v long=%#v", fit.Fast, fit.LongContext)
+	}
+}
+
+func TestStableTokenCompositionLocksTypeRatiosAndTracksCycleDrift(t *testing.T) {
+	const now = int64(1_800_000_000)
+	scales := []float64{.2, .35, .25}
+	var segments []quotaSegment
+	for cycle, scale := range scales {
+		for i := 0; i < 24; i++ {
+			factor := int64(90 + i%5*5)
+			segment := quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: int64(cycle + 1), RegimeResetAt: int64(10_000 + cycle*1000),
+				StartAt: now - 10_000 + int64(cycle*240+i*10), EndAt: now - 9_995 + int64(cycle*240+i*10), BoundaryWeight: 1,
+				Features: []segmentFeature{
+					{Model: "gpt-5.6-sol", Type: "input", Tokens: 9_000 * factor},
+					{Model: "gpt-5.6-sol", Type: "cache", Tokens: 291_000 * factor},
+					{Model: "gpt-5.6-sol", Type: "output", Tokens: 1_500 * factor},
+				},
+			}
+			segment.DP = scale * referenceEquivalent(segment, pricingModeCredits, nil)
+			segments = append(segments, segment)
+		}
+	}
+	fit, err := fitQuotaWeights(segments, nil, now, defaultWeightLearnerOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fit.Available || len(fit.CycleScales) != 3 {
+		t.Fatalf("fit=%#v", fit)
+	}
+	for _, diagnostic := range fit.TypeDiagnostics {
+		if diagnostic.Unlocked {
+			t.Fatalf("stable composition unlocked %s: %#v", diagnostic.Name, diagnostic)
+		}
+	}
+	for i, cycle := range fit.CycleScales {
+		if math.Abs(cycle.Scale.Value-scales[i]) > .04 {
+			t.Errorf("cycle %d scale=%g want %g", i+1, cycle.Scale.Value, scales[i])
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -94,25 +95,50 @@ func learnedEquivalentForUsage(fit *weightFit, model string, d usageDetail, serv
 	return value, true
 }
 
-func learnedScale(fit *weightFit, account, window string) (float64, bool) {
+func learnedScale(fit *weightFit, account, window string, cycleID, resetAt int64) (float64, bool) {
 	if fit == nil || !fit.Available {
 		return 0, false
 	}
-	want := "scale:" + account + "|" + window
-	for i, name := range fit.ParameterNames {
-		if name == want && i < len(fit.LogParameters) {
-			return math.Exp(fit.LogParameters[i]), true
+	var latest *learnedCycleScale
+	for i := range fit.CycleScales {
+		cycle := &fit.CycleScales[i]
+		if cycle.Account != account || cycle.Window != window {
+			continue
 		}
+		if cycleID > 0 && cycle.CycleID == cycleID && absSegmentTime(cycle.RegimeResetAt-resetAt) <= segmentResetSlack {
+			return cycle.Scale.Value, true
+		}
+		if resetAt > 0 && absSegmentTime(cycle.RegimeResetAt-resetAt) <= segmentResetSlack {
+			latest = cycle
+			continue
+		}
+		if latest == nil || cycle.StartedAt > latest.StartedAt {
+			latest = cycle
+		}
+	}
+	if latest != nil {
+		return latest.Scale.Value, true
+	}
+	// Older persisted fits did not include the derived cycle-scale list.
+	wantPrefix := "scale:" + account + "|" + window + "|"
+	var value float64
+	for i, name := range fit.ParameterNames {
+		if strings.HasPrefix(name, wantPrefix) && i < len(fit.LogParameters) {
+			value = math.Exp(fit.LogParameters[i])
+		}
+	}
+	if value > 0 {
+		return value, true
 	}
 	return 0, false
 }
 
-func learnedQuotaAttribution(fit *weightFit, account, window, model, serviceTier string, d usageDetail, longThreshold int64) *float64 {
+func learnedQuotaAttribution(fit *weightFit, account, window, model, serviceTier string, cycleID, resetAt int64, d usageDetail, longThreshold int64) *float64 {
 	value, ok := learnedEquivalentForUsage(fit, model, d, serviceTier, longThreshold)
 	if !ok {
 		return nil
 	}
-	scale, ok := learnedScale(fit, account, window)
+	scale, ok := learnedScale(fit, account, window, cycleID, resetAt)
 	if !ok {
 		return nil
 	}
@@ -121,21 +147,24 @@ func learnedQuotaAttribution(fit *weightFit, account, window, model, serviceTier
 }
 
 type attributionEvent struct {
-	ID           int64
-	Account      string
-	Scope        string
-	Model        string
-	Tier         string
-	Input        int64
-	Output       int64
-	CacheRead    int64
-	CacheWrite   int64
-	HasSecondary bool
-	Failed       bool
+	ID               int64
+	CycleID          int64
+	ResetAt          int64
+	SecondaryResetAt int64
+	Account          string
+	Scope            string
+	Model            string
+	Tier             string
+	Input            int64
+	Output           int64
+	CacheRead        int64
+	CacheWrite       int64
+	HasSecondary     bool
+	Failed           bool
 }
 
 func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, longThreshold int64) (int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,account,quota_scope,model,service_tier,
+	rows, err := s.db.QueryContext(ctx, `SELECT id,cycle_id,reset_at,secondary_reset_at,account,quota_scope,model,service_tier,
 		input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,
 		CASE WHEN secondary_used_percent IS NOT NULL THEN 1 ELSE 0 END,failed FROM usage_events ORDER BY id`)
 	if err != nil {
@@ -144,7 +173,7 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 	events := make([]attributionEvent, 0, 10000)
 	for rows.Next() {
 		var e attributionEvent
-		if err = rows.Scan(&e.ID, &e.Account, &e.Scope, &e.Model, &e.Tier,
+		if err = rows.Scan(&e.ID, &e.CycleID, &e.ResetAt, &e.SecondaryResetAt, &e.Account, &e.Scope, &e.Model, &e.Tier,
 			&e.Input, &e.Output, &e.CacheRead, &e.CacheWrite, &e.HasSecondary, &e.Failed); err != nil {
 			rows.Close()
 			return 0, err
@@ -173,14 +202,14 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 		var primary *float64
 		var secondary *float64
 		if !e.Failed {
-			primary = learnedQuotaAttribution(fit, e.Account, e.Scope, e.Model, e.Tier, detail, longThreshold)
+			primary = learnedQuotaAttribution(fit, e.Account, e.Scope, e.Model, e.Tier, e.CycleID, e.ResetAt, detail, longThreshold)
 		}
 		if e.HasSecondary && !e.Failed {
 			window := weeklyQuotaScope
 			if e.Scope == sparkQuotaScope {
 				window = sparkWeeklyQuotaScope
 			}
-			secondary = learnedQuotaAttribution(fit, e.Account, window, e.Model, e.Tier, detail, longThreshold)
+			secondary = learnedQuotaAttribution(fit, e.Account, window, e.Model, e.Tier, e.SecondaryResetAt, e.SecondaryResetAt, detail, longThreshold)
 		}
 		if _, err = stmt.ExecContext(ctx, primary, secondary, e.ID); err != nil {
 			return 0, err

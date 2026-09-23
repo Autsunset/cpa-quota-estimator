@@ -193,12 +193,16 @@ func (s *store) insertEvent(ctx context.Context, e event, sampleInterval time.Du
 	if e.SecondaryUsedPercent != nil {
 		secondaryUsed = *e.SecondaryUsedPercent
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO usage_events
+	inserted, err := tx.ExecContext(ctx, `INSERT INTO usage_events
 	(cycle_id,requested_at,observed_at,account,provider,model,alias,service_tier,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,failed,status_code,used_percent,reset_at,window_minutes,secondary_used_percent,secondary_reset_at,secondary_window_minutes,plan_type,quota_scope,codex_headers_json,learned_quota_pct,learned_secondary_pct)
 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		cycle.ID, e.RequestedAt, eventObservationTime(e), e.Account, e.Provider, e.Model, e.Alias, e.ServiceTier,
 		e.InputTokens, e.OutputTokens, e.ReasoningTokens, e.CacheReadTokens, e.CacheWriteTokens,
 		e.TotalTokens, e.CostUSD, e.Failed, e.StatusCode, used, e.ResetAt, e.WindowMinutes, secondaryUsed, e.SecondaryResetAt, e.SecondaryWindowMinutes, e.PlanType, eventQuotaScope(e), e.CodexHeadersJSON, e.LearnedQuotaPct, e.LearnedSecondaryPct)
+	if err != nil {
+		return err
+	}
+	eventID, err := inserted.LastInsertId()
 	if err != nil {
 		return err
 	}
@@ -230,7 +234,15 @@ ORDER BY sampled_at DESC,id DESC LIMIT 1`, cycle.ID, e.ResetAt, e.WindowMinutes)
 	if err = s.refreshSegmentsForEvent(ctx, tx, e, cycle.ID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if e.LearnedFit != nil {
+		updateCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = s.applyOnlineSegmentsForEndEvent(updateCtx, eventID, e.LearnedFit)
+		cancel()
+	}
+	return nil
 }
 
 func (s *store) upsertPrices(ctx context.Context, prices []price) error {

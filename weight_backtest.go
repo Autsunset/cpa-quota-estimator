@@ -28,6 +28,15 @@ type weightBacktest struct {
 	FittedWeights weightFit           `json:"fitted_weights"`
 }
 
+type interruptionSensitivity struct {
+	EligibleSegments         int            `json:"eligible_segments"`
+	TestSegments             int            `json:"test_segments"`
+	InterruptedTestSegments  int            `json:"interrupted_test_segments"`
+	WithoutFeature           backtestScore  `json:"without_feature"`
+	WithFeature              backtestScore  `json:"with_feature"`
+	PctPerInterruptedRequest weightEstimate `json:"pct_per_interrupted_request"`
+}
+
 type scoreAccumulator struct {
 	absError float64
 	bias     float64
@@ -35,15 +44,87 @@ type scoreAccumulator struct {
 }
 
 type segmentIdentity struct {
-	Account      string
-	Window       string
-	CycleID      int64
-	StartEventID int64
-	EndEventID   int64
+	Account       string
+	Window        string
+	CycleID       int64
+	RegimeResetAt int64
+	StartEventID  int64
+	EndEventID    int64
 }
 
 func identityOf(segment quotaSegment) segmentIdentity {
-	return segmentIdentity{segment.Account, segment.Window, segment.CycleID, segment.StartEventID, segment.EndEventID}
+	return segmentIdentity{segment.Account, segment.Window, segment.CycleID, segment.RegimeResetAt, segment.StartEventID, segment.EndEventID}
+}
+
+func sortSegmentsChronologically(segments []quotaSegment) {
+	sort.Slice(segments, func(i, j int) bool {
+		a, b := segments[i], segments[j]
+		if a.EndAt != b.EndAt {
+			return a.EndAt < b.EndAt
+		}
+		ia, ib := identityOf(a), identityOf(b)
+		if ia.Account != ib.Account {
+			return ia.Account < ib.Account
+		}
+		if ia.Window != ib.Window {
+			return ia.Window < ib.Window
+		}
+		if ia.CycleID != ib.CycleID {
+			return ia.CycleID < ib.CycleID
+		}
+		if ia.RegimeResetAt != ib.RegimeResetAt {
+			return ia.RegimeResetAt < ib.RegimeResetAt
+		}
+		if ia.StartEventID != ib.StartEventID {
+			return ia.StartEventID < ib.StartEventID
+		}
+		return ia.EndEventID < ib.EndEventID
+	})
+}
+
+func runInterruptedSensitivity(all []quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions) (interruptionSensitivity, error) {
+	segments := make([]quotaSegment, 0, len(all))
+	for _, segment := range all {
+		if segment.eligibleWithInterrupted() && segment.DP > 0 && referenceEquivalent(segment, pricingModeCredits, prices) > 0 {
+			segments = append(segments, segment)
+		}
+	}
+	sortSegmentsChronologically(segments)
+	result := interruptionSensitivity{EligibleSegments: len(segments)}
+	if len(segments) < 25 {
+		return result, nil
+	}
+	start := len(segments) * 40 / 100
+	if start < 25 {
+		start = 25
+	}
+	result.TestSegments = len(segments) - start
+	for _, segment := range segments[start:] {
+		if segment.InterruptedCount > 0 {
+			result.InterruptedTestSegments++
+		}
+	}
+	without := weightOptionsWithDefaults(opts)
+	without.IncludeInterrupted = true
+	without.FitInterruptedCoefficient = false
+	scores, err := prequentialScores(segments, prices, without)
+	if err != nil {
+		return result, err
+	}
+	result.WithoutFeature = scores[len(scores)-1]
+	with := without
+	with.FitInterruptedCoefficient = true
+	scores, err = prequentialScores(segments, prices, with)
+	if err != nil {
+		return result, err
+	}
+	result.WithFeature = scores[len(scores)-1]
+	fit, err := fitQuotaWeights(segments, prices, now, with)
+	if err != nil {
+		return result, err
+	}
+	result.PctPerInterruptedRequest = fit.Interrupted
+	return result, nil
 }
 
 func (a *scoreAccumulator) add(prediction, actual float64) {
@@ -61,40 +142,79 @@ func (a scoreAccumulator) result(mode string) backtestScore {
 	return result
 }
 
-func fitReferenceScales(segments []quotaSegment, mode string, prices map[string]price, now int64, halfLifeDays float64) map[string]float64 {
-	groups := make(map[string][]quotaSegment)
-	for _, segment := range segments {
-		if value := referenceEquivalent(segment, mode, prices); value > 0 {
-			groups[modelGroup(segment)] = append(groups[modelGroup(segment)], segment)
-		}
+func prequentialScores(eligible []quotaSegment, prices map[string]price, opts weightLearnerOptions) ([]backtestScore, error) {
+	modes := []string{pricingModeLegacyAPI, pricingModeCurrentAPI, pricingModeCredits, pricingModeLearned}
+	accumulators := make(map[string]*scoreAccumulator)
+	for _, mode := range modes {
+		accumulators[mode] = &scoreAccumulator{}
 	}
-	scales := make(map[string]float64)
-	for group, items := range groups {
-		var ratios []float64
-		for _, item := range items {
-			ratios = append(ratios, item.DP/referenceEquivalent(item, mode, prices))
+	if len(eligible) < 25 {
+		var empty []backtestScore
+		for _, mode := range modes {
+			empty = append(empty, accumulators[mode].result(mode))
 		}
-		sort.Float64s(ratios)
-		scale := ratios[len(ratios)/2]
-		for iteration := 0; iteration < 12; iteration++ {
-			var numerator, denominator float64
-			for _, item := range items {
-				value := referenceEquivalent(item, mode, prices)
-				residual := item.DP - scale*value
-				weight := segmentFitWeight(item, now, halfLifeDays)
-				if a := math.Abs(residual); a > weightHuberDelta {
-					weight *= weightHuberDelta / a
+		return empty, nil
+	}
+	start := len(eligible) * 40 / 100
+	if start < 25 {
+		start = 25
+	}
+	training := eligible[:start]
+	cutoff := training[len(training)-1].EndAt
+	learnedFit, err := fitQuotaWeights(training, prices, cutoff, opts)
+	if err != nil {
+		return nil, err
+	}
+	learnedTracker := newOnlineScaleTracker(learnedFit, opts.RandomWalkSigma)
+	trackers := make(map[string]*onlineScaleTracker)
+	for _, mode := range modes[:3] {
+		fit, fitErr := fitReferenceCycleScales(training, prices, mode, cutoff, opts)
+		if fitErr != nil {
+			return nil, fitErr
+		}
+		trackers[mode] = newOnlineScaleTracker(fit, opts.RandomWalkSigma)
+	}
+	for index := start; index < len(eligible); index++ {
+		// Shared model factors are refreshed at a fixed cadence; every cycle
+		// scale is updated after each observed crossing below.
+		if index > start && (index-start)%25 == 0 {
+			learnedFit, err = fitQuotaWeights(eligible[:index], prices, eligible[index-1].EndAt, opts)
+			if err != nil {
+				return nil, err
+			}
+			learnedTracker = newOnlineScaleTracker(learnedFit, opts.RandomWalkSigma)
+		}
+		segment := eligible[index]
+		weight := segmentFitWeight(segment, segment.EndAt, opts.HalfLifeDays)
+		for _, mode := range modes[:3] {
+			equivalent := referenceEquivalent(segment, mode, prices)
+			if equivalent <= 0 {
+				continue
+			}
+			state := trackers[mode].forSegment(segment)
+			prediction := math.Exp(state.LogValue) * equivalent
+			accumulators[mode].add(prediction, segment.DP)
+			state.update(equivalent, segment.DP, weight, 0)
+		}
+		if learnedFit.Available {
+			equivalent := learnedSegmentEquivalent(segment, learnedFit)
+			if equivalent > 0 {
+				state := learnedTracker.forSegment(segment)
+				interrupt := 0.0
+				if opts.IncludeInterrupted && opts.FitInterruptedCoefficient {
+					interrupt = learnedFit.Interrupted.Value * float64(segment.InterruptedCount)
 				}
-				numerator += weight * value * item.DP
-				denominator += weight * value * value
-			}
-			if denominator > 0 {
-				scale = numerator / denominator
+				prediction := math.Exp(state.LogValue)*equivalent + interrupt
+				accumulators[pricingModeLearned].add(prediction, segment.DP)
+				state.update(equivalent, segment.DP, weight, interrupt)
 			}
 		}
-		scales[group] = scale
 	}
-	return scales
+	var scores []backtestScore
+	for _, mode := range modes {
+		scores = append(scores, accumulators[mode].result(mode))
+	}
+	return scores, nil
 }
 
 func rollingBacktest(byLag map[int][]quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions) (weightBacktest, error) {
@@ -123,67 +243,12 @@ func rollingBacktest(byLag map[int][]quotaSegment, prices map[string]price, now 
 				eligible = append(eligible, segment)
 			}
 		}
-		sort.Slice(eligible, func(i, j int) bool {
-			if eligible[i].EndAt != eligible[j].EndAt {
-				return eligible[i].EndAt < eligible[j].EndAt
-			}
-			a, b := identityOf(eligible[i]), identityOf(eligible[j])
-			if a.Account != b.Account {
-				return a.Account < b.Account
-			}
-			if a.Window != b.Window {
-				return a.Window < b.Window
-			}
-			if a.CycleID != b.CycleID {
-				return a.CycleID < b.CycleID
-			}
-			if a.StartEventID != b.StartEventID {
-				return a.StartEventID < b.StartEventID
-			}
-			return a.EndEventID < b.EndEventID
-		})
+		sortSegmentsChronologically(eligible)
 		row := backtestLagResult{Lag: lag, EligibleSegments: len(eligible), FlaggedSegments: len(all) - len(eligible)}
-		modes := []string{pricingModeLegacyAPI, pricingModeCurrentAPI, pricingModeCredits, pricingModeLearned}
-		accumulators := make(map[string]*scoreAccumulator)
-		for _, mode := range modes {
-			accumulators[mode] = &scoreAccumulator{}
-		}
-		if len(eligible) >= 25 {
-			for fold := 0; fold < 4; fold++ {
-				trainEnd := len(eligible) * (40 + fold*15) / 100
-				testEnd := len(eligible) * (55 + fold*15) / 100
-				if fold == 3 {
-					testEnd = len(eligible)
-				}
-				if trainEnd < 5 || testEnd <= trainEnd {
-					continue
-				}
-				train := eligible[:trainEnd]
-				test := eligible[trainEnd:testEnd]
-				cutoff := train[len(train)-1].EndAt
-				fit, err := fitQuotaWeights(train, prices, cutoff, opts)
-				if err != nil {
-					return result, err
-				}
-				scales := make(map[string]map[string]float64)
-				for _, mode := range modes[:3] {
-					scales[mode] = fitReferenceScales(train, mode, prices, cutoff, opts.HalfLifeDays)
-				}
-				for _, segment := range test {
-					for _, mode := range modes[:3] {
-						scale, ok := scales[mode][modelGroup(segment)]
-						if ok {
-							accumulators[mode].add(scale*referenceEquivalent(segment, mode, prices), segment.DP)
-						}
-					}
-					if fit.Available && fit.predict(segment, prices) > 0 {
-						accumulators[pricingModeLearned].add(fit.predict(segment, prices), segment.DP)
-					}
-				}
-			}
-		}
-		for _, mode := range modes {
-			row.Scores = append(row.Scores, accumulators[mode].result(mode))
+		var err error
+		row.Scores, err = prequentialScores(eligible, prices, opts)
+		if err != nil {
+			return result, err
 		}
 		result.Lags = append(result.Lags, row)
 		learned := row.Scores[len(row.Scores)-1]

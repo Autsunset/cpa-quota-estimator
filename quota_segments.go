@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	segmentBackfillKey = "quota_segments_v1"
+	segmentBackfillKey = "quota_segments_v2"
 	segmentGapSeconds  = int64(2 * time.Hour / time.Second)
+	segmentResetSlack  = int64(120)
 )
 
 type segmentKey struct {
@@ -33,6 +34,7 @@ type segmentEvent struct {
 	CacheWrite    int64
 	OutputTokens  int64
 	Failed        bool
+	StatusCode    int
 	UsedPercent   float64
 	HasUsed       bool
 	ResetAt       int64
@@ -55,30 +57,40 @@ type segmentFeature struct {
 }
 
 type quotaSegment struct {
-	ID             int64            `json:"id"`
-	Account        string           `json:"account"`
-	Window         string           `json:"window"`
-	CycleID        int64            `json:"cycle_id"`
-	Lag            int              `json:"lag"`
-	StartEventID   int64            `json:"start_event_id"`
-	EndEventID     int64            `json:"end_event_id"`
-	StartAt        int64            `json:"start_at"`
-	EndAt          int64            `json:"end_at"`
-	DP             float64          `json:"dp"`
-	BoundaryWeight float64          `json:"boundary_weight"`
-	Features       []segmentFeature `json:"features"`
-	Flags          []string         `json:"flags"`
+	ID               int64            `json:"id"`
+	Account          string           `json:"account"`
+	Window           string           `json:"window"`
+	CycleID          int64            `json:"cycle_id"`
+	RegimeResetAt    int64            `json:"regime_reset_at"`
+	Lag              int              `json:"lag"`
+	StartEventID     int64            `json:"start_event_id"`
+	EndEventID       int64            `json:"end_event_id"`
+	StartAt          int64            `json:"start_at"`
+	EndAt            int64            `json:"end_at"`
+	DP               float64          `json:"dp"`
+	BoundaryWeight   float64          `json:"boundary_weight"`
+	Features         []segmentFeature `json:"features"`
+	Flags            []string         `json:"flags"`
+	InterruptedCount int              `json:"interrupted_count"`
+	OtherFailedCount int              `json:"other_failed_count"`
 }
 
 func (s quotaSegment) eligible() bool { return len(s.Flags) == 0 }
+
+func (s quotaSegment) eligibleWithInterrupted() bool {
+	if s.eligible() {
+		return true
+	}
+	return s.InterruptedCount > 0 && s.OtherFailedCount == 0 && len(s.Flags) == 1 && s.Flags[0] == "failed_request"
+}
 
 func segmentKeysForEvent(e event, cycleID int64) []segmentKey {
 	scope := eventQuotaScope(e)
 	keys := make([]segmentKey, 0, 2)
 	if e.UsedPercent != nil && e.ResetAt > 0 && e.WindowMinutes > 0 {
-		key := segmentKey{Account: e.Account, Window: scope, CycleID: e.ResetAt, ResetAt: e.ResetAt}
+		key := segmentKey{Account: e.Account, Window: scope, CycleID: 0, ResetAt: e.ResetAt}
 		if scope == mainQuotaScope && cycleID > 0 {
-			key.CycleID, key.ResetAt = cycleID, 0
+			key.CycleID = cycleID
 		}
 		keys = append(keys, key)
 	}
@@ -87,37 +99,74 @@ func segmentKeysForEvent(e event, cycleID int64) []segmentKey {
 		if scope == sparkQuotaScope {
 			window = sparkWeeklyQuotaScope
 		}
-		keys = append(keys, segmentKey{Account: e.Account, Window: window, CycleID: e.SecondaryResetAt, ResetAt: e.SecondaryResetAt})
+		keys = append(keys, segmentKey{Account: e.Account, Window: window, CycleID: 0, ResetAt: e.SecondaryResetAt})
 	}
 	return keys
 }
 
 func (s *store) migrateSegments() error {
+	columns, err := s.db.Query(`PRAGMA table_info(quota_segments)`)
+	if err != nil {
+		return err
+	}
+	oldTable, newColumn := false, false
+	for columns.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err = columns.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			columns.Close()
+			return err
+		}
+		oldTable = true
+		if name == "regime_reset_at" {
+			newColumn = true
+		}
+	}
+	if err = columns.Err(); err != nil {
+		columns.Close()
+		return err
+	}
+	if err = columns.Close(); err != nil {
+		return err
+	}
+	if oldTable && !newColumn {
+		if _, err = s.db.Exec(`DROP TABLE quota_segments; DROP TABLE IF EXISTS quota_segment_progress; DROP TABLE IF EXISTS weight_fits`); err != nil {
+			return err
+		}
+	}
 	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS quota_segments (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		account TEXT NOT NULL, window TEXT NOT NULL, cycle_id INTEGER NOT NULL, lag INTEGER NOT NULL,
+		account TEXT NOT NULL, window TEXT NOT NULL, cycle_id INTEGER NOT NULL, regime_reset_at INTEGER NOT NULL, lag INTEGER NOT NULL,
 		start_event_id INTEGER NOT NULL, end_event_id INTEGER NOT NULL,
 		start_at INTEGER NOT NULL, end_at INTEGER NOT NULL, dp REAL NOT NULL,
 		boundary_weight REAL NOT NULL, features_json TEXT NOT NULL, flags_json TEXT NOT NULL,
+		interrupted_count INTEGER NOT NULL DEFAULT 0, other_failed_count INTEGER NOT NULL DEFAULT 0,
 		created_at INTEGER NOT NULL,
-		UNIQUE(account,window,cycle_id,lag,start_event_id,end_event_id)
+		UNIQUE(account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id)
 	);
 	CREATE INDEX IF NOT EXISTS idx_segments_account_window_time ON quota_segments(account,window,end_at);
 	CREATE TABLE IF NOT EXISTS quota_segment_progress (
-		account TEXT NOT NULL, window TEXT NOT NULL, cycle_id INTEGER NOT NULL,
+		account TEXT NOT NULL, window TEXT NOT NULL, cycle_id INTEGER NOT NULL, regime_reset_at INTEGER NOT NULL,
 		peak_integer INTEGER NOT NULL, last_observed_at INTEGER NOT NULL,
-		PRIMARY KEY(account,window,cycle_id)
+		PRIMARY KEY(account,window,cycle_id,regime_reset_at)
 	);
 	CREATE TABLE IF NOT EXISTS weight_fits (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, fitted_at INTEGER NOT NULL,
 		lag INTEGER NOT NULL, segment_count INTEGER NOT NULL,
 		fit_json TEXT NOT NULL, backtest_json TEXT NOT NULL
 	);
-	CREATE INDEX IF NOT EXISTS idx_weight_fits_time ON weight_fits(fitted_at DESC);`); err != nil {
+	CREATE INDEX IF NOT EXISTS idx_weight_fits_time ON weight_fits(fitted_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_segments_end_event ON quota_segments(end_event_id,lag);
+	CREATE TABLE IF NOT EXISTS online_cycle_scales (
+		account TEXT NOT NULL,window TEXT NOT NULL,cycle_id INTEGER NOT NULL,regime_reset_at INTEGER NOT NULL,
+		log_scale REAL NOT NULL,precision REAL NOT NULL,last_end_event_id INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL,
+		PRIMARY KEY(account,window,cycle_id,regime_reset_at)
+	);`); err != nil {
 		return err
 	}
 	var value string
-	err := s.db.QueryRow(`SELECT value FROM metadata WHERE key=?`, segmentBackfillKey).Scan(&value)
+	err = s.db.QueryRow(`SELECT value FROM metadata WHERE key=?`, segmentBackfillKey).Scan(&value)
 	if err == nil && value == "complete" {
 		return nil
 	}
@@ -175,7 +224,7 @@ func (s *store) rebuildAllQuotaSegments(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for key := range keys {
+	for _, key := range clusteredSegmentKeys(keys) {
 		if err = rebuildQuotaSegmentsForKey(ctx, tx, key, known, 272000); err != nil {
 			return fmt.Errorf("rebuild %s/%s/%d: %w", key.Account, key.Window, key.CycleID, err)
 		}
@@ -184,6 +233,37 @@ func (s *store) rebuildAllQuotaSegments(ctx context.Context) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func clusteredSegmentKeys(raw map[segmentKey]struct{}) []segmentKey {
+	keys := make([]segmentKey, 0, len(raw))
+	for key := range raw {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		if a.Account != b.Account {
+			return a.Account < b.Account
+		}
+		if a.Window != b.Window {
+			return a.Window < b.Window
+		}
+		if a.CycleID != b.CycleID {
+			return a.CycleID < b.CycleID
+		}
+		return a.ResetAt < b.ResetAt
+	})
+	result := make([]segmentKey, 0, len(keys))
+	for _, key := range keys {
+		if len(result) > 0 {
+			previous := result[len(result)-1]
+			if previous.Account == key.Account && previous.Window == key.Window && previous.CycleID == key.CycleID && key.ResetAt-previous.ResetAt <= segmentResetSlack {
+				continue
+			}
+		}
+		result = append(result, key)
+	}
+	return result
 }
 
 func knownSegmentModels(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
@@ -205,22 +285,22 @@ func knownSegmentModels(ctx context.Context, tx *sql.Tx) (map[string]bool, error
 
 func segmentSource(key segmentKey) (string, []any) {
 	base := `SELECT id,requested_at,observed_at,model,service_tier,input_tokens,cache_read_tokens,
-		cache_write_tokens,output_tokens,failed,used_percent,reset_at,window_minutes,
+		cache_write_tokens,output_tokens,failed,status_code,used_percent,reset_at,window_minutes,
 		secondary_used_percent,secondary_reset_at,secondary_window_minutes
 		FROM usage_events WHERE account=? AND quota_scope=?`
 	args := []any{key.Account, key.Window}
 	switch key.Window {
 	case mainQuotaScope:
-		if key.ResetAt == 0 {
-			base += ` AND cycle_id=?`
-			args = append(args, key.CycleID)
+		if key.CycleID == 0 {
+			base += ` AND cycle_id=0 AND reset_at BETWEEN ? AND ?`
+			args = append(args, key.ResetAt-segmentResetSlack, key.ResetAt+segmentResetSlack)
 		} else {
-			base += ` AND cycle_id=0 AND reset_at=?`
-			args = append(args, key.ResetAt)
+			base += ` AND cycle_id=? AND reset_at BETWEEN ? AND ?`
+			args = append(args, key.CycleID, key.ResetAt-segmentResetSlack, key.ResetAt+segmentResetSlack)
 		}
 	case sparkQuotaScope:
-		base += ` AND reset_at=?`
-		args = append(args, key.ResetAt)
+		base += ` AND reset_at BETWEEN ? AND ?`
+		args = append(args, key.ResetAt-segmentResetSlack, key.ResetAt+segmentResetSlack)
 	case weeklyQuotaScope, sparkWeeklyQuotaScope:
 		actualScope := mainQuotaScope
 		if key.Window == sparkWeeklyQuotaScope {
@@ -249,13 +329,13 @@ func loadSegmentEvents(ctx context.Context, tx *sql.Tx, key segmentKey) ([]segme
 		var used, secondary sql.NullFloat64
 		var secondaryReset, secondaryWindow int64
 		if err = rows.Scan(&e.ID, &e.RequestedAt, &e.ObservedAt, &e.Model, &e.ServiceTier,
-			&e.InputTokens, &e.CacheRead, &e.CacheWrite, &e.OutputTokens, &e.Failed,
+			&e.InputTokens, &e.CacheRead, &e.CacheWrite, &e.OutputTokens, &e.Failed, &e.StatusCode,
 			&used, &e.ResetAt, &e.WindowMinutes, &secondary, &secondaryReset, &secondaryWindow); err != nil {
 			return nil, err
 		}
 		if key.Window == weeklyQuotaScope || key.Window == sparkWeeklyQuotaScope {
 			e.ResetAt, e.WindowMinutes, used = secondaryReset, secondaryWindow, secondary
-			if secondaryReset != key.ResetAt {
+			if absSegmentTime(secondaryReset-key.ResetAt) > segmentResetSlack {
 				used.Valid = false
 			}
 		}
@@ -270,7 +350,7 @@ func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey,
 	if err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM quota_segments WHERE account=? AND window=? AND cycle_id=?`, key.Account, key.Window, key.CycleID); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM quota_segments WHERE account=? AND window=? AND cycle_id=? AND regime_reset_at=?`, key.Account, key.Window, key.CycleID, key.ResetAt); err != nil {
 		return err
 	}
 	observations := make([]quotaRegimeObservation, 0, len(events))
@@ -281,8 +361,8 @@ func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey,
 	}
 	anomalies := detectQuotaRegimeAnomalies(key.CycleID, observations)
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO quota_segments
-		(account,window,cycle_id,lag,start_event_id,end_event_id,start_at,end_at,dp,boundary_weight,features_json,flags_json,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+		(account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id,start_at,end_at,dp,boundary_weight,features_json,flags_json,interrupted_count,other_failed_count,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
@@ -297,9 +377,9 @@ func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey,
 			if errJSON != nil {
 				return errJSON
 			}
-			if _, err = stmt.ExecContext(ctx, segment.Account, segment.Window, segment.CycleID, segment.Lag,
+			if _, err = stmt.ExecContext(ctx, segment.Account, segment.Window, segment.CycleID, segment.RegimeResetAt, segment.Lag,
 				segment.StartEventID, segment.EndEventID, segment.StartAt, segment.EndAt,
-				segment.DP, segment.BoundaryWeight, string(features), string(flags), time.Now().Unix()); err != nil {
+				segment.DP, segment.BoundaryWeight, string(features), string(flags), segment.InterruptedCount, segment.OtherFailedCount, time.Now().Unix()); err != nil {
 				return err
 			}
 		}
@@ -315,10 +395,10 @@ func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey,
 			}
 		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO quota_segment_progress(account,window,cycle_id,peak_integer,last_observed_at)
-		VALUES(?,?,?,?,?) ON CONFLICT(account,window,cycle_id) DO UPDATE SET
+	_, err = tx.ExecContext(ctx, `INSERT INTO quota_segment_progress(account,window,cycle_id,regime_reset_at,peak_integer,last_observed_at)
+		VALUES(?,?,?,?,?,?) ON CONFLICT(account,window,cycle_id,regime_reset_at) DO UPDATE SET
 		peak_integer=excluded.peak_integer,last_observed_at=excluded.last_observed_at`,
-		key.Account, key.Window, key.CycleID, peak, last)
+		key.Account, key.Window, key.CycleID, key.ResetAt, peak, last)
 	return err
 }
 
@@ -341,7 +421,7 @@ func buildQuotaSegments(key segmentKey, events []segmentEvent, lag int, known ma
 		}
 		if anchor >= 0 {
 			segment := quotaSegment{
-				Account: key.Account, Window: key.Window, CycleID: key.CycleID, Lag: lag,
+				Account: key.Account, Window: key.Window, CycleID: key.CycleID, RegimeResetAt: key.ResetAt, Lag: lag,
 				StartEventID: events[anchor].ID, EndEventID: e.ID,
 				StartAt: events[anchor].pointTime(), EndAt: e.pointTime(),
 				DP: float64(integer - anchorPercent), BoundaryWeight: 1,
@@ -367,8 +447,13 @@ func buildQuotaSegments(key segmentKey, events []segmentEvent, lag int, known ma
 					request := events[i]
 					if request.Failed {
 						segment.Flags = addSegmentFlag(segment.Flags, "failed_request")
+						if isInterruptedStatus(request.StatusCode) {
+							segment.InterruptedCount++
+						} else {
+							segment.OtherFailedCount++
+						}
 					}
-					if request.ResetAt > 0 && request.ResetAt != baseReset {
+					if request.ResetAt > 0 && absSegmentTime(request.ResetAt-baseReset) > segmentResetSlack {
 						segment.Flags = addSegmentFlag(segment.Flags, "regime_change")
 					}
 					model := normalizeModel(request.Model)
@@ -446,9 +531,30 @@ func addSegmentFlag(flags []string, flag string) []string {
 	return append(flags, flag)
 }
 
+func isInterruptedStatus(status int) bool {
+	return status == 0 || status == 408 || status == 499 || status == 502
+}
+
+func absSegmentTime(value int64) int64 {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
 func (s *store) refreshSegmentsForEvent(ctx context.Context, tx *sql.Tx, e event, cycleID int64) error {
 	var known map[string]bool
 	for _, key := range segmentKeysForEvent(e, cycleID) {
+		var canonical int64
+		errCanonical := tx.QueryRowContext(ctx, `SELECT regime_reset_at FROM quota_segment_progress WHERE account=? AND window=? AND cycle_id=?
+			AND regime_reset_at BETWEEN ? AND ? ORDER BY ABS(regime_reset_at-?) LIMIT 1`, key.Account, key.Window, key.CycleID,
+			key.ResetAt-segmentResetSlack, key.ResetAt+segmentResetSlack, key.ResetAt).Scan(&canonical)
+		if errCanonical != nil && errCanonical != sql.ErrNoRows {
+			return errCanonical
+		}
+		if errCanonical == nil {
+			key.ResetAt = canonical
+		}
 		used := e.UsedPercent
 		if key.Window == weeklyQuotaScope || key.Window == sparkWeeklyQuotaScope {
 			used = e.SecondaryUsedPercent
@@ -458,7 +564,7 @@ func (s *store) refreshSegmentsForEvent(ctx context.Context, tx *sql.Tx, e event
 		}
 		var peak, last int64
 		err := tx.QueryRowContext(ctx, `SELECT peak_integer,last_observed_at FROM quota_segment_progress
-			WHERE account=? AND window=? AND cycle_id=?`, key.Account, key.Window, key.CycleID).Scan(&peak, &last)
+			WHERE account=? AND window=? AND cycle_id=? AND regime_reset_at=?`, key.Account, key.Window, key.CycleID, key.ResetAt).Scan(&peak, &last)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -479,8 +585,8 @@ func (s *store) refreshSegmentsForEvent(ctx context.Context, tx *sql.Tx, e event
 }
 
 func (s *store) quotaSegments(ctx context.Context, lag int) ([]quotaSegment, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,account,window,cycle_id,lag,start_event_id,end_event_id,
-		start_at,end_at,dp,boundary_weight,features_json,flags_json FROM quota_segments WHERE lag=? ORDER BY end_at,id`, lag)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id,
+		start_at,end_at,dp,boundary_weight,features_json,flags_json,interrupted_count,other_failed_count FROM quota_segments WHERE lag=? ORDER BY end_at,id`, lag)
 	if err != nil {
 		return nil, err
 	}
@@ -489,9 +595,9 @@ func (s *store) quotaSegments(ctx context.Context, lag int) ([]quotaSegment, err
 	for rows.Next() {
 		var segment quotaSegment
 		var features, flags string
-		if err = rows.Scan(&segment.ID, &segment.Account, &segment.Window, &segment.CycleID, &segment.Lag,
+		if err = rows.Scan(&segment.ID, &segment.Account, &segment.Window, &segment.CycleID, &segment.RegimeResetAt, &segment.Lag,
 			&segment.StartEventID, &segment.EndEventID, &segment.StartAt, &segment.EndAt, &segment.DP,
-			&segment.BoundaryWeight, &features, &flags); err != nil {
+			&segment.BoundaryWeight, &features, &flags, &segment.InterruptedCount, &segment.OtherFailedCount); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal([]byte(features), &segment.Features); err != nil {

@@ -114,7 +114,11 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if !ok {
 			return jsonResponse(200, weightFit{Models: []learnedModelWeights{}})
 		}
-		return jsonResponse(200, result.FittedWeights)
+		current, err := a.store.overlayOnlineCycleScales(ctx, result.FittedWeights)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		return jsonResponse(200, current)
 	case strings.HasSuffix(req.Path, "/summary"):
 		account := req.Query.Get("account")
 		accounts, err := a.store.accounts(ctx)

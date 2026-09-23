@@ -41,6 +41,14 @@ func TestBuildQuotaSegmentsCrossingsAndLag(t *testing.T) {
 }
 
 func TestBuildQuotaSegmentsFlagsBadIntervals(t *testing.T) {
+	for _, status := range []int{0, 408, 499, 502} {
+		if !isInterruptedStatus(status) {
+			t.Fatalf("status %d not interrupted", status)
+		}
+	}
+	if isInterruptedStatus(503) {
+		t.Fatal("503 must remain a separate failure")
+	}
 	events := []segmentEvent{
 		{ID: 1, RequestedAt: 100, Model: "gpt-5.6-sol", HasUsed: true, UsedPercent: 0, ResetAt: 1000},
 		{ID: 2, RequestedAt: 110, Model: "unknown-model", InputTokens: 100, Failed: true, HasUsed: true, UsedPercent: 0, ResetAt: 1000},
@@ -57,6 +65,9 @@ func TestBuildQuotaSegmentsFlagsBadIntervals(t *testing.T) {
 		if !hasSegmentFlag(segments[0].Flags, flag) {
 			t.Fatalf("first segment missing %s: %v", flag, segments[0].Flags)
 		}
+	}
+	if segments[0].InterruptedCount != 1 || segments[0].OtherFailedCount != 0 {
+		t.Fatalf("interrupt counts=%#v", segments[0])
 	}
 	for _, flag := range []string{"quota_drop", "regime_change"} {
 		if !hasSegmentFlag(segments[1].Flags, flag) {
@@ -162,5 +173,31 @@ func TestWeeklySegmentIncludesRequestsWithoutSecondaryHeader(t *testing.T) {
 	}
 	if weekly == nil || len(weekly.Features) != 1 || weekly.Features[0].Tokens != 500 {
 		t.Fatalf("weekly features = %#v", weekly)
+	}
+}
+
+func TestHistoricalBackfillSplitsHiddenResetAndMergesMinuteJitter(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "hidden-reset.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	if _, err = s.db.Exec(`INSERT INTO quota_cycles(id,account,started_at,reset_at,window_minutes) VALUES(4,'a',100,300000,10080);
+	INSERT INTO usage_events(cycle_id,requested_at,observed_at,account,model,input_tokens,total_tokens,used_percent,reset_at,window_minutes,quota_scope) VALUES
+	(4,100,100,'a','gpt-5.6-sol',100,100,0,1000,10080,'main'),
+	(4,110,110,'a','gpt-5.6-sol',100,100,1,1060,10080,'main'),
+	(4,200,200,'a','gpt-5.6-sol',100,100,0,200000,10080,'main'),
+	(4,210,210,'a','gpt-5.6-sol',100,100,1,200060,10080,'main');`); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.rebuildAllQuotaSegments(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	segments, err := s.quotaSegments(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segments) != 2 || segments[0].RegimeResetAt == segments[1].RegimeResetAt || segments[0].DP != 1 || segments[1].DP != 1 {
+		t.Fatalf("hidden reset segments=%#v", segments)
 	}
 }

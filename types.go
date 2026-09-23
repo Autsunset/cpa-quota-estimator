@@ -100,6 +100,7 @@ type config struct {
 	HistoryDays              int        `yaml:"history_days"`
 	CaptureCodexHeaders      bool       `yaml:"capture_codex_headers"`
 	WeightHalfLifeDays       float64    `yaml:"weight_half_life_days"`
+	WeightRandomWalkSigma    float64    `yaml:"weight_random_walk_sigma"`
 	WeightFitIntervalMinutes int        `yaml:"weight_fit_interval_minutes"`
 	LearnedFit               *weightFit `yaml:"-"`
 }
@@ -121,6 +122,7 @@ func defaultConfig() config {
 		ApplyLongContextPricing:  false,
 		HistoryDays:              365,
 		WeightHalfLifeDays:       21,
+		WeightRandomWalkSigma:    .35,
 		WeightFitIntervalMinutes: 60,
 	}
 }
@@ -171,6 +173,7 @@ type event struct {
 	CodexHeadersJSON       string
 	LearnedQuotaPct        *float64
 	LearnedSecondaryPct    *float64
+	LearnedFit             *weightFit
 }
 
 type quotaPoint struct {
