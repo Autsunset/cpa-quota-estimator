@@ -89,6 +89,11 @@ func managementRegistration() any {
 			{"Method": "GET", "Path": base + "/usage"},
 			{"Method": "GET", "Path": base + "/weights"},
 			{"Method": "GET", "Path": base + "/weights/backtest"},
+			{"Method": "GET", "Path": base + "/calibration"},
+			{"Method": "GET", "Path": base + "/calibration/options"},
+			{"Method": "POST", "Path": base + "/calibration/start"},
+			{"Method": "POST", "Path": base + "/calibration/end"},
+			{"Method": "POST", "Path": base + "/calibration/cancel"},
 			{"Method": "GET", "Path": base + "/summary"},
 			{"Method": "GET", "Path": base + "/series"},
 			{"Method": "GET", "Path": base + "/monthly"},
@@ -398,7 +403,48 @@ func (a *app) recordUsage(r usageRecord) error {
 			e.CodexHeadersJSON = string(raw)
 		}
 	}
-	return a.store.insertEvent(ctx, e, time.Duration(a.cfg.SampleIntervalMinutes)*time.Minute)
+	if err := a.store.insertEvent(ctx, e, time.Duration(a.cfg.SampleIntervalMinutes)*time.Minute); err != nil {
+		return err
+	}
+	claimed, err := a.store.claimCalibrationRefit(ctx, account)
+	if err != nil {
+		return err
+	}
+	if claimed {
+		go a.runGuidedCalibrationRefit(a.store, a.cfg, account)
+	}
+	return nil
+}
+
+func (a *app) runGuidedCalibrationRefit(s *store, cfg config, account string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	result, err := s.refreshWeightFit(ctx, weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80, RandomWalkSigma: cfg.WeightRandomWalkSigma})
+	if err == nil && !result.FittedWeights.Available {
+		err = fmt.Errorf("weight fit unavailable")
+	}
+	var after *weightEstimate
+	if err == nil {
+		session, ok, readErr := s.calibrationSession(ctx, account)
+		if readErr != nil {
+			err = readErr
+		} else if ok {
+			after = calibrationWeight(&result.FittedWeights, session.ModelB)
+		}
+	}
+	if err == nil {
+		a.mu.Lock()
+		if a.store == s {
+			a.cfg.LearnedFit = &result.FittedWeights
+			_ = s.seedOnlineCycleScales(ctx, a.cfg.LearnedFit)
+			_, _ = s.updateWeightAttributions(ctx, a.cfg.LearnedFit, a.cfg.LongContextThreshold)
+			if normalizePricingMode(a.cfg.PricingMode) == pricingModeLearned {
+				_, _ = s.savePricingSettingsAndRecalculate(ctx, a.cfg.pricingSettings(), a.cfg)
+			}
+		}
+		a.mu.Unlock()
+	}
+	_ = s.finishCalibrationRefit(context.Background(), account, after, err)
 }
 
 func canonicalResetAt(resetAt int64) int64 {

@@ -244,6 +244,9 @@ ORDER BY sampled_at DESC,id DESC LIMIT 1`, cycle.ID, e.ResetAt, e.WindowMinutes)
 	if err = s.refreshSegmentsForEvent(ctx, tx, e, cycle.ID); err != nil {
 		return err
 	}
+	if err = s.advanceCalibrationForEvent(ctx, tx, e, cycle.ID, eventID); err != nil {
+		return err
+	}
 	if err = tx.Commit(); err != nil {
 		return err
 	}

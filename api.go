@@ -103,6 +103,88 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			return jsonResponse(200, weightBacktest{Lags: []backtestLagResult{}, Scores: []backtestScore{}})
 		}
 		return jsonResponse(200, result)
+	case strings.HasSuffix(req.Path, "/calibration/options"):
+		if !strings.EqualFold(req.Method, "GET") {
+			return textResponse(405, "method not allowed")
+		}
+		var models, locked []string
+		if a.cfg.LearnedFit != nil && a.cfg.LearnedFit.Available {
+			for _, row := range a.cfg.LearnedFit.Models {
+				models = append(models, row.Model)
+				if row.Input.PriorLocked {
+					locked = append(locked, row.Model)
+				}
+			}
+		}
+		return jsonResponse(200, map[string]any{"models": models, "locked_models": locked})
+	case strings.HasSuffix(req.Path, "/calibration/start"):
+		if !strings.EqualFold(req.Method, "POST") {
+			return textResponse(405, "method not allowed")
+		}
+		var body struct {
+			Account       string  `json:"account"`
+			ModelA        string  `json:"model_a"`
+			ModelB        string  `json:"model_b"`
+			TargetPercent float64 `json:"target_percent"`
+		}
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			return textResponse(400, err.Error())
+		}
+		if a.cfg.LearnedFit == nil || !a.cfg.LearnedFit.Available {
+			return textResponse(409, "weight fit required before calibration")
+		}
+		before := calibrationWeight(a.cfg.LearnedFit, body.ModelB)
+		if before == nil || !before.PriorLocked {
+			return textResponse(400, "model_b must currently be prior-locked")
+		}
+		if calibrationWeight(a.cfg.LearnedFit, body.ModelA) == nil {
+			return textResponse(400, "model_a must be in the weight fit")
+		}
+		session, err := a.store.startCalibration(ctx, body.Account, body.ModelA, body.ModelB, body.TargetPercent, before)
+		if err != nil {
+			return textResponse(400, err.Error())
+		}
+		return jsonResponse(200, session)
+	case strings.HasSuffix(req.Path, "/calibration/end") || strings.HasSuffix(req.Path, "/calibration/cancel"):
+		if !strings.EqualFold(req.Method, "POST") {
+			return textResponse(405, "method not allowed")
+		}
+		var body struct {
+			Account string `json:"account"`
+		}
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			return textResponse(400, err.Error())
+		}
+		session, err := a.store.endOrCancelCalibration(ctx, body.Account, strings.HasSuffix(req.Path, "/cancel"))
+		if err != nil {
+			return textResponse(400, err.Error())
+		}
+		if session.RefitStatus == "pending" {
+			claimed, claimErr := a.store.claimCalibrationRefit(ctx, body.Account)
+			if claimErr != nil {
+				return textResponse(500, claimErr.Error())
+			}
+			if claimed {
+				go a.runGuidedCalibrationRefit(a.store, a.cfg, body.Account)
+			}
+		}
+		return jsonResponse(200, session)
+	case strings.HasSuffix(req.Path, "/calibration"):
+		if !strings.EqualFold(req.Method, "GET") {
+			return textResponse(405, "method not allowed")
+		}
+		account := req.Query.Get("account")
+		if account == "" {
+			return textResponse(400, "account is required")
+		}
+		session, ok, err := a.store.calibrationSession(ctx, account)
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
+		if !ok {
+			return jsonResponse(200, map[string]any{"available": false})
+		}
+		return jsonResponse(200, session)
 	case strings.HasSuffix(req.Path, "/weights"):
 		if !strings.EqualFold(req.Method, "GET") {
 			return textResponse(405, "method not allowed")
