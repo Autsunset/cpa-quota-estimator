@@ -40,7 +40,7 @@
 - 将 Token 数、模型、`service_tier`、所选口径计价值和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
-- 仪表盘提供三种计价口径：**官方 API 美元价**、**Codex Credits（新安装默认）**和**自定义美元价**。API 与 Credits 从各模型公开价格出发，以用户选定模型为锚（默认 GPT-5.6 Sol），按学习器得到的相对额度倍率调整其他模型；不可辨识的模型倍率固定为 1 并标为“未标定”。输入／缓存／输出保持各模型自己的官方价格形状，Fast 与长上下文倍率和官方值并列展示。自定义口径可改价格和 Fast／长上下文设置，不应用学习器价格调整。旧 `legacy_api`／`current_api` 设置迁移为 `api`，`learned` 迁移为 `credits`；旧名称在设置接口仍作为别名接收。保存立即返回后台任务 ID，单个事务同时重算请求与样本前缀和。
+- 仪表盘提供三种计价口径：**官方 API 美元价**、**Codex Credits（新安装默认）**和**自定义美元价**。API 与 Credits 从各模型公开价格出发，以用户选定模型为锚（默认 GPT-5.6 Sol），按学习器得到的相对额度倍率调整其他模型；不可辨识的模型倍率固定为 1 并标为“未标定”。输入／缓存／输出保持各模型自己的官方价格形状，Fast 与长上下文倍率和官方值并列展示。自定义口径可改价格和 Fast／长上下文设置，不应用学习器价格调整。旧 `legacy_api`／`current_api` 设置迁移为 `api`，`learned` 迁移为 `credits`；旧名称在设置接口仍作为别名接收。保存立即返回后台任务 ID，以每批约 500 行的短事务重算请求和样本前缀和。
 - 按账号的 **近期模型用量** 表可查看最近 24 小时、7 天或 30 天各模型的请求、失败、未缓存输入、缓存读写、输出及总 Token、官方 Credits 参考值、学习器估计的分模型额度消耗和当前口径计价值。表格还按各周期“每 1% 计价值”分摊当前口径用量，并显示与账号实测额度增长的差异。实测额度增长仍属于整个账号；分模型份额明确标为估计。没有官方 Credits 单价的模型标为未收录。
 - 为主额度、周额度、Spark 与 Spark 周额度建立首次跨整数读数的 `quota_segments`，保存 lag 0/1/2 特征及失败、未知模型、重置、异常、长空档标记。相差两分钟以内的重置时间合并；同一个旧周期内确认的 29%→0% 读数跳变另建学习阶段。升级时一次性回填历史，后续跨越仅刷新受影响阶段。另有幂等历史修复，将旧版误合并的长期提前重置拆成独立周期并重归属事件和样本。
 - 学习器为每个学习周期建立独立 log 容量尺度，以可配置的高斯随机游走连接相邻周期（σ 默认 **0.35**）；每次新跨越都会在线更新当前周期尺度。新周期第一次跨越前借用上周期尺度；当前周期每 1% 计价值的点估计和区间用于剩余计价值、按模型剩余 Token 与燃尽预测。模型倍率跨周期共享，只有同周期混用提供足够条件 Fisher 信息才放开；共享倍率先在各周期尺度近乎自由的条件下拟合，再用随机游走平滑尺度。缓存／输出类型比例默认固定为 Codex Credits 形状，须同时通过 Fisher 与构成变化门槛才放开；API 与仪表盘会标注先验锁定。继续使用 Huber 损失、默认 21 天衰减和 Laplace 区间。记录状态 0/408/499/502 的中断请求数供敏感性分析，默认拟合不假定其固定费用。逐请求额度百分比仍为估计，不是上游账单。
@@ -66,7 +66,7 @@
 
 仪表盘可选 `api`、`credits`、`custom`。API 和 Credits 令锚定模型保持公开单价，其他模型按 `adj(模型) / adj(锚定)` 调整；`adj` 来自学习器相对于该模型官方价格形状的倍率，锁定先验时取 1。价格表显示计算价、官方价、差异和不确定性；Fast／长上下文另列计算与官方倍率。自定义口径可编辑每个模型的输入、缓存读取、输出、缓存写入美元价及 Fast 倍率、长上下文开关和阈值。“恢复官方价格”重置尚未保存的自定义草稿。以上只影响插件估值，不改变上游计费。
 
-`POST /pricing-settings` 立即返回 HTTP 202 和任务 ID；通过 `GET /pricing-settings/task?id=<id>` 查看请求／样本进度。任务进行中再次保存返回 409。重算在一个事务中完成，失败会保留原有值与设置。旧接口名称 `legacy_api`、`current_api` 映射到 `api`，`learned` 映射到 `credits`；已有保存设置升级时自动迁移并重算。
+`POST /pricing-settings` 立即返回 HTTP 202 和任务 ID；通过 `GET /pricing-settings/task?id=<id>` 查看请求／样本进度。任务进行中再次保存返回 409。任务读取快照前先切换内存口径，让新请求立刻使用目标价格；历史行按批次更新，`recalculating` 标明期间可能短暂混用新旧值。失败时按批恢复旧口径和历史值。旧接口名称 `legacy_api`、`current_api` 映射到 `api`，`learned` 映射到 `credits`；已有保存设置升级时后台分批迁移，不因重计价拖慢插件注册。
 
 ## 估算方法
 
@@ -203,7 +203,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 - `credits`：[公开 Codex Credits 单价](https://learn.chatgpt.com/docs/pricing)，采用相同锚定规则。官方表未单列缓存写入或长上下文价格；未收录模型使用 API 价格推算。
 - `custom`：逐模型编辑输入／缓存读取／输出／缓存写入美元价，以及 Fast 倍率、长上下文开关和阈值（默认 272,000 Token）。初始值取官方 API 价，不应用学习器价格调整。
 
-后台重算期间仪表盘禁用设置并轮询进度。请求重计价和样本累计值在同一 SQLite 事务内更新，每个周期使用线性时间前缀和。所选周期、跨周期图、模型剩余 Token 与月度汇总采用已提交的口径。为兼容旧客户端，JSON 中 `_cost_usd` 字段名保留；实际单位看 `pricing_mode` 和 `value_unit`。
+后台重算期间仪表盘禁用设置并轮询进度。独立只读连接先计算快照，再以约 500 行一个短事务更新请求和逐周期样本前缀和，批次之间释放写连接。任务期间新请求按目标口径计价，结束时补算新增事件影响的周期样本；接口和仪表盘以 `recalculating` 提示历史图可能暂时混用新旧值。失败会按批恢复旧设置和值。用量写入遇到 busy／超时会重试约 30 秒；最终失败记入 `metadata.dropped_usage_events` 并在仪表盘提示。拟合触发重计价须有实际使用因子变化超过 2%，且六小时最多一次；custom 不触发。WAL 检查点由独立连接执行。为兼容旧客户端，JSON 中 `_cost_usd` 字段名保留；实际单位看 `pricing_mode` 和 `value_unit`。
 
 对于所选主额度周期，以及检测到的独立周限额周期，仪表盘会列出各 Codex 模型的剩余未缓存输入、输出和缓存命中 Token。每一列都是独立假设：剩余计价值全部用于该模型及该 Token 类型，并采用 Standard、基础上下文单价。
 
@@ -230,7 +230,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | GET | `/v0/management/cpa-quota-estimator/prices` | 各模型官方价、计算价及倍率区间 |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即触发 models.dev 价格同步 |
 | GET | `/v0/management/cpa-quota-estimator/pricing-settings` | 读取已保存的口径、锚定模型和自定义价格 |
-| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 启动原子后台重算任务，立即返回 HTTP 202 和任务 ID |
+| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 启动分批后台重算任务，立即返回 HTTP 202 和任务 ID |
 | GET | `/v0/management/cpa-quota-estimator/pricing-settings/task?id=<id>` | 轮询重算进度和完成状态 |
 | GET | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | 读取账号采集模式和容量估算假设 |
 | POST | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | 保存 `{"mode":"cpa_only"}`、`{"mode":"mixed"}` 或 `{"mode":"unknown"}`，不改写用量 |
@@ -244,7 +244,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 
 `summary`、`series`、月度汇总和概览账号记录会返回 `collection_coverage`，包含 `mode`、`configured`、`usage_source: "cpa"`、`quota_source: "account_quota_pool"` 及 `capacity_estimation_enabled`。默认返回 `configured: false` 和 `assumption: "all_usage_through_cpa"`，表示假设而非已验证的覆盖范围。估算还会返回 `coverage_mode`、`assumption` 和 `sample_confidence`。混合/未知模式下，`available` 为 false，`confidence` 为 `"unavailable"`，`unavailable_reason` 分别为 `"partial_usage_collection"` 或 `"usage_coverage_unknown"`。容量数值及区间使用 JSON `null`，容量轨迹数组为空，按模型换算清空；`sample_confidence` 和样本数仍独立保留。月度容量字段采用同样规则；`quota_coverage_complete` 仍只表示月初时间基线是否完整，不代表采集到了其他入口的用量。
 
-`summary` 和 `series` 会返回 `remaining_by_model`；自动检测到的 `weekly_quota` 也包含自己的模型余量列表。计价设置会返回 `pricing_mode` 与 `value_unit`；通过 `POST /pricing-settings` 切换口径时，接口只会在全部保留历史周期完成重算后返回成功。
+`summary` 和 `series` 会返回 `remaining_by_model`；自动检测到的 `weekly_quota` 也包含自己的模型余量列表。计价设置会返回 `pricing_mode` 与 `value_unit`；通过 `POST /pricing-settings` 切换口径时接口立即返回任务 ID；完成状态须查询 `/pricing-settings/task`。
 
 当某账号的最新有效 Primary 观测为 5 小时窗口，并且同时包含更大的 Secondary 窗口时，`summary`、`series` 和 `monthly` 会返回 `five_hour_quota_detected: true`；`series` 会自动增加独立的 `weekly_quota`，`monthly` 会增加 `weekly_summary`，无需额外查询参数。周限额计算只使用带有已检测 5 小时 Primary 窗口的请求，因此只有周限额的 Pro 账号仍保持原来的主额度单窗口响应结构和统计口径。
 
