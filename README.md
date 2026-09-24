@@ -27,7 +27,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 
 - **All accounts in one view:** merge recorded accounts with the configured Codex OAuth inventory when available, including accounts awaiting their first sample and credentials that are disabled or unavailable. The table supports per-column filters, type-aware sorting, persisted resizing, and keyboard controls.
 - **Independent quota scopes:** automatically separate a detected 5-hour Primary quota from its weekly Secondary quota for both the main Codex allowance and `gpt-5.3-codex-spark`, while keeping all Spark usage in a completely independent ledger.
-- **Capacity in practical units:** estimate full-cycle and remaining capacity in Tokens and the selected pricing basis—current API prices, pre-discount API prices, or subscription Credits—with uncertainty ranges and confidence levels.
+- **Capacity in practical units:** estimate full-cycle and remaining capacity in Tokens and the selected pricing basis—official API USD rates, Codex Credits, or custom USD rates—with uncertainty ranges and confidence levels.
 - **Actionable forecasts:** compare actual usage with a sustainable baseline, cumulative-average pace, and recent pace to estimate exhaustion time and whether a quota will survive until reset.
 - **History that survives resets:** retain confirmed cycles, cross-cycle charts, calendar-month reports, quota-consumption equivalents, reset counts, and unused quota at reset.
 - **Passive and private by design:** consume no extra quota, store no prompts or response bodies, and keep retained usage metadata in a local SQLite database.
@@ -40,15 +40,12 @@ The dashboard answers the operational questions that raw quota percentages do no
 - Persists Token counts, model, `service_tier`, selected-basis pricing value, and `X-Codex-Primary-*` quota metadata in a private SQLite database.
 - Syncs OpenAI model pricing from `https://models.dev/catalog.json` by default.
 - Accounts for cached reads/writes, output Tokens, and the context pricing tier above 272K input Tokens.
-- Provides four persistent pricing bases: pre-discount API prices, current API prices, **Codex Credits (default for new users)**, and **learned quota weights**. Existing saved selections are preserved on upgrade. The Credits basis uses the [published Codex token rate card](https://learn.chatgpt.com/docs/pricing) for listed models; unlisted models retain an API-derived estimate. Credit prices alone do not determine a Pro plan's included quota consumption. Learned mode becomes selectable after a usable fit and values requests in millions of GPT-5.6 Sol uncached-input Token equivalents. Saving a basis transactionally recalculates retained request and cycle values from raw Tokens.
+- Provides three pricing bases: **official API USD**, **Codex Credits (new-install default)**, and **custom USD**. API and Credits start from their published model rate cards, then apply a learner-derived model adjustment relative to the selected anchor (GPT-5.6 Sol by default). An unidentifiable model keeps adjustment 1 and is labeled uncalibrated. Each model retains its own official input/cache/output shape; Fast and long-context factors are shown against official rates. Custom prices, Fast multiplier, and long-context controls are editable, and custom mode never applies learner price adjustments. Legacy `legacy_api`/`current_api` settings migrate to `api`; `learned` migrates to `credits`. The old names remain accepted on the settings endpoint as aliases. Saving starts one background recalculation task and returns its ID immediately; a transaction updates request values and quota-sample prefix sums together.
 - Shows a per-account **recent model usage** table for 24 hours, 7 days, or 30 days: requests, failures, uncached input, cache reads/writes, output and total Tokens, official-rate credit equivalents, learned per-model quota attribution estimates, and values under the selected pricing basis. The table also allocates selected-basis value by each cycle’s estimated value per quota percent and shows its gap from observed account growth. Observed quota growth remains account-wide; attribution is explicitly a model estimate. Models without a published credit rate are marked as unpriced.
 - Builds first-integer-crossing `quota_segments` for main, weekly, Spark, and Spark weekly windows, with lag 0/1/2 feature summaries and exclusion flags for failed requests, unknown models, resets, quota anomalies, and long gaps. Reset timestamps within two minutes are grouped; a confirmed 29%→0% transition inside a stored cycle is treated as a separate learning regime. A historical backfill runs once on upgrade; later crossings refresh their affected regime. A separate idempotent repair splits previously merged long-lived early resets and reassigns event and sample cycle IDs.
-- The learner uses a separate log capacity scale for each learning cycle, linked by a configurable Gaussian random walk (σ **0.35** by default). Each new crossing updates its current-cycle scale online. The current cycle borrows the previous scale before its first crossing; its point and interval estimate of selected-basis value per 1% drives remaining value, model Token allowances, and burn forecasts. Saved API-basis users see a dismissible Credits recommendation (historical MAE 0.277 versus 0.349 for legacy API). Model factors are shared across cycles and are unlocked only when within-cycle mixing supplies conditional Fisher information; shared factors are fitted with cycle scales effectively free before random-walk smoothing. Cache/output ratios stay fixed to the Codex Credits shape until both their Fisher and composition-variation gates pass; the API and dashboard label prior-locked values. Huber loss, 21-day decay, and Laplace intervals remain in use. Interrupted status 0/408/499/502 counts are retained for sensitivity analysis; they are not assumed to have a fixed charge in the default fit. Per-request percentages remain estimates, not upstream billing records.
-- Adds **guided passive calibration**: choose an account, reference model, prior-locked target model, and quota target (5% per phase by default). The dashboard tracks two same-cycle model-only phases, crossing counts, and selected-basis value contamination (>5% warning), then refits weights and shows the target input multiplier before and after. A quota reset invalidates the session. Session state and event-ID spans are available through `GET /calibration`; start, end-phase, and cancel actions use `/calibration/start`, `/calibration/end`, and `/calibration/cancel`. No probe or model request is generated.
-- Provides a separate **Model quota calibration** always-visible Astra multiplier control (default **1.8×**, range **0.01–100**; set **1×** for no calibration); official/catalog base prices remain unchanged ($10 input, $1 cache read, $50 output per million Tokens). The multiplier applies only to the API bases; Credits uses the published Astra ratio and learned mode uses its fitted Astra weight directly. The dashboard shows base and effective rates for the selected basis. This is a provisional workload calibration, not an official price increase.
-- Supports configurable Fast pricing:
-  - `multiplier`: multiply normal/long-context pricing, default **2.5×**;
-  - `source`: use explicit `experimental.modes.fast.cost` pricing from models.dev.
+- The learner uses a separate log capacity scale for each learning cycle, linked by a configurable Gaussian random walk (σ **0.35** by default). Each new crossing updates its current-cycle scale online. The current cycle borrows the previous scale before its first crossing; its point and interval estimate of selected-basis value per 1% drives remaining value, model Token allowances, and burn forecasts. Model factors are shared across cycles and are unlocked only when within-cycle mixing supplies conditional Fisher information; shared factors are fitted with cycle scales effectively free before random-walk smoothing. Cache/output ratios stay fixed to the Codex Credits shape until both their Fisher and composition-variation gates pass; the API and dashboard label prior-locked values. Huber loss, 21-day decay, and Laplace intervals remain in use. Interrupted status 0/408/499/502 counts are retained for sensitivity analysis; they are not assumed to have a fixed charge in the default fit. Per-request percentages remain estimates, not upstream billing records.
+- Adds **guided passive calibration**: choose an account, reference model, Astra or another prior-locked target model, and quota target (5% per phase by default). The dashboard tracks two same-cycle model-only phases, crossing counts, and selected-basis value contamination (>5% warning), then refits weights and shows the target input multiplier before and after. A quota reset invalidates the session. Session state and event-ID spans are available through `GET /calibration`; start, end-phase, and cancel actions use `/calibration/start`, `/calibration/end`, and `/calibration/cancel`. No probe or model request is generated.
+- Shows a calculated price table with each cell’s official rate, relative difference, and uncertainty; the anchor row has zero difference. Official API and Credits input/cache/output rates coincide up to a factor of 25 for the listed models, while cache writes, long context, and Fast use distinct rules. The optional `capture_codex_headers` setting omits opaque `X-Codex-Turn-State` values.
 - Estimates full-cycle and remaining-quota Token/pricing-value-equivalent capacity with interquartile ranges and confidence levels, and converts the selected cycle’s remaining value into per-model uncached-input, output, and cache-hit Token allowances.
 - Shows actual quota usage, a sustainable baseline, cumulative-average projection, recent-rate projection, predicted exhaustion, planned reset time, and countdown.
 - Maintains an independent ledger for every confirmed quota cycle. Historical cycles remain available in the selector after a reset.
@@ -65,11 +62,11 @@ The dashboard answers the operational questions that raw quota percentages do no
 - Retains data for 365 days by default and never stores request or response bodies.
 - Runs independently of CPA Manager Plus (CPAMP).
 
-## Model quota calibration
+## Pricing bases
 
-In **Pricing rules**, edit the always-visible **Model quota calibration → Astra ×** field (default **1.8**). It works with **current API prices and pre-discount API prices**. Credits uses the published Astra ratio without this multiplier. Set **1** for no multiplier—there is no separate switch. Click **Save and recalculate** to persist the value and transactionally rebuild historical estimates, cycle capacity, and remaining-Token allowances. Switching pricing bases or restarting CPA preserves the multiplier. The dashboard saves `astra_multiplier` with `apply_model_calibration: true` through `POST /pricing-settings`; the former boolean remains accepted for older API clients, and a previously disabled setting appears as **1×** in the new UI.
+Choose `api`, `credits`, or `custom` in the dashboard. API and Credits anchor the selected model at its published rate and adjust other models by `adj(model) / adj(anchor)`, where the learner estimates each adjustment relative to that model’s official price shape. Prior-locked adjustments equal 1. The price table displays calculated and official rates plus uncertainty; Fast and long-context factors are compared separately. Custom mode offers input, cache-read, output, and cache-write USD rates for every catalog model, a Fast multiplier, and a long-context toggle and threshold. **Restore official prices** resets the custom draft. These values affect plugin estimates only, never upstream billing.
 
-This setting affects **plugin estimates only**. It never changes catalog prices, raw Tokens, quota percentages, or **New API billing**. Official/base rates remain visible alongside the applied multiplier and effective rates.
+`POST /pricing-settings` returns HTTP 202 with a task ID. Poll `GET /pricing-settings/task?id=<id>` for event/sample progress; another save receives 409 while a task runs. Changes commit atomically, and a failure leaves prior values and settings intact. API aliases `legacy_api` and `current_api` map to `api`; `learned` maps to `credits`. Existing saved settings are migrated and recalculated on upgrade.
 
 ## Estimation
 
@@ -159,13 +156,9 @@ plugins:
       sample_interval_minutes: 5
       price_source_url: https://models.dev/catalog.json
       price_sync_interval_minutes: 1440
-      fast_pricing_mode: multiplier
-      fast_multiplier: 2.5
-      pricing_mode: credits # credits (default) | legacy_api | current_api | learned
-      apply_fast_pricing: true
-      astra_multiplier: 1.8
+      pricing_mode: credits # credits (default) | api | custom
+      anchor_model: gpt-5.6-sol
       long_context_threshold: 272000
-      apply_long_context_pricing: false
       history_days: 365
       capture_codex_headers: false
       weight_half_life_days: 21
@@ -186,9 +179,9 @@ Open **额度容量预测 / Quota Estimator** from CPAMP. The dashboard first tr
 
 > **Cold start:** Installing the plugin does not immediately show quota samples. The plugin is completely passive — it only records requests that actually flow through CPA and cannot reconstruct usage that happened before installation. The all-account overview attempts to merge configured Codex OAuth credentials from CPA's protected `auth-files` management endpoint; credentials that have not yet passed a request through CPA are shown as awaiting their first sample instead of appearing to be missing. Current remaining quota and reset time appear after the first real Codex request, and capacity estimates start only once the recorded used percentage grows between samples (`delta used percentage > 0`). Because quota headers report integer percentages, the first usable estimate may take several requests, and results stabilize as consumption accumulates.
 
-Plugin upgrades migrate the SQLite schema in place and do not intentionally clear usage history or bulk-rewrite historical cycles. Fresh observations can trigger two targeted boundary corrections: the exhausted-5-hour carry-over fix, and reversal of an inferred early reset when the original schedule and usage level are confirmed to return before the old boundary. Saving dashboard pricing switches intentionally recalculates historical pricing values and derived capacity estimates, without changing Token counts or quota-cycle boundaries. Other historical false early-reset chains require the explicit repair POST described below; upgrading does not automatically split historical missed resets. In Docker, persist the directory containing `data_path`—the default is `/CLIProxyAPI/data`—with a volume or bind mount; replacing a container without that mount also replaces its local database.
+Plugin upgrades migrate SQLite in place. The confirmed historical missed-reset repair is idempotent; the separate false-reset-chain repair remains an explicit management action. Existing saved pricing names migrate to the three current bases, and retained request/sample values are recalculated from raw Tokens. In Docker, persist the directory containing `data_path`—by default `/CLIProxyAPI/data`—with a volume or bind mount.
 
-GPT-6 Sol and Luna use the [official OpenAI API rates](https://developers.openai.com/api/docs/pricing), verified on September 23, 2026. Per million Tokens, input/cache read/cache write/output cost `$2/$0.20/$2.50/$10` for Sol and `$0.10/$0.01/$0.125/$0.50` for Luna. These rates are built in and take precedence over catalog entries. Both API pricing bases use these same rates; when enabled, Fast uses the saved quota-estimation multiplier (default **2.5×**) in both API pricing bases, including source mode; the official API Fast rate is **2×**, but this plugin intentionally retains **2.5×** pending further quota observations, and long context uses **2× input/cache and 1.5× output**. Fast and long-context surcharges combine. Batch/Flex API requests use 50% rates. The separate Credits basis now uses the published Codex rate card for these models and GPT-5.6 Sol. Both GPT-6 models appear in remaining-Token allowances. Use **Save and recalculate** to reprice retained requests after upgrading.
+GPT-6 Astra, Sol, Luna, and GPT-5.6 Sol use verified [OpenAI Standard API rates](https://developers.openai.com/api/docs/pricing) where the catalog lags. The [Codex Credits card](https://learn.chatgpt.com/docs/pricing) gives their separate subscription credit rates. Official API Fast and long-context rates are displayed beside learner-adjusted estimates; API Batch/Flex requests retain their 50% rate. Neither published card alone determines an account’s included subscription quota.
 
 ## Token and pricing-value rules
 
@@ -204,16 +197,13 @@ pricing value = uncached input × input rate
               + output × output rate
 ```
 
-The active rate is per one million Tokens and is denominated in USD, Codex Credits, or Sol-input equivalents in learned mode. `ReasoningTokens` are already included in output Tokens and are not charged twice. API and Credits modes use their configured Fast/context policy; learned mode uses fitted factors. The long-context threshold defaults to 272,000 input Tokens.
+The active rate is per one million Tokens and is denominated in USD (`api`/`custom`) or Codex Credits (`credits`). `ReasoningTokens` are already included in output Tokens and are not charged twice. The learner supplies identifiable model, Fast, and long-context adjustments; cache/output ratios retain each model’s published shape.
 
-The dashboard pricing selector provides:
+- `api`: current [official API USD rates](https://developers.openai.com/api/docs/pricing), with verified overrides where the catalog lags. Select an anchor model; its calculated Standard rate is exactly its official rate.
+- `credits`: [published Codex Credits rates](https://learn.chatgpt.com/docs/pricing), with the same anchor rule. The published card has no separate cache-write charge or long-context price. Models without a listed credit rate use an API-derived estimate.
+- `custom`: editable USD input/cache-read/output/cache-write rates per model, Fast multiplier, and long-context toggle/threshold (default 272,000 Tokens). It starts from official API rates and ignores learner price adjustments.
 
-- `current_api`: current models.dev/API prices, including active discounts;
-- `legacy_api`: pre-discount API-equivalent prices; GPT-5.6 Sol/Terra/Luna use `$5/$0.50/$30`, `$2.50/$0.25/$15`, and `$1/$0.10/$6` for input/cache-hit/output;
-- `credits`: published Codex Credits per million uncached input/cache read/output Tokens. GPT-6 Sol and Luna use `50/5/250` and `2.5/0.25/12.5`; GPT-5.6 Sol uses `100/10/500`. Cache writes have no separate credit charge. The published credit table lists no long-context surcharge, so this basis keeps the Standard rate above 272K input Tokens. Fast uses the saved multiplier (2.5× by default); the independent recent-usage table always uses the official 2.5× Fast credit rate where documented, without the Astra quota-calibration multiplier. For models not on the published card, the Credits basis keeps an API-derived fallback; the recent-usage table leaves their official credit reference blank.
-- `learned`: relative quota-weight value from the latest fit, anchored so one million GPT-5.6 Sol uncached-input Tokens equal one unit. It uses learned Fast and long-context factors, without applying the manual Astra multiplier again. Parameters without independent evidence remain near their Credits-shape priors and are labeled accordingly.
-
-The dashboard also exposes **>272K long-context surcharge** and **Fast surcharge** switches for the API/Credits bases. **Save and recalculate** persists settings and transactionally rebuilds every retained `usage_events.cost_usd` compatibility value plus all quota-sample cumulative values. The selected current or historical cycle, cross-cycle charts, 5-hour and weekly quota panels, and monthly summaries then use the same basis. Switching back recalculates from raw input/output/cache Token fields rather than converting the prior result. JSON field names containing `_cost_usd` are retained for API compatibility; `pricing_mode` and `value_unit` identify whether their active value is USD, Credits, or Sol-input equivalents.
+When a pricing task runs, the dashboard disables the controls and polls progress. The event repricing and cumulative sample updates share one SQLite transaction; each sample uses a linear-time per-cycle prefix sum. The selected cycle, cross-cycle charts, remaining model Tokens, and monthly totals all use the committed basis. JSON fields ending in `_cost_usd` are retained for compatibility; `pricing_mode` and `value_unit` give their actual unit.
 
 For each selected primary cycle—and for the independent weekly cycle when detected—the dashboard lists remaining uncached-input, output, and cache-hit Tokens for supported Codex models. Each column is a separate hypothetical: it assumes all remaining pricing value is spent only on that model and Token category, using Standard and base-context rates.
 
@@ -237,10 +227,11 @@ All management routes are protected by CPA Management Key:
 | GET | `/v0/management/cpa-quota-estimator/monthly` | Calendar-month usage, reset, and capacity summary |
 | GET | `/v0/management/cpa-quota-estimator/repair/early-resets` | Preview historical false early-reset candidates without changing data |
 | POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | Transactionally merge all currently detected candidates |
-| GET | `/v0/management/cpa-quota-estimator/prices` | Synced prices and Fast policy |
+| GET | `/v0/management/cpa-quota-estimator/prices` | Official and calculated model price rows with adjustment intervals |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | Trigger an immediate models.dev sync |
-| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | Read the saved pricing basis plus long-context and Fast switches |
-| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | Save the pricing basis and switches, then transactionally recalculate all retained historical cycle values |
+| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | Read the saved basis, anchor, and custom prices |
+| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | Start an atomic background repricing task; returns HTTP 202 and task ID |
+| GET | `/v0/management/cpa-quota-estimator/pricing-settings/task?id=<id>` | Poll repricing progress and completion status |
 | GET | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | Read the account's collection mode and capacity assumption |
 | POST | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | Save `{"mode":"cpa_only"}`, `{"mode":"mixed"}`, or `{"mode":"unknown"}` without rewriting usage |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | Embedded dashboard resource |
@@ -270,7 +261,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.14.0
+make package VERSION=0.15.0
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

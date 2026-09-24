@@ -27,7 +27,7 @@
 
 - **全部账号集中查看：** 在权限允许时合并已有采样账号与 CPA 中配置的 Codex OAuth 清单，同时展示等待首次采样、已停用和当前不可用的凭证；表格支持逐列筛选、类型感知排序、列宽持久化和键盘操作。
 - **额度口径彼此独立：** 对 Codex 主额度和 `gpt-5.3-codex-spark` 都会自动把检测到的 5 小时 Primary 与周 Secondary 分开计算，同时让全部 Spark 用量始终使用完全独立的额度账本。
-- **把百分比换成可用容量：** 估计完整周期和剩余额度对应的 Token 与计价值，支持当前 API 价格、优惠前 API 价格和订阅 Credits，并提供不确定性区间与置信度。
+- **把百分比换成可用容量：** 估计完整周期和剩余额度对应的 Token 与计价值，支持官方 API 美元价、Codex Credits 或自定义美元价，并提供不确定性区间与置信度。
 - **直接给出消耗判断：** 将实际用量与可持续基准、累计平均速率和近期速率对比，预测耗尽时间，并判断额度能否坚持到重置。
 - **重置后历史仍然保留：** 保存已确认周期、跨周期曲线、自然月汇总、额度消耗当量、重置次数与重置时未使用额度。
 - **被动、私有、无额外消耗：** 不额外调用上游，不保存提示词或响应正文，保留的用量元数据写入本地 SQLite 数据库。
@@ -40,15 +40,12 @@
 - 将 Token 数、模型、`service_tier`、所选口径计价值和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
 - 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
-- 仪表盘提供四种可持久化计价口径：优惠前 API 价格、当前 API 价格、**Codex Credits（新用户默认）**和**自学习额度权重**。升级时保留已有选择。Credits 口径对已列出的模型采用[官方 Codex Token 价目表](https://learn.chatgpt.com/docs/pricing)；未收录模型保留 API 价格推算值。Credits 单价本身不能确定 Pro 套餐内含额度的实际扣减。学习器有可用拟合后才能选择 learned，单位为「百万 GPT-5.6 Sol 未缓存输入 Token 等效」。保存计价方式会从原始 Token 在事务中重算历史请求与周期估值。
+- 仪表盘提供三种计价口径：**官方 API 美元价**、**Codex Credits（新安装默认）**和**自定义美元价**。API 与 Credits 从各模型公开价格出发，以用户选定模型为锚（默认 GPT-5.6 Sol），按学习器得到的相对额度倍率调整其他模型；不可辨识的模型倍率固定为 1 并标为“未标定”。输入／缓存／输出保持各模型自己的官方价格形状，Fast 与长上下文倍率和官方值并列展示。自定义口径可改价格和 Fast／长上下文设置，不应用学习器价格调整。旧 `legacy_api`／`current_api` 设置迁移为 `api`，`learned` 迁移为 `credits`；旧名称在设置接口仍作为别名接收。保存立即返回后台任务 ID，单个事务同时重算请求与样本前缀和。
 - 按账号的 **近期模型用量** 表可查看最近 24 小时、7 天或 30 天各模型的请求、失败、未缓存输入、缓存读写、输出及总 Token、官方 Credits 参考值、学习器估计的分模型额度消耗和当前口径计价值。表格还按各周期“每 1% 计价值”分摊当前口径用量，并显示与账号实测额度增长的差异。实测额度增长仍属于整个账号；分模型份额明确标为估计。没有官方 Credits 单价的模型标为未收录。
 - 为主额度、周额度、Spark 与 Spark 周额度建立首次跨整数读数的 `quota_segments`，保存 lag 0/1/2 特征及失败、未知模型、重置、异常、长空档标记。相差两分钟以内的重置时间合并；同一个旧周期内确认的 29%→0% 读数跳变另建学习阶段。升级时一次性回填历史，后续跨越仅刷新受影响阶段。另有幂等历史修复，将旧版误合并的长期提前重置拆成独立周期并重归属事件和样本。
-- 学习器为每个学习周期建立独立 log 容量尺度，以可配置的高斯随机游走连接相邻周期（σ 默认 **0.35**）；每次新跨越都会在线更新当前周期尺度。新周期第一次跨越前借用上周期尺度；当前周期每 1% 计价值的点估计和区间用于剩余计价值、按模型剩余 Token 与燃尽预测。已保存 API 口径的用户会看到可关闭的 Credits 切换建议（历史 MAE 为 0.277，对比 legacy API 的 0.349）。模型倍率跨周期共享，只有同周期混用提供足够条件 Fisher 信息才放开；共享倍率先在各周期尺度近乎自由的条件下拟合，再用随机游走平滑尺度。缓存／输出类型比例默认固定为 Codex Credits 形状，须同时通过 Fisher 与构成变化门槛才放开；API 与仪表盘会标注先验锁定。继续使用 Huber 损失、默认 21 天衰减和 Laplace 区间。记录状态 0/408/499/502 的中断请求数供敏感性分析，默认拟合不假定其固定费用。逐请求额度百分比仍为估计，不是上游账单。
-- 新增**被动引导式标定**：选择账号、基准模型、当前锁定先验的目标模型和每阶段额度目标（默认 5%）。仪表盘追踪同周期的两段纯模型用量、跨越点及按当前计价口径计算的非目标模型污染（超过 5% 警告），完成后重拟合权重并对比目标输入倍率的前后区间。周期重置会使会话作废。`GET /calibration` 返回状态和请求 ID 段，`/calibration/start`、`/calibration/end`、`/calibration/cancel` 分别用于开始、结束阶段和取消；不会生成探针或模型请求。
-- 提供独立的 **模型额度校准** 常驻 Astra 倍率输入项（默认 **1.8×**，范围 **0.01–100**；设为 **1×** 即不校准），官方/价格源基础价格保持不变（每百万 Token：输入 $10、缓存读取 $1、输出 $50）。该倍率仅用于 API 口径；Credits 采用公开 Astra 比例，learned 直接使用拟合出的 Astra 权重。仪表盘展示所选口径的基础及有效价格。这是暂定的负载校准，不是官方涨价。
-- 支持两种可配置的 Fast 定价方式：
-  - `multiplier`：在普通或长上下文价格上应用倍数，默认 **2.5×**；
-  - `source`：使用 models.dev 中明确提供的 `experimental.modes.fast.cost` 价格。
+- 学习器为每个学习周期建立独立 log 容量尺度，以可配置的高斯随机游走连接相邻周期（σ 默认 **0.35**）；每次新跨越都会在线更新当前周期尺度。新周期第一次跨越前借用上周期尺度；当前周期每 1% 计价值的点估计和区间用于剩余计价值、按模型剩余 Token 与燃尽预测。模型倍率跨周期共享，只有同周期混用提供足够条件 Fisher 信息才放开；共享倍率先在各周期尺度近乎自由的条件下拟合，再用随机游走平滑尺度。缓存／输出类型比例默认固定为 Codex Credits 形状，须同时通过 Fisher 与构成变化门槛才放开；API 与仪表盘会标注先验锁定。继续使用 Huber 损失、默认 21 天衰减和 Laplace 区间。记录状态 0/408/499/502 的中断请求数供敏感性分析，默认拟合不假定其固定费用。逐请求额度百分比仍为估计，不是上游账单。
+- 新增**被动引导式标定**：选择账号、基准模型、Astra 或当前锁定先验的目标模型和每阶段额度目标（默认 5%）。仪表盘追踪同周期的两段纯模型用量、跨越点及按当前计价口径计算的非目标模型污染（超过 5% 警告），完成后重拟合权重并对比目标输入倍率的前后区间。周期重置会使会话作废。`GET /calibration` 返回状态和请求 ID 段，`/calibration/start`、`/calibration/end`、`/calibration/cancel` 分别用于开始、结束阶段和取消；不会生成探针或模型请求。
+- 价格表逐项列出计算价、官方价、相对差异与不确定区间，锚定行差异为 0。已列模型的 API 美元价与 Credits 输入／缓存／输出基础价相差 25 倍；缓存写入、长上下文、Fast 另有规则。可选的 `capture_codex_headers` 不记录无分析价值的 `X-Codex-Turn-State`。
 - 估计完整周期与剩余额度的 Token/计价等效容量，并提供四分位数区间和置信度；还会把所选周期剩余计价值分别换算为各模型的未缓存输入、输出和缓存命中 Token 余量。
 - 展示实际额度轨迹、可持续基准、累计平均预测、近期速率预测、预计耗尽时间、计划重置时间和倒计时。
 - 为每个已确认的额度周期建立独立账本；重置后，旧周期仍可在下拉框中选择和回看。
@@ -65,11 +62,11 @@
 - 默认保留 365 天数据，不存储请求正文或响应正文。
 - 可独立于 CPA Manager Plus（CPAMP）运行。
 
-## 模型额度校准
+## 计价口径
 
-在 **费用计算规则** 中修改常驻的 **模型额度校准 → Astra ×** 输入框（默认 **1.8**）。仅**当前 API 价格、优惠前 API 价格**使用；Credits 不叠加该倍率；不想加倍率就设为 **1**，不再提供额外开关。点击 **保存并重算** 后，倍率会持久化，并在事务中重算历史估值、周期容量和剩余 Token。切换计价方式或重启 CPA 都会保留该倍率。仪表盘通过 `POST /pricing-settings` 保存 `astra_multiplier` 并传入 `apply_model_calibration: true`；原布尔字段仍兼容旧 API 客户端，之前关闭校准的设置会在新界面中显示为 **1×**。
+仪表盘可选 `api`、`credits`、`custom`。API 和 Credits 令锚定模型保持公开单价，其他模型按 `adj(模型) / adj(锚定)` 调整；`adj` 来自学习器相对于该模型官方价格形状的倍率，锁定先验时取 1。价格表显示计算价、官方价、差异和不确定性；Fast／长上下文另列计算与官方倍率。自定义口径可编辑每个模型的输入、缓存读取、输出、缓存写入美元价及 Fast 倍率、长上下文开关和阈值。“恢复官方价格”重置尚未保存的自定义草稿。以上只影响插件估值，不改变上游计费。
 
-此设置 **仅影响插件估值**，不会修改价格源原价、原始 Token、额度百分比或 **New API 计费**。价格表仍分别显示原价、实际应用倍率及折算价格。
+`POST /pricing-settings` 立即返回 HTTP 202 和任务 ID；通过 `GET /pricing-settings/task?id=<id>` 查看请求／样本进度。任务进行中再次保存返回 409。重算在一个事务中完成，失败会保留原有值与设置。旧接口名称 `legacy_api`、`current_api` 映射到 `api`，`learned` 映射到 `credits`；已有保存设置升级时自动迁移并重算。
 
 ## 估算方法
 
@@ -159,13 +156,9 @@ plugins:
       sample_interval_minutes: 5
       price_source_url: https://models.dev/catalog.json
       price_sync_interval_minutes: 1440
-      fast_pricing_mode: multiplier
-      fast_multiplier: 2.5
-      pricing_mode: credits # credits (default) | legacy_api | current_api | learned
-      apply_fast_pricing: true
-      astra_multiplier: 1.8
+      pricing_mode: credits # credits (default) | api | custom
+      anchor_model: gpt-5.6-sol
       long_context_threshold: 272000
-      apply_long_context_pricing: false
       history_days: 365
       capture_codex_headers: false
       weight_half_life_days: 21
@@ -186,9 +179,9 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 > **冷启动说明：** 安装插件后并不会立即看到额度。插件完全被动，只记录真实流经 CPA 的请求，也无法回补安装之前的历史用量。全部账号概览会尝试从受保护的 CPA `auth-files` 管理接口合并已配置的 Codex OAuth；尚未流经 CPA 的账号会显示为“等待首次经 CPA 调用”，而不是被误判为凭证丢失。首次真实的 Codex 请求之后，才会出现当前剩余额度和重置时间；只有当记录样本之间的已使用额度百分比确实增长（Δ已使用百分比 > 0）时，才开始计算容量估算。由于额度响应头只提供整数百分比，首个可用估算可能需要多次请求才会出现，并随着消耗累积逐渐稳定。
 
-插件升级会原位迁移 SQLite 表结构，不会主动清空历史用量，也不会批量改写历史周期。新鲜观测可触发两类定向边界修正：“已耗尽 5 小时额度沿用 100%”的修复，以及在旧边界到期前确认恢复原计划和原用量水平后，撤销推断出的提前重置。在仪表盘保存费用开关时，会重算历史计价值及派生容量估计，但不会修改 Token 数或额度周期边界。其他历史伪提前重置链仍需显式调用下述修复 POST；升级不会自动补拆历史漏掉的提前重置。使用 Docker 时，应通过 volume 或 bind mount 持久化 `data_path` 所在目录；默认目录是 `/CLIProxyAPI/data`。如果替换容器时没有挂载该目录，容器内的本地数据库也会随之被替换。
+插件升级会原位迁移 SQLite。历史漏识别的确认重置已由幂等流程修复；伪提前重置链的修复仍须显式调用管理接口。已有保存的旧计价名称映射到三个现行口径，保留的请求和样本计价值从原始 Token 重算。Docker 部署应持久化 `data_path` 所在目录，默认是 `/CLIProxyAPI/data`。
 
-GPT-6 Sol 和 Luna 使用 2026 年 9 月 23 日核实的 [OpenAI 官方 API 价格](https://developers.openai.com/api/docs/pricing)。每百万 Token 的输入／缓存读取／缓存写入／输出价格，Sol 为 `$2/$0.20/$2.50/$10`，Luna 为 `$0.10/$0.01/$0.125/$0.50`。内置价格优先于目录同步条目。两种 API 计价口径使用相同价格；启用加价时，Fast 在两种 API 计价口径（含 source 模式）中均使用已保存的额度估算倍率（默认 **2.5 倍**）；官方 API Fast 价格为 **2 倍**，但插件暂保留 **2.5 倍**，待后续实际额度观测再校准，长上下文使用**输入及缓存 2 倍、输出 1.5 倍**，两项加价叠加。Batch/Flex API 请求按 50% 计价。独立的 Credits 口径现已对这些模型和 GPT-5.6 Sol 使用官方 Codex 价目表。两个 GPT-6 模型均加入剩余 Token 换算。升级后可点击**保存并重算**更新保留的历史请求估值。
+GPT-6 Astra、Sol、Luna 和 GPT-5.6 Sol 使用已核实的 [OpenAI Standard API 价格](https://developers.openai.com/api/docs/pricing) 覆盖滞后的目录条目；[Codex Credits 价目表](https://learn.chatgpt.com/docs/pricing) 则列出独立的订阅 Credits 单价。官方 Fast 与长上下文倍率会和学习器调整值并列显示，API Batch/Flex 仍按 50% 计价。任一公开价目表都不能单独确定账号套餐内含额度。
 
 ## Token 与计价值计算规则
 
@@ -204,16 +197,13 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
        + 输出 × 输出费率
 ```
 
-当前计价值按每一百万 Token 计算，单位可为 USD、Codex Credits，或 learned 口径下的 Sol 输入等效。`ReasoningTokens` 已包含在输出 Token 中，不会重复计量。API/Credits 口径使用配置的 Fast 与长上下文策略；learned 使用拟合出的倍率。长上下文阈值默认 272,000 输入 Token。
+当前价格按每百万 Token 计算，`api`／`custom` 单位为美元，`credits` 单位为 Codex Credits。`ReasoningTokens` 已包含在输出 Token 中，不会重复计量。学习器只提供可辨识的模型、Fast、长上下文倍率；缓存／输出沿用各模型的官方价格形状。
 
-仪表盘计价方式包括：
+- `api`：当前[官方 API 美元价](https://developers.openai.com/api/docs/pricing)，目录滞后时使用已核实的覆盖值。锚定模型的 Standard 计算价始终等于官方价。
+- `credits`：[公开 Codex Credits 单价](https://learn.chatgpt.com/docs/pricing)，采用相同锚定规则。官方表未单列缓存写入或长上下文价格；未收录模型使用 API 价格推算。
+- `custom`：逐模型编辑输入／缓存读取／输出／缓存写入美元价，以及 Fast 倍率、长上下文开关和阈值（默认 272,000 Token）。初始值取官方 API 价，不应用学习器价格调整。
 
-- `current_api`：models.dev/API 当前价格，包含现行优惠；
-- `legacy_api`：优惠前 API 等效价；GPT-5.6 Sol/Terra/Luna 的输入/缓存命中/输出分别使用 `$5/$0.50/$30`、`$2.50/$0.25/$15`、`$1/$0.10/$6`；
-- `credits`：按每百万未缓存输入／缓存读取／输出 Token 使用公开 Codex Credits 单价。GPT-6 Sol 为 `50/5/250`，GPT-6 Luna 为 `2.5/0.25/12.5`，GPT-5.6 Sol 为 `100/10/500`。缓存写入没有单独的 Credits 费用。官方表未列长上下文加价，因此 Credits 口径超过 272K 输入 Token 仍按 Standard 费率计算。Fast 使用已保存的倍率（默认 2.5 倍）；独立的近期用量表在官方有明确规则的模型上固定使用官方 2.5 倍 Fast Credits 费率，且不叠加 Astra 额度校准倍率。未列于官方价目表的模型在 Credits 口径保留 API 价格推算值；近期用量表将其官方 Credits 参考值留空。
-- `learned`：最新拟合给出的相对额度权重，以 GPT-5.6 Sol 每百万未缓存输入 Token 为 1 单位。Fast 和长上下文采用学习倍率，不再叠加手动 Astra 倍率。没有独立证据的参数靠近 Credits 形状先验，并在界面上标记。
-
-仪表盘仍为 API/Credits 口径提供 **>272K 长上下文加价** 和 **Fast 加价** 开关。点击**保存并重算**后，设置会保存到 SQLite，并在单个事务中重建全部保留的 `usage_events.cost_usd` 兼容值和所有额度采样累计值。当前周期、任意历史周期、跨周期曲线、5 小时与周限额区域、月度汇总都会统一使用新口径；再次切回时从原始输入/输出/缓存 Token 重算。JSON 中带 `_cost_usd` 的字段为兼容旧客户端而保留，实际单位由 `pricing_mode` 和 `value_unit` 指明，可为 USD、Credits 或 Sol 输入等效。
+后台重算期间仪表盘禁用设置并轮询进度。请求重计价和样本累计值在同一 SQLite 事务内更新，每个周期使用线性时间前缀和。所选周期、跨周期图、模型剩余 Token 与月度汇总采用已提交的口径。为兼容旧客户端，JSON 中 `_cost_usd` 字段名保留；实际单位看 `pricing_mode` 和 `value_unit`。
 
 对于所选主额度周期，以及检测到的独立周限额周期，仪表盘会列出各 Codex 模型的剩余未缓存输入、输出和缓存命中 Token。每一列都是独立假设：剩余计价值全部用于该模型及该 Token 类型，并采用 Standard、基础上下文单价。
 
@@ -237,10 +227,11 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | GET | `/v0/management/cpa-quota-estimator/monthly` | 自然月用量、重置与容量汇总 |
 | GET | `/v0/management/cpa-quota-estimator/repair/early-resets` | 只读预览历史伪提前重置候选 |
 | POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | 在单个事务中合并当前全部候选 |
-| GET | `/v0/management/cpa-quota-estimator/prices` | 已同步价格与 Fast 策略 |
+| GET | `/v0/management/cpa-quota-estimator/prices` | 各模型官方价、计算价及倍率区间 |
 | POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即触发 models.dev 价格同步 |
-| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | 读取已保存的计价口径、长上下文与 Fast 开关 |
-| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 保存计价口径与开关，并在事务中重算全部保留历史周期计价值 |
+| GET | `/v0/management/cpa-quota-estimator/pricing-settings` | 读取已保存的口径、锚定模型和自定义价格 |
+| POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 启动原子后台重算任务，立即返回 HTTP 202 和任务 ID |
+| GET | `/v0/management/cpa-quota-estimator/pricing-settings/task?id=<id>` | 轮询重算进度和完成状态 |
 | GET | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | 读取账号采集模式和容量估算假设 |
 | POST | `/v0/management/cpa-quota-estimator/coverage-settings?account=<AuthID>` | 保存 `{"mode":"cpa_only"}`、`{"mode":"mixed"}` 或 `{"mode":"unknown"}`，不改写用量 |
 | GET | `/v0/resource/plugins/cpa-quota-estimator/dashboard` | 嵌入式仪表盘资源 |
@@ -270,7 +261,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 ```bash
 make test
 make build
-make package VERSION=0.14.0
+make package VERSION=0.15.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
