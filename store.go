@@ -36,13 +36,13 @@ func openStore(path string) (*store, error) {
 	} {
 		if _, err = db.Exec(pragma); err != nil {
 			db.Close()
-			return nil, err
+			return nil, fmt.Errorf("set SQLite %s: %w", pragma, err)
 		}
 	}
 	s := &store{db: db, path: path}
 	if err = s.migrate(); err != nil {
 		db.Close()
-		return nil, err
+		return nil, fmt.Errorf("migrate SQLite store: %w", err)
 	}
 	return s, nil
 }
