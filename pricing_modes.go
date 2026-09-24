@@ -32,6 +32,7 @@ type modelPriceRow struct {
 	FastMultiplier         float64              `json:"fast_multiplier"`
 	OfficialLongMultiplier float64              `json:"official_long_multiplier"`
 	LongMultiplier         float64              `json:"long_multiplier"`
+	LongUncertaintyPercent float64              `json:"long_uncertainty_percent"`
 }
 
 func validateCustomModelPrice(p customModelPrice) error {
@@ -192,13 +193,18 @@ func (c config) effectiveFastMultiplier(p price) float64 {
 }
 
 func (c config) effectiveLongMultiplier() float64 {
-	if normalizePricingMode(c.PricingMode) == pricingModeCustom {
-		return 1
-	}
-	if c.LearnedFit != nil && c.LearnedFit.Available && c.LearnedFit.LongContext.Value > 0 && !c.LearnedFit.LongContext.PriorLocked {
-		return c.LearnedFit.LongContext.Value
+	if learned, ok := c.learnedLongMultiplier(); ok {
+		return learned.Value
 	}
 	return 1
+}
+
+func (c config) learnedLongMultiplier() (weightEstimate, bool) {
+	if normalizePricingMode(c.PricingMode) != pricingModeCustom && c.LearnedFit != nil && c.LearnedFit.Available &&
+		c.LearnedFit.LongContext.Value > 0 && !c.LearnedFit.LongContext.PriorLocked {
+		return c.LearnedFit.LongContext, true
+	}
+	return weightEstimate{}, false
 }
 
 func (c config) priceRow(p price) modelPriceRow {
@@ -230,8 +236,11 @@ func (c config) priceRow(p price) modelPriceRow {
 		} else {
 			row.LongMultiplier = 1
 		}
+	} else if learned, ok := c.learnedLongMultiplier(); ok {
+		row.LongMultiplier = learned.Value
+		row.LongUncertaintyPercent = math.Max(math.Abs(learned.Value-learned.Low), math.Abs(learned.High-learned.Value)) / learned.Value * 100
 	} else {
-		row.LongMultiplier = row.OfficialLongMultiplier * c.effectiveLongMultiplier()
+		row.LongMultiplier = row.OfficialLongMultiplier
 	}
 	return row
 }

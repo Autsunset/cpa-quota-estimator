@@ -199,6 +199,8 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 
 当前价格按每百万 Token 计算，`api`／`custom` 单位为美元，`credits` 单位为 Codex Credits。`ReasoningTokens` 已包含在输出 Token 中，不会重复计量。学习器只提供可辨识的模型、Fast、长上下文倍率；缓存／输出沿用各模型的官方价格形状。
 
+Fast 或长上下文倍率已标定时，用学到的倍率替代官方层级倍率，乘在计算后的 Standard 单价上；锁定先验时使用官方层级价格。长上下文列显示计算倍率、官方输入倍率及可用的学习区间。定时任务每小时更新最终拟合，滚动回测最多每天一次，也可由标定手动触发。
+
 - `api`：当前[官方 API 美元价](https://developers.openai.com/api/docs/pricing)，目录滞后时使用已核实的覆盖值。锚定模型的 Standard 计算价始终等于官方价。
 - `credits`：[公开 Codex Credits 单价](https://learn.chatgpt.com/docs/pricing)，采用相同锚定规则。官方表未单列缓存写入或长上下文价格；未收录模型使用 API 价格推算。
 - `custom`：逐模型编辑输入／缓存读取／输出／缓存写入美元价，以及 Fast 倍率、长上下文开关和阈值（默认 272,000 Token）。初始值取官方 API 价，不应用学习器价格调整。

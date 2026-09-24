@@ -199,6 +199,8 @@ pricing value = uncached input × input rate
 
 The active rate is per one million Tokens and is denominated in USD (`api`/`custom`) or Codex Credits (`credits`). `ReasoningTokens` are already included in output Tokens and are not charged twice. The learner supplies identifiable model, Fast, and long-context adjustments; cache/output ratios retain each model’s published shape.
 
+When Fast or long context is calibrated, its learned multiplier replaces the official tier multiplier on the calculated Standard rate. A factor locked to its prior uses the official tier instead. The long-context column shows the calculated and official input multipliers plus the learned uncertainty when available. Scheduled weight updates refit hourly; rolling backtests run at most daily or on explicit calibration.
+
 - `api`: current [official API USD rates](https://developers.openai.com/api/docs/pricing), with verified overrides where the catalog lags. Select an anchor model; its calculated Standard rate is exactly its official rate.
 - `credits`: [published Codex Credits rates](https://learn.chatgpt.com/docs/pricing), with the same anchor rule. The published card has no separate cache-write charge or long-context price. Models without a listed credit rate use an API-derived estimate.
 - `custom`: editable USD input/cache-read/output/cache-write rates per model, Fast multiplier, and long-context toggle/threshold (default 272,000 Tokens). It starts from official API rates and ignores learner price adjustments.

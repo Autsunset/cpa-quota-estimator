@@ -284,23 +284,27 @@ func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float
 		threshold = 272000
 	}
 	if d.InputTokens > threshold && (mode != pricingModeCustom || cfg.CustomLongContext) {
-		if effective.LongInput > 0 {
-			in = effective.LongInput
+		if learned, ok := cfg.learnedLongMultiplier(); ok {
+			// The fit measures the absolute long/standard ratio. It replaces
+			// the official long tier, just as a learned Fast ratio does.
+			in *= learned.Value
+			out *= learned.Value
+			read *= learned.Value
+			write *= learned.Value
+		} else {
+			if effective.LongInput > 0 {
+				in = effective.LongInput
+			}
+			if effective.LongOutput > 0 {
+				out = effective.LongOutput
+			}
+			if effective.LongRead > 0 {
+				read = effective.LongRead
+			}
+			if effective.LongWrite > 0 {
+				write = effective.LongWrite
+			}
 		}
-		if effective.LongOutput > 0 {
-			out = effective.LongOutput
-		}
-		if effective.LongRead > 0 {
-			read = effective.LongRead
-		}
-		if effective.LongWrite > 0 {
-			write = effective.LongWrite
-		}
-		longFactor := cfg.effectiveLongMultiplier()
-		in *= longFactor
-		out *= longFactor
-		read *= longFactor
-		write *= longFactor
 	}
 	if isFastTier(serviceTier) {
 		fast := cfg.effectiveFastMultiplier(p)

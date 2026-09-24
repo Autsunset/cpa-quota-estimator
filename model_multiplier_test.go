@@ -86,12 +86,67 @@ func TestFastAndLongShowLearnedAgainstOfficial(t *testing.T) {
 	cfg.LearnedFit.Fast = weightEstimate{Value: 3, Low: 2.5, High: 3.5}
 	cfg.LearnedFit.LongContext = weightEstimate{Value: 1.2, Low: 1, High: 1.4}
 	row := cfg.priceRow(p)
-	if row.OfficialFastMultiplier != 2 || row.FastMultiplier != 3 || row.OfficialLongMultiplier != 2 || math.Abs(row.LongMultiplier-2.4) > 1e-9 {
+	if row.OfficialFastMultiplier != 2 || row.FastMultiplier != 3 || row.OfficialLongMultiplier != 2 || math.Abs(row.LongMultiplier-1.2) > 1e-9 || math.Abs(row.LongUncertaintyPercent-100.0/6) > 1e-9 {
 		t.Fatalf("multipliers=%#v", row)
 	}
 	got := calculateCost(p, usageDetail{InputTokens: 1_000_000}, "fast", cfg)
-	if math.Abs(got-86.4) > 1e-9 {
+	if math.Abs(got-43.2) > 1e-9 {
 		t.Fatalf("learned fast/long cost=%f", got)
+	}
+}
+
+func TestLongContextUsesLearnedOrOfficialTier(t *testing.T) {
+	p, _ := officialGPT6Price("gpt-6-astra")
+	detail := usageDetail{InputTokens: 1_000_000, CacheReadTokens: 200_000, CacheCreationTokens: 100_000, OutputTokens: 50_000}
+	for _, tc := range []struct {
+		name, mode string
+		locked     bool
+		want       float64
+		multiplier float64
+	}{
+		{"api_learned", pricingModeAPI, false, (700_000*12 + 200_000*1.2 + 100_000*15 + 50_000*60) / 1_000_000 * 1.2, 1.2},
+		{"api_locked", pricingModeAPI, true, (700_000*24 + 200_000*2.4 + 100_000*30 + 50_000*90) / 1_000_000, 2},
+		{"credits_learned", pricingModeCredits, false, (700_000*300 + 200_000*30 + 100_000*0 + 50_000*1500) / 1_000_000 * 1.2, 1.2},
+		{"credits_locked", pricingModeCredits, true, (700_000*300 + 200_000*30 + 100_000*0 + 50_000*1500) / 1_000_000, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := defaultConfig()
+			cfg.PricingMode = tc.mode
+			cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 4}, p.Model: p}
+			cfg.LearnedFit = testAnchorFit()
+			cfg.LearnedFit.LongContext = weightEstimate{Value: 1.2, Low: 1, High: 1.4, PriorLocked: tc.locked}
+			got := calculateCost(p, detail, "", cfg)
+			if math.Abs(got-tc.want) > 1e-9 {
+				t.Fatalf("cost=%f want=%f", got, tc.want)
+			}
+			row := cfg.priceRow(p)
+			if math.Abs(row.LongMultiplier-tc.multiplier) > 1e-9 || (row.LongUncertaintyPercent > 0) == tc.locked {
+				t.Fatalf("long price row=%#v", row)
+			}
+		})
+	}
+}
+
+func TestFastUsesLearnedOrOfficialMultiplierWithoutStacking(t *testing.T) {
+	p, _ := officialGPT6Price("gpt-6-astra")
+	for _, mode := range []string{pricingModeAPI, pricingModeCredits} {
+		for _, locked := range []bool{false, true} {
+			cfg := defaultConfig()
+			cfg.PricingMode = mode
+			cfg.LongContextThreshold = 2_000_000
+			cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 4}, p.Model: p}
+			cfg.LearnedFit = testAnchorFit()
+			cfg.LearnedFit.Fast = weightEstimate{Value: 3, PriorLocked: locked}
+			standard := calculateCost(p, usageDetail{InputTokens: 1_000_000}, "", cfg)
+			got := calculateCost(p, usageDetail{InputTokens: 1_000_000}, "fast", cfg)
+			want := 3.0
+			if locked {
+				want = cfg.officialFastMultiplier(p)
+			}
+			if math.Abs(got-standard*want) > 1e-9 {
+				t.Fatalf("mode=%s locked=%v fast=%f standard=%f want ratio=%f", mode, locked, got, standard, want)
+			}
+		}
 	}
 }
 

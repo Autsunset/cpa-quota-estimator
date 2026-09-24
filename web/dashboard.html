@@ -2634,10 +2634,10 @@ function renderPricePreview(data) {
         difference:(difference>=0?'+':'')+difference.toFixed(1), uncertainty:uncertainty.toFixed(1)});
       cell.append(small);row.append(cell);
     }
-    for (const [computed,official] of [[item.fast_multiplier,item.official_fast_multiplier],[item.long_multiplier,item.official_long_multiplier]]) {
+    for (const [computed,official,uncertainty] of [[item.fast_multiplier,item.official_fast_multiplier,0],[item.long_multiplier,item.official_long_multiplier,item.long_uncertainty_percent]]) {
       let cell=document.createElement('td');
       cell.textContent=Number(computed || 1).toFixed(2)+'×';
-      let small=document.createElement('small');small.textContent=tr('pricingOfficialMultiplier',{source:tr(item.official_listed === false ? 'pricingSourceEstimate' : 'pricingSourceOfficial'),value:Number(official || 1).toFixed(2)});
+      let small=document.createElement('small');small.textContent=tr('pricingOfficialMultiplier',{source:tr(item.official_listed === false ? 'pricingSourceEstimate' : 'pricingSourceOfficial'),value:Number(official || 1).toFixed(2)})+(Number(uncertainty || 0)>0?' · ±'+Number(uncertainty).toFixed(1)+'%':'');
       cell.append(small);row.append(cell);
     }
     body.append(row);
