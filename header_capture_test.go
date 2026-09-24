@@ -20,6 +20,7 @@ func TestCodexHeaderCaptureIsOptIn(t *testing.T) {
 		ResponseHeaders: http.Header{
 			"X-Codex-Primary-Used-Percent": {"0"},
 			"X-Codex-Extra":                {"one", "two"},
+			"X-Codex-Turn-State":           {strings.Repeat("opaque", 200)},
 			"Authorization":                {"must-not-store"},
 		},
 	}
@@ -44,7 +45,7 @@ func TestCodexHeaderCaptureIsOptIn(t *testing.T) {
 		}
 		values = append(values, value)
 	}
-	if len(values) != 2 || values[0] != "" || !strings.Contains(values[1], `"X-Codex-Extra":["one","two"]`) || strings.Contains(values[1], "must-not-store") {
+	if len(values) != 2 || values[0] != "" || !strings.Contains(values[1], `"X-Codex-Extra":["one","two"]`) || strings.Contains(values[1], "must-not-store") || strings.Contains(values[1], "Turn-State") {
 		t.Fatalf("captured headers = %#v", values)
 	}
 }

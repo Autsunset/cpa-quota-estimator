@@ -30,25 +30,13 @@ func (s *store) remainingModelAllowances(ctx context.Context, remainingValue flo
 		if !ok {
 			continue
 		}
-		p = priceForPricingMode(p, cfg.PricingMode)
-		multiplier := cfg.modelPriceMultiplier(model)
-		if normalizePricingMode(cfg.PricingMode) == pricingModeLearned {
-			multiplier = 1
-			if cfg.LearnedFit != nil {
-				for _, learned := range cfg.LearnedFit.Models {
-					if learned.Model == model {
-						p.Input, p.CacheRead, p.Output = learned.Input.Value, learned.Cache.Value, learned.Output.Value
-						break
-					}
-				}
-			}
-		}
+		p, _ = cfg.effectiveModelPrice(p)
 		if p.Input <= 0 && p.Output <= 0 && p.CacheRead <= 0 {
 			continue
 		}
 		item := modelAllowance{
 			Model:           model,
-			ModelMultiplier: multiplier,
+			ModelMultiplier: 1,
 			PricingMode:     normalizePricingMode(cfg.PricingMode),
 			ValueUnit:       pricingValueUnit(cfg.PricingMode),
 			InputRate:       p.Input,
@@ -56,9 +44,9 @@ func (s *store) remainingModelAllowances(ctx context.Context, remainingValue flo
 			CacheReadRate:   p.CacheRead,
 		}
 		if remainingValue > 0 {
-			item.InputTokens = tokensForValue(remainingValue, p.Input*item.ModelMultiplier)
-			item.OutputTokens = tokensForValue(remainingValue, p.Output*item.ModelMultiplier)
-			item.CacheReadTokens = tokensForValue(remainingValue, p.CacheRead*item.ModelMultiplier)
+			item.InputTokens = tokensForValue(remainingValue, p.Input)
+			item.OutputTokens = tokensForValue(remainingValue, p.Output)
+			item.CacheReadTokens = tokensForValue(remainingValue, p.CacheRead)
 		}
 		out = append(out, item)
 	}

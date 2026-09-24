@@ -106,34 +106,31 @@ func TestRecordUsageStoresQuotaObservationTime(t *testing.T) {
 	}
 }
 
-func TestPricingSettingsManagementSavesBothSwitches(t *testing.T) {
+func TestPricingSettingsManagementStartsBackgroundTask(t *testing.T) {
 	s, err := openStore(filepath.Join(t.TempDir(), "pricing-api.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.close()
 	a := &app{cfg: defaultConfig(), store: s}
-
-	response := a.handleManagement(managementRequest{
-		Method: "POST",
-		Path:   "/cpa-quota-estimator/pricing-settings",
-		Body:   []byte(`{"apply_long_context_pricing":false,"apply_fast_pricing":false}`),
-	})
-	if response.StatusCode != 200 {
-		t.Fatalf("status = %d, body = %s", response.StatusCode, response.Body)
+	response := a.handleManagement(managementRequest{Method: "POST", Path: "/cpa-quota-estimator/pricing-settings", Body: []byte(`{"pricing_mode":"custom","custom_fast_multiplier":3,"custom_long_context":false,"custom_long_threshold":300000}`)})
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", response.StatusCode, response.Body)
 	}
-	if a.cfg.ApplyLongContextPricing || a.cfg.ApplyFastPricing {
-		t.Fatalf("app settings = long:%v fast:%v, want both disabled", a.cfg.ApplyLongContextPricing, a.cfg.ApplyFastPricing)
+	var task pricingRecalcTask
+	if err = json.Unmarshal(response.Body, &task); err != nil {
+		t.Fatal(err)
 	}
-	if a.cfg.PricingMode != pricingModeCredits {
-		t.Fatalf("pricing mode = %q, want Credits", a.cfg.PricingMode)
+	waitPricingTask(t, a, task.ID)
+	if a.cfg.PricingMode != pricingModeCustom || a.cfg.CustomFastMultiplier != 3 || a.cfg.CustomLongContext || a.cfg.CustomLongThreshold != 300000 {
+		t.Fatalf("config=%#v", a.cfg)
 	}
-	settings, err := s.loadPricingSettings(context.Background(), pricingSettings{ApplyLongContext: true, ApplyFast: true})
+	saved, err := s.loadPricingSettings(context.Background(), defaultConfig().pricingSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.ApplyLongContext || settings.ApplyFast {
-		t.Fatalf("stored settings = %#v, want both disabled", settings)
+	if saved.PricingMode != pricingModeCustom || saved.CustomFastMultiplier != 3 {
+		t.Fatalf("saved=%#v", saved)
 	}
 }
 
@@ -420,48 +417,29 @@ func TestManagementExposesRecoveredQuotaRegimeAnomaly(t *testing.T) {
 	}
 }
 
-func TestPricingSettingsManagementSwitchesPricingMode(t *testing.T) {
+func TestPricingSettingsManagementAcceptsOldModeNames(t *testing.T) {
 	s, err := openStore(filepath.Join(t.TempDir(), "pricing-mode-api.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.close()
 	a := &app{cfg: defaultConfig(), store: s}
-
-	response := a.handleManagement(managementRequest{
-		Method: "POST",
-		Path:   "/cpa-quota-estimator/pricing-settings",
-		Body:   []byte(`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"credits"}`),
-	})
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status=%d body=%s", response.StatusCode, response.Body)
+	for old, want := range map[string]string{"legacy_api": "api", "current_api": "api", "learned": "credits"} {
+		response := a.handleManagement(managementRequest{Method: "POST", Path: "/cpa-quota-estimator/pricing-settings", Body: []byte(`{"pricing_mode":"` + old + `"}`)})
+		if response.StatusCode != http.StatusAccepted {
+			t.Fatalf("%s status=%d body=%s", old, response.StatusCode, response.Body)
+		}
+		var task pricingRecalcTask
+		if err = json.Unmarshal(response.Body, &task); err != nil {
+			t.Fatal(err)
+		}
+		waitPricingTask(t, a, task.ID)
+		if a.cfg.PricingMode != want {
+			t.Fatalf("%s -> %s want %s", old, a.cfg.PricingMode, want)
+		}
 	}
-	if a.cfg.PricingMode != pricingModeCredits {
-		t.Fatalf("app pricing mode = %q", a.cfg.PricingMode)
-	}
-	var payload map[string]any
-	if err = json.Unmarshal(response.Body, &payload); err != nil {
-		t.Fatal(err)
-	}
-	if payload["pricing_mode"] != pricingModeCredits || payload["value_unit"] != "credits" {
-		t.Fatalf("pricing response = %#v", payload)
-	}
-
-	response = a.handleManagement(managementRequest{
-		Method: "POST",
-		Path:   "/cpa-quota-estimator/pricing-settings",
-		Body:   []byte(`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"legacy_api"}`),
-	})
-	if response.StatusCode != http.StatusOK || a.cfg.PricingMode != pricingModeLegacyAPI {
-		t.Fatalf("switch back status=%d mode=%q body=%s", response.StatusCode, a.cfg.PricingMode, response.Body)
-	}
-
-	response = a.handleManagement(managementRequest{
-		Method: "POST",
-		Path:   "/cpa-quota-estimator/pricing-settings",
-		Body:   []byte(`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"discounted"}`),
-	})
+	response := a.handleManagement(managementRequest{Method: "POST", Path: "/cpa-quota-estimator/pricing-settings", Body: []byte(`{"pricing_mode":"discounted"}`)})
 	if response.StatusCode != http.StatusBadRequest {
-		t.Fatalf("invalid mode status=%d body=%s", response.StatusCode, response.Body)
+		t.Fatalf("invalid mode status=%d", response.StatusCode)
 	}
 }

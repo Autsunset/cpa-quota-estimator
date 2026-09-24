@@ -70,6 +70,15 @@ try {
   await wait("typeof state!=='undefined' && state?.account==='a-mixed' && seriesState && $('#fullTokens').textContent!=='—' && $('#monthTokens').textContent!=='—'", 'initial data');
   assert.equal(await evaluate("$('#coverageMode').value"),'cpa_only');
   assert((await evaluate("$('#coverageExplanation').textContent")).includes('假设全部用量经过 CPA'));
+  assert.equal(await evaluate("document.querySelectorAll('input[name=pricingMode]').length"),3);
+  assert.equal(await evaluate("document.querySelector('input[name=pricingMode]:checked').value"),'credits');
+  assert.equal(await evaluate("$('#pricingTitle').textContent"),'计价口径');
+  assert((await evaluate("$('#pricePreviewRows').children.length"))>=6,'price preview has model rows');
+  assert.equal(await evaluate("document.getElementById('astraMultiplier')===null"),true);
+  await evaluate("document.querySelector('input[name=pricingMode][value=custom]').click();true");
+  assert.equal(await visible('customPriceEditor'),true);
+  assert((await evaluate("$('#customPriceRows').children.length"))>=6,'custom editor has model rows');
+  await evaluate("pricingSettingsDirty=false;document.querySelector('input[name=pricingMode][value=credits]').click();pricingSettingsDirty=false;renderPricingSettings(state.config,priceCatalogState);true");
   const originalTokens = await evaluate("$('#tokens').textContent");
   const originalQuota = await evaluate("$('#used').textContent");
   const originalCapacity = await evaluate("$('#fullTokens').textContent");
@@ -105,6 +114,9 @@ try {
   await screenshot('coverage-unknown-mobile');
   await select('language','en');
   await wait("document.documentElement.lang==='en' && $('#coverageExplanation').textContent.startsWith('Coverage unknown')",'English coverage strings');
+  assert.equal(await evaluate("$('#pricingTitle').textContent"),'Pricing basis');
+  assert.equal(await evaluate("document.querySelector('.price-preview h2').textContent"),'Price table');
+  assert.equal(await evaluate("document.querySelector('.pricing-choice small').textContent.startsWith('Start from current official API')"),true);
   assert.equal(await evaluate("$('#coverageSaveStatus').textContent"), 'Account collection coverage saved');
   await screenshot('coverage-unknown-mobile-en');
   await saveMode('cpa_only');
@@ -136,8 +148,12 @@ try {
   await pause(600);
   assert.equal(await evaluate('state.account'),'b-cpa');
   assert.equal(await evaluate("$('#coverageMode').value"),'cpa_only');
+  await evaluate("$('#savePricingSettings').click();true");
+  await wait("!$('#pricingTaskProgress').hidden",'background pricing task visible');
+  await wait("$('#pricingTaskText').textContent.includes('Recalculation complete')",'background pricing task complete');
+  assert.equal(await evaluate("$('#savePricingSettings').disabled"),false);
   assert.equal(errors.length,0,JSON.stringify(errors));
-  console.log(JSON.stringify({defaultAssumption:true,mixedAndUnknown:true,independentScopes:true,persistence:true,accountIsolation:true,failedSaveRetry:true,failedRefreshProtection:true,staleReadProtection:true,mobile:true,english:true,javascriptErrors:errors.length}));
+  console.log(JSON.stringify({defaultAssumption:true,mixedAndUnknown:true,independentScopes:true,persistence:true,accountIsolation:true,failedSaveRetry:true,failedRefreshProtection:true,staleReadProtection:true,mobile:true,english:true,pricingTask:true,javascriptErrors:errors.length}));
 } finally {
   socket?.close();
   await new Promise(resolve => {

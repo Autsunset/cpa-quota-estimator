@@ -12,7 +12,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.14.0"
+var pluginVersion = "0.15.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -84,42 +84,41 @@ type managementResponse struct {
 }
 
 type config struct {
-	ApplyModelCalibration    bool       `yaml:"apply_model_calibration"`
-	AstraMultiplier          float64    `yaml:"astra_multiplier"`
-	Enabled                  bool       `yaml:"enabled"`
-	DataPath                 string     `yaml:"data_path"`
-	SampleIntervalMinutes    int        `yaml:"sample_interval_minutes"`
-	PriceSourceURL           string     `yaml:"price_source_url"`
-	PriceSyncIntervalMinutes int        `yaml:"price_sync_interval_minutes"`
-	FastPricingMode          string     `yaml:"fast_pricing_mode"`
-	FastMultiplier           float64    `yaml:"fast_multiplier"`
-	PricingMode              string     `yaml:"pricing_mode"`
-	ApplyFastPricing         bool       `yaml:"apply_fast_pricing"`
-	LongContextThreshold     int64      `yaml:"long_context_threshold"`
-	ApplyLongContextPricing  bool       `yaml:"apply_long_context_pricing"`
-	HistoryDays              int        `yaml:"history_days"`
-	CaptureCodexHeaders      bool       `yaml:"capture_codex_headers"`
-	WeightHalfLifeDays       float64    `yaml:"weight_half_life_days"`
-	WeightRandomWalkSigma    float64    `yaml:"weight_random_walk_sigma"`
-	WeightFitIntervalMinutes int        `yaml:"weight_fit_interval_minutes"`
-	LearnedFit               *weightFit `yaml:"-"`
+	Enabled                  bool                        `yaml:"enabled"`
+	DataPath                 string                      `yaml:"data_path"`
+	SampleIntervalMinutes    int                         `yaml:"sample_interval_minutes"`
+	PriceSourceURL           string                      `yaml:"price_source_url"`
+	PriceSyncIntervalMinutes int                         `yaml:"price_sync_interval_minutes"`
+	PricingMode              string                      `yaml:"pricing_mode"`
+	AnchorModel              string                      `yaml:"anchor_model"`
+	CustomPrices             map[string]customModelPrice `yaml:"-"`
+	CustomFastMultiplier     float64                     `yaml:"-"`
+	CustomLongContext        bool                        `yaml:"-"`
+	CustomLongThreshold      int64                       `yaml:"-"`
+	PriceCatalog             map[string]price            `yaml:"-"`
+	PricingMigration         bool                        `yaml:"-"`
+	LongContextThreshold     int64                       `yaml:"long_context_threshold"`
+	HistoryDays              int                         `yaml:"history_days"`
+	CaptureCodexHeaders      bool                        `yaml:"capture_codex_headers"`
+	WeightHalfLifeDays       float64                     `yaml:"weight_half_life_days"`
+	WeightRandomWalkSigma    float64                     `yaml:"weight_random_walk_sigma"`
+	WeightFitIntervalMinutes int                         `yaml:"weight_fit_interval_minutes"`
+	LearnedFit               *weightFit                  `yaml:"-"`
 }
 
 func defaultConfig() config {
 	return config{
-		ApplyModelCalibration:    true,
-		AstraMultiplier:          1.8,
 		Enabled:                  true,
 		DataPath:                 "/CLIProxyAPI/data/cpa-quota-estimator.sqlite",
 		SampleIntervalMinutes:    5,
 		PriceSourceURL:           "https://models.dev/catalog.json",
 		PriceSyncIntervalMinutes: 1440,
-		FastPricingMode:          "multiplier",
-		FastMultiplier:           2.5,
 		PricingMode:              pricingModeCredits,
-		ApplyFastPricing:         true,
+		AnchorModel:              "gpt-5.6-sol",
+		CustomFastMultiplier:     2,
+		CustomLongContext:        true,
+		CustomLongThreshold:      272000,
 		LongContextThreshold:     272000,
-		ApplyLongContextPricing:  false,
 		HistoryDays:              365,
 		WeightHalfLifeDays:       21,
 		WeightRandomWalkSigma:    .35,

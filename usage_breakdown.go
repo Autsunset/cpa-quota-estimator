@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -89,25 +90,32 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 		return result, err
 	}
 	valuePerPercent := make(map[int64]float64, len(cycles))
-	for _, cycle := range cycles {
+	states, _, err := s.accountOnlineScales(ctx, account, cfg, endAt)
+	if err != nil {
+		return result, err
+	}
+	ordered := append([]quotaCycle(nil), cycles...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].StartedAt < ordered[j].StartedAt })
+	priorValuePerPercent := float64(0)
+	for _, cycle := range ordered {
+		if snapshot, ok := states[cycle.ID]; ok && snapshot.State != nil {
+			value := 1 / math.Exp(snapshot.State.LogValue)
+			if isFinitePositive(value) {
+				priorValuePerPercent = value
+			}
+		}
 		if cycle.StartedAt >= endAt || cycle.EndedAt > 0 && cycle.EndedAt <= startAt {
+			continue
+		}
+		if priorValuePerPercent > 0 {
+			valuePerPercent[cycle.ID] = priorValuePerPercent
 			continue
 		}
 		points, _, errPoints := s.pointsForCycle(ctx, account, cycle.ID, 10000)
 		if errPoints != nil {
 			return result, errPoints
 		}
-		if len(points) == 0 {
-			continue
-		}
-		cycle.Current = true // estimate the corresponding historical cycle at its own last observation
-		estimate, errCapacity := s.onlineCycleCapacity(ctx, account, cycle, points, cfg, points[len(points)-1].Time)
-		if errCapacity != nil {
-			return result, errCapacity
-		}
-		if estimate.ValuePerPercent > 0 {
-			valuePerPercent[cycle.ID] = estimate.ValuePerPercent
-		} else if estimate.FullWindowCostUSD > 0 {
+		if estimate := estimateCapacity(points); estimate.FullWindowCostUSD > 0 {
 			valuePerPercent[cycle.ID] = estimate.FullWindowCostUSD / 100
 		}
 	}

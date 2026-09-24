@@ -85,7 +85,7 @@ func TestSnapshotRollingBacktest(t *testing.T) {
 	}
 	cfg := defaultConfig()
 	cfg.LearnedFit = &saved.FittedWeights
-	cfg.PricingMode = pricingModeLearned
+	cfg.PricingMode = pricingModeCredits
 	if _, err = s.savePricingSettingsAndRecalculate(ctx, cfg.pricingSettings(), cfg); err != nil {
 		t.Fatal(err)
 	}

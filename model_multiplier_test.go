@@ -1,164 +1,104 @@
 package main
 
 import (
-	"context"
 	"math"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func astraTestPrice() price {
-	return price{Model: "gpt-6-astra", Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5, LongInput: 20, LongOutput: 75, LongRead: 2, LongWrite: 25, FastInput: 20, FastOutput: 100, FastRead: 2, FastWrite: 25}
+func testAnchorFit() *weightFit {
+	return &weightFit{Available: true, Models: []learnedModelWeights{
+		{Model: "gpt-5.6-sol", Input: weightEstimate{Value: 1, Low: 1, High: 1, Identified: true}},
+		{Model: "gpt-6-astra", Input: weightEstimate{Value: 3, Low: 2.4, High: 3.6, Identified: true}},
+		{Model: "gpt-6-sol", Input: weightEstimate{Value: .5, Low: .5, High: .5, PriorLocked: true}},
+	}}
 }
 
-func TestAstraMultiplierPreservesBasePricesAndAppliesExactlyOnce(t *testing.T) {
-	p := astraTestPrice()
-	for _, mode := range []string{pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits} {
-		for _, fastMode := range []string{"source", "multiplier"} {
-			for _, long := range []bool{false, true} {
-				for _, fast := range []bool{false, true} {
-					cfg := defaultConfig()
-					cfg.PricingMode = mode
-					cfg.FastPricingMode = fastMode
-					cfg.ApplyLongContextPricing = long
-					cfg.ApplyFastPricing = fast
-					for _, tier := range []string{"auto", "fast", "priority"} {
-						d := usageDetail{InputTokens: 300000, OutputTokens: 10000, CacheReadTokens: 200000, CacheCreationTokens: 10000}
-						got := calculateCost(p, d, tier, cfg)
-						withoutCalibration := cfg
-						withoutCalibration.ApplyModelCalibration = false
-						want := calculateCost(p, d, tier, withoutCalibration)
-						if mode != pricingModeCredits { want *= 1.8 }
-						if math.Abs(got-want) > 1e-9 {
-							t.Fatalf("%s/%s/%t/%t/%s got %f want %f", mode, fastMode, long, fast, tier, got, want)
-						}
-					}
-				}
-			}
-		}
-	}
-	if p != astraTestPrice() {
-		t.Fatal("base prices mutated")
-	}
-	if got := priceForPricingMode(p, pricingModeCurrentAPI); got != p {
-		t.Fatal("current API base prices must remain uncalibrated")
-	}
-	legacy := defaultConfig(); legacy.PricingMode = pricingModeLegacyAPI
-	if defaultConfig().modelPriceMultiplier(" openai/GPT-6-ASTRA ") != 1 || legacy.modelPriceMultiplier(" openai/GPT-6-ASTRA ") != 1.8 || defaultConfig().modelPriceMultiplier("gpt-5.6-sol") != 1 {
-		t.Fatal("model normalization or scope")
-	}
-}
-
-func TestAstraMigrationAndAllowances(t *testing.T) {
-	ctx := context.Background()
-	s, err := openStore(filepath.Join(t.TempDir(), "multiplier.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.close()
-	if err = s.upsertPrices(ctx, []price{astraTestPrice(), {Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec(`INSERT INTO quota_cycles(id,account,started_at,reset_at,window_minutes) VALUES(1,'a',100,1000,15),(2,'a',1000,1900,15);
- INSERT INTO usage_events(cycle_id,requested_at,account,model,input_tokens,output_tokens,cache_read_tokens,cost_usd) VALUES
- (1,200,'a','gpt-6-astra',1000000,100000,500000,10.5),
- (1,210,'a','gpt-5.6-sol',1000000,100000,500000,5.75),
- (2,1100,'a','openai/gpt-6-astra',1000000,100000,500000,10.5);
- INSERT INTO quota_samples(cycle_id,sampled_at,account,used_percent,reset_at,window_minutes,window_cost_usd) VALUES
- (1,220,'a',1,1000,15,16.25),(2,1200,'a',1,1900,15,10.5);`); err != nil {
-		t.Fatal(err)
-	}
+func TestAnchoredPricesUseOfficialShapeAndRelativeAdjustment(t *testing.T) {
+	ref := price{Model: "gpt-5.6-sol", Input: 4, CacheRead: .4, Output: 20, CacheWrite: 5}
+	astra := price{Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50, CacheWrite: 12.5}
+	sol := price{Model: "gpt-6-sol", Input: 2, CacheRead: .2, Output: 10, CacheWrite: 2.5}
 	cfg := defaultConfig()
-	cfg.PricingMode = pricingModeLegacyAPI
-	for i := 0; i < 2; i++ {
-		if err = s.ensureAstraCalibration(ctx, cfg); err != nil {
-			t.Fatal(err)
-		}
-		var astra, sol float64
-		if err = s.db.QueryRow(`SELECT cost_usd FROM usage_events WHERE model='gpt-6-astra'`).Scan(&astra); err != nil {
-			t.Fatal(err)
-		}
-		if err = s.db.QueryRow(`SELECT cost_usd FROM usage_events WHERE model='gpt-5.6-sol'`).Scan(&sol); err != nil {
-			t.Fatal(err)
-		}
-		if math.Abs(astra-18.9) > 1e-9 || sol != 5.75 {
-			t.Fatalf("migration %d: astra=%f sol=%f", i, astra, sol)
-		}
-		for cid, want := range map[int]float64{1: 24.65, 2: 18.9} {
-			var v float64
-			if err = s.db.QueryRow(`SELECT window_cost_usd FROM quota_samples WHERE cycle_id=?`, cid).Scan(&v); err != nil {
-				t.Fatal(err)
-			}
-			if math.Abs(v-want) > 1e-9 {
-				t.Fatalf("sample cycle=%d got=%f want=%f", cid, v, want)
-			}
+	cfg.PricingMode = pricingModeAPI
+	cfg.AnchorModel = "gpt-5.6-sol"
+	cfg.LearnedFit = testAnchorFit()
+	cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": ref, "gpt-6-astra": astra, "gpt-6-sol": sol}
+	got, adjustment := cfg.effectiveModelPrice(astra)
+	for _, check := range []struct{ value, want float64 }{{got.Input, 12}, {got.CacheRead, 1.2}, {got.Output, 60}, {got.CacheWrite, 15}} {
+		if math.Abs(check.value-check.want) > 1e-9 {
+			t.Fatalf("adjusted rate=%f want=%f", check.value, check.want)
 		}
 	}
-	rows, err := s.remainingModelAllowances(ctx, 18, cfg)
-	if err != nil {
-		t.Fatal(err)
+	if !adjustment.Calibrated || adjustment.Baseline || math.Abs(adjustment.Factor-1.2) > 1e-9 {
+		t.Fatalf("adjustment=%#v", adjustment)
 	}
-	if len(rows) != 2 || rows[0].Model != "gpt-6-astra" {
-		t.Fatalf("rows=%#v", rows)
+	cfg.AnchorModel = "gpt-6-astra"
+	anchor, anchorInfo := cfg.effectiveModelPrice(astra)
+	if anchor.Input != astra.Input || anchor.CacheRead != astra.CacheRead || anchor.Output != astra.Output || !anchorInfo.Baseline || anchorInfo.Factor != 1 {
+		t.Fatalf("anchor=%#v info=%#v", anchor, anchorInfo)
 	}
-	a := rows[0]
-	if a.InputRate != 10 || a.OutputRate != 50 || a.CacheReadRate != 1 || a.ModelMultiplier != 1.8 || a.InputTokens != 1000000 || a.CacheReadTokens != 10000000 || a.OutputTokens != 200000 {
-		t.Fatalf("allowance=%#v", a)
+	other, _ := cfg.effectiveModelPrice(ref)
+	if math.Abs(other.Input-4/1.2) > 1e-9 {
+		t.Fatalf("relative anchor price=%f", other.Input)
 	}
-	// A price sync and repeated full recalculations never multiply stored prices.
-	if err = s.upsertPrices(ctx, []price{astraTestPrice()}); err != nil {
-		t.Fatal(err)
+	locked, lockInfo := cfg.effectiveModelPrice(sol)
+	if math.Abs(locked.Input-2/1.2) > 1e-9 || lockInfo.Calibrated {
+		t.Fatalf("locked target=%#v info=%#v", locked, lockInfo)
 	}
-	for i := 0; i < 2; i++ {
-		if _, err = s.savePricingSettingsAndRecalculate(ctx, cfg.pricingSettings(), cfg); err != nil {
-			t.Fatal(err)
+	cfg.PricingMode = pricingModeCredits
+	cfg.AnchorModel = "gpt-5.6-sol"
+	credits, _ := cfg.effectiveModelPrice(astra)
+	if math.Abs(credits.Input-300) > 1e-9 || math.Abs(credits.Output-1500) > 1e-9 {
+		t.Fatalf("credits=%#v", credits)
+	}
+	cfg.AnchorModel = "gpt-6-astra"
+	anchorCredits, _ := cfg.effectiveModelPrice(astra)
+	if anchorCredits.Input != 250 || anchorCredits.Output != 1250 {
+		t.Fatalf("credits anchor=%#v", anchorCredits)
+	}
+}
+
+func TestCustomPricesIgnoreLearnerAndAnchor(t *testing.T) {
+	astra := price{Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50, CacheWrite: 12.5, LongInput: 20, LongRead: 2, LongOutput: 75, LongWrite: 25}
+	cfg := defaultConfig()
+	cfg.PricingMode = pricingModeCustom
+	cfg.LearnedFit = testAnchorFit()
+	cfg.CustomFastMultiplier = 3
+	cfg.CustomLongContext = false
+	cfg.CustomPrices = map[string]customModelPrice{"gpt-6-astra": {Input: 7, CacheRead: .7, Output: 35, CacheWrite: 8}}
+	for _, anchor := range []string{"gpt-5.6-sol", "gpt-6-astra"} {
+		cfg.AnchorModel = anchor
+		p, adjustment := cfg.effectiveModelPrice(astra)
+		if p.Input != 7 || p.CacheRead != .7 || p.Output != 35 || p.CacheWrite != 8 || adjustment.Factor != 1 {
+			t.Fatalf("custom=%#v adjustment=%#v", p, adjustment)
 		}
-	}
-	var v float64
-	if err = s.db.QueryRow(`SELECT cost_usd FROM usage_events WHERE model='gpt-6-astra'`).Scan(&v); err != nil {
-		t.Fatal(err)
-	}
-	if math.Abs(v-18.9) > 1e-9 {
-		t.Fatalf("recalculated=%f", v)
-	}
-	for _, text := range []string{"model_multiplier", "model_price_multipliers", "Model multiplier ×{multiplier}", "模型倍率 ×{multiplier}", "allowanceRate"} {
-		if !strings.Contains(string(dashboardHTML), text) {
-			t.Fatalf("missing UI %s", text)
+		cost := calculateCost(astra, usageDetail{InputTokens: 1_000_000}, "fast", cfg)
+		if math.Abs(cost-21) > 1e-9 {
+			t.Fatalf("custom fast cost=%f", cost)
 		}
 	}
 }
 
-func TestAstraMigrationRollsBackAtomically(t *testing.T) {
-	ctx := context.Background()
-	s, err := openStore(filepath.Join(t.TempDir(), "rollback.sqlite"))
-	if err != nil {
-		t.Fatal(err)
+func TestFastAndLongShowLearnedAgainstOfficial(t *testing.T) {
+	p, _ := officialGPT6Price("gpt-6-astra")
+	cfg := defaultConfig()
+	cfg.PricingMode = pricingModeAPI
+	cfg.LearnedFit = testAnchorFit()
+	cfg.LearnedFit.Fast = weightEstimate{Value: 3, Low: 2.5, High: 3.5}
+	cfg.LearnedFit.LongContext = weightEstimate{Value: 1.2, Low: 1, High: 1.4}
+	row := cfg.priceRow(p)
+	if row.OfficialFastMultiplier != 2 || row.FastMultiplier != 3 || row.OfficialLongMultiplier != 2 || math.Abs(row.LongMultiplier-2.4) > 1e-9 {
+		t.Fatalf("multipliers=%#v", row)
 	}
-	defer s.close()
-	if err = s.upsertPrices(ctx, []price{astraTestPrice()}); err != nil {
-		t.Fatal(err)
+	got := calculateCost(p, usageDetail{InputTokens: 1_000_000}, "fast", cfg)
+	if math.Abs(got-86.4) > 1e-9 {
+		t.Fatalf("learned fast/long cost=%f", got)
 	}
-	if _, err = s.db.Exec(`INSERT INTO usage_events(cycle_id,requested_at,account,model,input_tokens,cost_usd) VALUES(1,100,'a','gpt-6-astra',1000000,10);
- INSERT INTO quota_samples(cycle_id,sampled_at,account,used_percent,reset_at,window_minutes,window_cost_usd) VALUES(1,100,'a',1,1000,15,10);
- CREATE TRIGGER reject_sample_update BEFORE UPDATE ON quota_samples BEGIN SELECT RAISE(ABORT,'test rollback'); END;`); err != nil {
-		t.Fatal(err)
-	}
-	if err = s.ensureAstraCalibration(ctx, defaultConfig()); err == nil {
-		t.Fatal("expected migration failure")
-	}
-	var v float64
-	if err = s.db.QueryRow(`SELECT cost_usd FROM usage_events`).Scan(&v); err != nil {
-		t.Fatal(err)
-	}
-	if v != 10 {
-		t.Fatalf("partial migration leaked: %f", v)
-	}
-	var n int
-	if err = s.db.QueryRow(`SELECT COUNT(*) FROM metadata WHERE key=?`, astraCalibrationKey).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Fatal("failed migration marked applied")
+}
+
+func TestUnlistedCreditsPriceIsMarkedAsEstimate(t *testing.T) {
+	cfg := defaultConfig()
+	row := cfg.priceRow(price{Model: "gpt-unlisted", Input: 3, CacheRead: .3, Output: 15, CacheWrite: 4})
+	if row.OfficialListed || row.Official.Input != 75 || row.Official.CacheWrite != 0 {
+		t.Fatalf("fallback row=%#v", row)
 	}
 }

@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"math"
-	"strconv"
-	"strings"
 )
 
 func burnWithOnlineCapacity(points []quotaPoint, now int64, capacity estimate) burnForecast {
@@ -59,72 +57,19 @@ func (s *store) onlineCycleCapacity(ctx context.Context, account string, cycle q
 	if cycle.ID == 0 || len(points) == 0 || !cycle.Current {
 		return fallback, nil
 	}
-	mode := normalizePricingMode(cfg.PricingMode)
-	lag := 2
-	if cfg.LearnedFit != nil && cfg.LearnedFit.Available {
-		lag = cfg.LearnedFit.Lag
-	}
-	segments, err := s.quotaSegments(ctx, lag)
+	rate := float64(1)
+	states, tracker, err := s.accountOnlineScales(ctx, account, cfg, cutoff)
 	if err != nil {
 		return fallback, err
-	}
-	priceRows, err := s.listPrices(ctx)
-	if err != nil {
-		return fallback, err
-	}
-	prices := make(map[string]price, len(priceRows))
-	for _, p := range priceRows {
-		prices[normalizeModel(p.Model)] = p
-	}
-	rate := referenceSolRate(mode, prices)
-	if mode == pricingModeLearned {
-		rate = 1
-	}
-	if rate <= 0 {
-		return fallback, nil
-	}
-	sigma := cfg.WeightRandomWalkSigma
-	if sigma <= 0 {
-		sigma = .35
-	}
-	tracker := &onlineScaleTracker{ByCycle: make(map[string]*onlineCycleScale), LastByGroup: make(map[string]*onlineCycleScale), RandomWalkSigma: sigma}
-	counts := make(map[string]int)
-	for _, seg := range segments {
-		if seg.Account != account || seg.Window != mainQuotaScope || seg.EndAt > cutoff || !seg.eligible() || seg.DP <= 0 {
-			continue
-		}
-		var equivalent float64
-		if mode == pricingModeLearned {
-			if cfg.LearnedFit != nil {
-				equivalent = learnedSegmentEquivalent(seg, *cfg.LearnedFit)
-			}
-		} else {
-			equivalent = referenceEquivalent(seg, mode, prices)
-		}
-		if equivalent <= 0 {
-			continue
-		}
-		state := tracker.forSegment(seg)
-		state.update(equivalent, seg.DP, seg.BoundaryWeight, 0)
-		counts[modelCycle(seg)]++
 	}
 	var state *onlineCycleScale
 	var count int
-	prefix := account + "|" + mainQuotaScope + "|"
-	for key, candidate := range tracker.ByCycle {
-		if !strings.HasPrefix(key, prefix) {
-			continue
-		}
-		// The persisted cycle ID, rather than the reset timestamp, is the
-		// stable identity; upstream reset timestamps can drift by a minute.
-		if strings.HasPrefix(key, prefix+itoa(cycle.ID)+"|") {
-			state = candidate
-			count += counts[key]
-		}
+	if snapshot, ok := states[cycle.ID]; ok {
+		state, count = snapshot.State, snapshot.Crossings
 	}
 	if state == nil {
 		// A new cycle with no crossings borrows the preceding cycle's scale.
-		if tracker.LastByGroup[prefix[:len(prefix)-1]] == nil {
+		if tracker.LastByGroup[account+"|"+mainQuotaScope] == nil {
 			return fallback, nil
 		}
 		state = tracker.forSegment(quotaSegment{Account: account, Window: mainQuotaScope, CycleID: cycle.ID, RegimeResetAt: cycle.ResetAt})
@@ -167,6 +112,89 @@ func (s *store) onlineCycleCapacity(ctx context.Context, account string, cycle q
 	return result, nil
 }
 
+type cycleOnlineSnapshot struct {
+	State     *onlineCycleScale
+	Crossings int
+}
+
+func (s *store) accountOnlineScales(ctx context.Context, account string, cfg config, cutoff int64) (map[int64]cycleOnlineSnapshot, *onlineScaleTracker, error) {
+	lag := 2
+	if cfg.LearnedFit != nil && cfg.LearnedFit.Available {
+		lag = cfg.LearnedFit.Lag
+	}
+	segments, err := s.quotaSegments(ctx, lag)
+	if err != nil {
+		return nil, nil, err
+	}
+	sigma := cfg.WeightRandomWalkSigma
+	if sigma <= 0 {
+		sigma = .35
+	}
+	tracker := &onlineScaleTracker{ByCycle: make(map[string]*onlineCycleScale), LastByGroup: make(map[string]*onlineCycleScale), RandomWalkSigma: sigma}
+	result := make(map[int64]cycleOnlineSnapshot)
+	valuePrefixes := make(map[string]segmentCostPrefix)
+	for _, seg := range segments {
+		if seg.Account != account || seg.Window != mainQuotaScope || seg.EndAt > cutoff || !seg.eligible() || seg.DP <= 0 {
+			continue
+		}
+		key := modelCycle(seg)
+		prefix, ok := valuePrefixes[key]
+		if !ok {
+			prefix, err = s.segmentCostPrefix(ctx, seg)
+			if err != nil {
+				return nil, nil, err
+			}
+			valuePrefixes[key] = prefix
+		}
+		value := prefix.value(seg.FeatureStartEventID, seg.FeatureEndEventID)
+		if value <= 0 {
+			continue
+		}
+		state := tracker.forSegment(seg)
+		state.update(value, seg.DP, seg.BoundaryWeight, 0)
+		snapshot := result[seg.CycleID]
+		snapshot.State = state
+		snapshot.Crossings++
+		result[seg.CycleID] = snapshot
+	}
+	return result, tracker, nil
+}
+
+type segmentCostPrefix struct {
+	Index  map[int64]int
+	Values []float64
+}
+
+func (p segmentCostPrefix) value(startID, endID int64) float64 {
+	start, okStart := p.Index[startID]
+	end, okEnd := p.Index[endID]
+	if !okStart || !okEnd || end < start || end+1 >= len(p.Values) {
+		return 0
+	}
+	return p.Values[end+1] - p.Values[start]
+}
+
+func (s *store) segmentCostPrefix(ctx context.Context, segment quotaSegment) (segmentCostPrefix, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,cost_usd FROM usage_events WHERE account=? AND quota_scope=? AND cycle_id=?
+		AND reset_at BETWEEN ? AND ? ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,id`,
+		segment.Account, mainQuotaScope, segment.CycleID, segment.RegimeResetAt-segmentResetSlack, segment.RegimeResetAt+segmentResetSlack)
+	if err != nil {
+		return segmentCostPrefix{}, err
+	}
+	defer rows.Close()
+	result := segmentCostPrefix{Index: make(map[int64]int), Values: []float64{0}}
+	for rows.Next() {
+		var id int64
+		var cost float64
+		if err = rows.Scan(&id, &cost); err != nil {
+			return segmentCostPrefix{}, err
+		}
+		result.Index[id] = len(result.Values) - 1
+		result.Values = append(result.Values, result.Values[len(result.Values)-1]+cost)
+	}
+	return result, rows.Err()
+}
+
 func (s *store) recentTokenValueRatio(ctx context.Context, account string, cycleID int64, points []quotaPoint) float64 {
 	for i := len(points) - 1; i >= 0; i-- {
 		if points[i].WindowCostUSD > 0 && points[i].WindowTokens > 0 {
@@ -185,5 +213,3 @@ func (s *store) recentTokenValueRatio(ctx context.Context, account string, cycle
 func isFinitePositive(value float64) bool {
 	return value > 0 && !math.IsInf(value, 0) && !math.IsNaN(value)
 }
-
-func itoa(value int64) string { return strconv.FormatInt(value, 10) }

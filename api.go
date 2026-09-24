@@ -27,11 +27,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	if a.store == nil {
 		return textResponse(503, "plugin store is not ready")
 	}
-	timeout := 30 * time.Second
-	if strings.HasSuffix(req.Path, "/pricing-settings") && strings.EqualFold(req.Method, "POST") {
-		timeout = 2 * time.Minute
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	switch {
 	case strings.HasSuffix(req.Path, "/overview"):
@@ -107,16 +103,19 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if !strings.EqualFold(req.Method, "GET") {
 			return textResponse(405, "method not allowed")
 		}
-		var models, locked []string
+		var models, locked, targets []string
 		if a.cfg.LearnedFit != nil && a.cfg.LearnedFit.Available {
 			for _, row := range a.cfg.LearnedFit.Models {
 				models = append(models, row.Model)
 				if row.Input.PriorLocked {
 					locked = append(locked, row.Model)
 				}
+				if row.Input.PriorLocked || row.Model == "gpt-6-astra" {
+					targets = append(targets, row.Model)
+				}
 			}
 		}
-		return jsonResponse(200, map[string]any{"models": models, "locked_models": locked})
+		return jsonResponse(200, map[string]any{"models": models, "locked_models": locked, "target_models": targets})
 	case strings.HasSuffix(req.Path, "/calibration/start"):
 		if !strings.EqualFold(req.Method, "POST") {
 			return textResponse(405, "method not allowed")
@@ -134,8 +133,8 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			return textResponse(409, "weight fit required before calibration")
 		}
 		before := calibrationWeight(a.cfg.LearnedFit, body.ModelB)
-		if before == nil || !before.PriorLocked {
-			return textResponse(400, "model_b must currently be prior-locked")
+		if before == nil || (!before.PriorLocked && normalizeModel(body.ModelB) != "gpt-6-astra") {
+			return textResponse(400, "model_b must be Astra or currently prior-locked")
 		}
 		if calibrationWeight(a.cfg.LearnedFit, body.ModelA) == nil {
 			return textResponse(400, "model_a must be in the weight fit")
@@ -210,7 +209,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if account == "" && len(accounts) > 0 {
 			account = accounts[0]
 		}
-		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": map[string]any{"apply_model_calibration": a.cfg.ApplyModelCalibration, "astra_multiplier": a.cfg.AstraMultiplier, "model_price_multipliers": a.cfg.modelPriceMultipliers(), "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing, "price_source_url": a.cfg.PriceSourceURL}}
+		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": pricingSettingsResponse(a.cfg)}
 		if account != "" {
 			hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 			if errWeekly != nil {
@@ -439,9 +438,18 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			return textResponse(500, err.Error())
 		}
 		return jsonResponse(200, report)
+	case strings.HasSuffix(req.Path, "/pricing-settings/task"):
+		if !strings.EqualFold(req.Method, "GET") {
+			return textResponse(405, "method not allowed")
+		}
+		task, ok := a.latestPricingTask(req.Query.Get("id"))
+		if !ok {
+			return textResponse(404, "pricing task not found")
+		}
+		return jsonResponse(200, task)
 	case strings.HasSuffix(req.Path, "/pricing-settings"):
 		if strings.EqualFold(req.Method, "GET") {
-			return jsonResponse(200, pricingSettingsResponse(a.cfg, 0))
+			return jsonResponse(200, pricingSettingsResponse(a.cfg))
 		}
 		if !strings.EqualFold(req.Method, "POST") {
 			return textResponse(405, "method not allowed")
@@ -450,49 +458,70 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err := json.Unmarshal(req.Body, &update); err != nil {
 			return textResponse(400, "invalid pricing settings: "+err.Error())
 		}
-		if update.ApplyLongContext == nil || update.ApplyFast == nil {
-			return textResponse(400, "apply_long_context_pricing and apply_fast_pricing are required")
-		}
 		mode := strings.TrimSpace(update.PricingMode)
 		if mode == "" {
 			mode = a.cfg.PricingMode
 		}
 		if !validPricingMode(mode) {
-			return textResponse(400, "pricing_mode must be current_api, legacy_api, credits, or learned")
-		}
-		if normalizePricingMode(mode) == pricingModeLearned && (a.cfg.LearnedFit == nil || !a.cfg.LearnedFit.Available) {
-			return textResponse(400, "learned pricing requires a completed weight fit")
+			return textResponse(400, "pricing_mode must be api, credits, or custom")
 		}
 		settings := a.cfg.pricingSettings()
-		settings.ApplyLongContext, settings.ApplyFast, settings.PricingMode = *update.ApplyLongContext, *update.ApplyFast, normalizePricingMode(mode)
-		if update.ApplyModelCalibration != nil {
-			settings.ApplyModelCalibration = *update.ApplyModelCalibration
+		settings.PricingMode = normalizePricingMode(mode)
+		if update.AnchorModel != "" {
+			settings.AnchorModel = normalizeModel(update.AnchorModel)
 		}
-		if update.AstraMultiplier != nil {
-			settings.AstraMultiplier = *update.AstraMultiplier
+		if update.RestoreOfficial {
+			settings.CustomPrices = map[string]customModelPrice{}
+			settings.CustomFastMultiplier = 2
+			settings.CustomLongContext = true
+			settings.CustomLongThreshold = 272000
 		}
-		if err := validateAstraMultiplier(settings.AstraMultiplier); err != nil {
+		if update.CustomPrices != nil {
+			settings.CustomPrices = update.CustomPrices
+		}
+		if update.CustomFastMultiplier != nil {
+			settings.CustomFastMultiplier = *update.CustomFastMultiplier
+		}
+		if update.CustomLongContext != nil {
+			settings.CustomLongContext = *update.CustomLongContext
+		}
+		if update.CustomLongThreshold != nil {
+			settings.CustomLongThreshold = *update.CustomLongThreshold
+		}
+		settings, err := normalizePricingSettings(settings)
+		if err != nil {
 			return textResponse(400, err.Error())
 		}
-		cfg := a.cfg.withPricingSettings(settings)
-		recalculated, err := a.store.savePricingSettingsAndRecalculate(ctx, settings, cfg)
-		if err != nil {
-			return textResponse(500, err.Error())
+		if settings.PricingMode != pricingModeCustom && a.cfg.baseInputForModel(settings.AnchorModel, settings.PricingMode) <= 0 {
+			return textResponse(400, "anchor_model has no official price")
 		}
-		a.cfg = cfg
-		return jsonResponse(200, pricingSettingsResponse(a.cfg, recalculated))
+		for model := range settings.CustomPrices {
+			if _, ok := a.cfg.PriceCatalog[model]; !ok {
+				return textResponse(400, "unknown custom price model: "+model)
+			}
+		}
+		task, err := a.startPricingTask(a.store, settings, a.cfg.withPricingSettings(settings))
+		if err != nil {
+			return jsonResponse(409, map[string]any{"error": err.Error(), "task_id": task.ID, "status": task.Status})
+		}
+		return jsonResponse(202, task)
 	case strings.HasSuffix(req.Path, "/prices/sync"):
 		count, err := syncPrices(ctx, a.store, a.cfg)
 		if err != nil {
 			return textResponse(502, err.Error())
 		}
+		go a.refreshPriceCatalog(context.Background(), a.store)
 		return jsonResponse(200, map[string]any{"ok": true, "count": count, "source": a.cfg.PriceSourceURL})
 	case strings.HasSuffix(req.Path, "/prices"):
 		prices, err := a.store.listPrices(ctx)
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
-		return jsonResponse(200, map[string]any{"prices": prices, "apply_model_calibration": a.cfg.ApplyModelCalibration, "astra_multiplier": a.cfg.AstraMultiplier, "model_price_multipliers": a.cfg.modelPriceMultipliers(), "fast_pricing_mode": a.cfg.FastPricingMode, "fast_multiplier": a.cfg.FastMultiplier, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "apply_fast_pricing": a.cfg.ApplyFastPricing, "long_context_threshold": a.cfg.LongContextThreshold, "apply_long_context_pricing": a.cfg.ApplyLongContextPricing})
+		rows := make([]modelPriceRow, 0, len(prices))
+		for _, p := range prices {
+			rows = append(rows, a.cfg.priceRow(p))
+		}
+		return jsonResponse(200, map[string]any{"prices": prices, "rows": rows, "settings": pricingSettingsResponse(a.cfg)})
 	default:
 		return textResponse(404, "not found")
 	}
@@ -634,18 +663,15 @@ func quotaState(usedPercent float64, resetAt, now int64) (float64, string) {
 	return remaining, "active"
 }
 
-func pricingSettingsResponse(cfg config, recalculated int64) map[string]any {
+func pricingSettingsResponse(cfg config) map[string]any {
 	return map[string]any{
-		"apply_long_context_pricing": cfg.ApplyLongContextPricing,
-		"apply_fast_pricing":         cfg.ApplyFastPricing,
-		"pricing_mode":               normalizePricingMode(cfg.PricingMode),
-		"value_unit":                 pricingValueUnit(cfg.PricingMode),
-		"long_context_threshold":     cfg.LongContextThreshold,
-		"fast_pricing_mode":          cfg.FastPricingMode,
-		"fast_multiplier":            cfg.FastMultiplier,
-		"recalculated_events":        recalculated,
-		"model_price_multipliers":    cfg.modelPriceMultipliers(),
-		"apply_model_calibration":    cfg.ApplyModelCalibration,
-		"astra_multiplier":           cfg.AstraMultiplier,
+		"pricing_mode":           normalizePricingMode(cfg.PricingMode),
+		"value_unit":             pricingValueUnit(cfg.PricingMode),
+		"anchor_model":           normalizeModel(cfg.AnchorModel),
+		"custom_prices":          cfg.CustomPrices,
+		"custom_fast_multiplier": cfg.CustomFastMultiplier,
+		"custom_long_context":    cfg.CustomLongContext,
+		"custom_long_threshold":  cfg.CustomLongThreshold,
+		"price_source_url":       cfg.PriceSourceURL,
 	}
 }

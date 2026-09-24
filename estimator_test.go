@@ -18,14 +18,11 @@ func TestPublicReleaseDefaults(t *testing.T) {
 	if cfg.HistoryDays != 365 {
 		t.Fatalf("history days = %d, want 365", cfg.HistoryDays)
 	}
-	if cfg.ApplyLongContextPricing || !cfg.ApplyFastPricing {
-		t.Fatalf("pricing defaults = long:%v fast:%v, want long disabled and fast enabled", cfg.ApplyLongContextPricing, cfg.ApplyFastPricing)
+	if cfg.AnchorModel != "gpt-5.6-sol" || cfg.CustomFastMultiplier != 2 || !cfg.CustomLongContext {
+		t.Fatalf("pricing defaults=%#v", cfg)
 	}
-	if bytes.Contains(dashboardHTML, []byte(`id="applyLongContextPricing" type="checkbox" checked`)) {
-		t.Fatal("long-context pricing checkbox must be unchecked by default")
-	}
-	if !bytes.Contains(dashboardHTML, []byte(`id="applyFastPricing" type="checkbox" checked`)) {
-		t.Fatal("Fast pricing checkbox must be checked by default")
+	if bytes.Contains(dashboardHTML, []byte(`id="applyFastPricing"`)) {
+		t.Fatal("obsolete Fast switch remains in dashboard")
 	}
 	for _, marker := range [][]byte{
 		[]byte("bridgeState"),
@@ -74,11 +71,11 @@ func TestPublicReleaseDefaults(t *testing.T) {
 		[]byte("schedule_inferred"),
 		[]byte("待请求确认"),
 		[]byte("不计入主额度"),
-		[]byte("applyLongContextPricing"),
-		[]byte("applyFastPricing"),
+		[]byte("customLongContext"),
+		[]byte("customFastMultiplier"),
 		[]byte("pricingMode"),
-		[]byte("current_api"),
-		[]byte("legacy_api"),
+		[]byte("value=\"api\""),
+		[]byte("value=\"custom\""),
 		[]byte("credits"),
 		[]byte("remaining_by_model"),
 		[]byte("/pricing-settings"),
@@ -227,32 +224,20 @@ func TestEstimateBurnRecentPace(t *testing.T) {
 func TestCalculateCostCacheLongAndFast(t *testing.T) {
 	p := price{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25, LongInput: 10, LongOutput: 45, LongRead: 1, LongWrite: 12.5, FastInput: 10, FastOutput: 60, FastRead: 1, FastWrite: 12.5}
 	cfg := defaultConfig()
-	cfg.PricingMode = pricingModeCurrentAPI
-	cfg.ApplyLongContextPricing = true
+	cfg.PricingMode = pricingModeAPI
 	detail := usageDetail{InputTokens: 300_000, OutputTokens: 10_000, CacheReadTokens: 200_000, CacheCreationTokens: 20_000}
 	got := calculateCost(p, detail, "priority", cfg)
-	want := (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*45) / 1_000_000 * 2.5
+	want := (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*45) / 1_000_000 * 2
 	if math.Abs(got-want) > 1e-9 {
 		t.Fatalf("cost = %f, want %f", got, want)
 	}
-	cfg.FastPricingMode = "source"
-	cfg.PricingMode = pricingModeCurrentAPI // Explicit source Fast prices belong to the current API basis.
+	cfg.PricingMode = pricingModeCustom
+	cfg.CustomFastMultiplier = 3
+	cfg.CustomLongContext = false
 	got = calculateCost(p, detail, "priority", cfg)
-	want = (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*60) / 1_000_000
+	want = (80_000.0*5 + 200_000.0*.5 + 20_000.0*6.25 + 10_000.0*30) / 1_000_000 * 3
 	if math.Abs(got-want) > 1e-9 {
-		t.Fatalf("source fast cost = %f, want %f", got, want)
-	}
-	cfg.ApplyFastPricing = false
-	got = calculateCost(p, detail, "priority", cfg)
-	want = (80_000.0*10 + 200_000.0*1 + 20_000.0*12.5 + 10_000.0*45) / 1_000_000
-	if math.Abs(got-want) > 1e-9 {
-		t.Fatalf("fast-disabled cost = %f, want %f", got, want)
-	}
-	cfg.ApplyLongContextPricing = false
-	got = calculateCost(p, detail, "priority", cfg)
-	want = (80_000.0*5 + 200_000.0*.5 + 20_000.0*6.25 + 10_000.0*30) / 1_000_000
-	if math.Abs(got-want) > 1e-9 {
-		t.Fatalf("all-surcharges-disabled cost = %f, want %f", got, want)
+		t.Fatalf("custom cost=%f want=%f", got, want)
 	}
 }
 
@@ -272,15 +257,14 @@ func TestSubscriptionCreditsUsePublishedCodexRates(t *testing.T) {
 	p := price{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5}
 	detail := usageDetail{InputTokens: 1_000_000, OutputTokens: 100_000, CacheReadTokens: 500_000}
 	cfg := defaultConfig()
-	cfg.ApplyFastPricing = false
 
 	cfg.PricingMode = pricingModeCurrentAPI
 	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-4.2) > 1e-9 {
 		t.Fatalf("current API value = %f, want 4.2", got)
 	}
 	cfg.PricingMode = pricingModeLegacyAPI
-	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-5.75) > 1e-9 {
-		t.Fatalf("legacy API value = %f, want 5.75", got)
+	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-4.2) > 1e-9 {
+		t.Fatalf("legacy alias must use current API value, got %f", got)
 	}
 	cfg.PricingMode = pricingModeCredits
 	if got := calculateCost(p, detail, "auto", cfg); math.Abs(got-105) > 1e-9 {

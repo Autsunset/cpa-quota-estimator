@@ -14,10 +14,16 @@ import (
 )
 
 type app struct {
-	mu     sync.RWMutex
-	cfg    config
-	store  *store
-	cancel context.CancelFunc
+	mu                          sync.RWMutex
+	cfg                         config
+	store                       *store
+	cancel                      context.CancelFunc
+	pricingTaskMu               sync.Mutex
+	pricingTask                 *pricingRecalcTask
+	pricingTaskHistory          map[string]pricingRecalcTask
+	pricingProgressHook         func(pricingRecalcProgress) error
+	pricingRepricePending       bool
+	pricingRepriceIncludeCustom bool
 }
 
 var globalApp = &app{cfg: defaultConfig()}
@@ -65,12 +71,8 @@ func pluginRegistration() any {
 				{"Name": "enabled", "Type": "boolean", "Description": "是否采集用量和额度样本"},
 				{"Name": "data_path", "Type": "string", "Description": "SQLite 数据库路径"},
 				{"Name": "sample_interval_minutes", "Type": "integer", "Description": "额度未变化时的最小采样间隔"},
-				{"Name": "fast_pricing_mode", "Type": "enum", "EnumValues": []string{"multiplier", "source"}, "Description": "Fast 按倍率或价格源显式价格计费"},
-				{"Name": "fast_multiplier", "Type": "number", "Description": "Fast 倍率，默认 2.5"},
-				{"Name": "pricing_mode", "Type": "enum", "EnumValues": []string{pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits, pricingModeLearned}, "Description": "计价口径：Credits（新用户默认）、优惠前 API、当前 API 或自学习权重"},
-				{"Name": "astra_multiplier", "Type": "number", "Description": "Astra 额度倍率，默认 1.8，范围 0.01–100"},
-				{"Name": "apply_fast_pricing", "Type": "boolean", "Description": "是否应用 Fast 加价，默认开启；仪表盘保存值会覆盖此初始值"},
-				{"Name": "apply_long_context_pricing", "Type": "boolean", "Description": "是否应用长上下文加价，默认关闭；仪表盘保存值会覆盖此初始值"},
+				{"Name": "pricing_mode", "Type": "enum", "EnumValues": []string{pricingModeAPI, pricingModeCredits, pricingModeCustom}, "Description": "计价口径：官方 API 美元价格、Codex Credits 或自定义美元价格"},
+				{"Name": "anchor_model", "Type": "string", "Description": "API/Credits 计价锚定模型，默认 gpt-5.6-sol"},
 				{"Name": "capture_codex_headers", "Type": "boolean", "Description": "原样记录 X-Codex-* 响应头，默认关闭"},
 				{"Name": "weight_half_life_days", "Type": "number", "Description": "学习器时间衰减半衰期，默认 21 天"},
 				{"Name": "weight_random_walk_sigma", "Type": "number", "Description": "周期间 log 尺度随机游走标准差，默认 0.35"},
@@ -102,6 +104,7 @@ func managementRegistration() any {
 			{"Method": "GET", "Path": base + "/prices"},
 			{"Method": "POST", "Path": base + "/prices/sync"},
 			{"Method": "GET", "Path": base + "/pricing-settings"},
+			{"Method": "GET", "Path": base + "/pricing-settings/task"},
 			{"Method": "POST", "Path": base + "/pricing-settings"},
 			{"Method": "GET", "Path": base + "/coverage-settings"},
 			{"Method": "POST", "Path": base + "/coverage-settings"},
@@ -117,9 +120,6 @@ func parseConfig(raw []byte) (config, error) {
 			return cfg, fmt.Errorf("parse plugin config: %w", err)
 		}
 	}
-	if err := validateAstraMultiplier(cfg.AstraMultiplier); err != nil {
-		return cfg, err
-	}
 	if cfg.DataPath == "" {
 		cfg.DataPath = defaultConfig().DataPath
 	}
@@ -132,13 +132,12 @@ func parseConfig(raw []byte) (config, error) {
 	if cfg.PriceSyncIntervalMinutes < 5 {
 		cfg.PriceSyncIntervalMinutes = 1440
 	}
-	if cfg.FastPricingMode != "source" && cfg.FastPricingMode != "multiplier" {
-		cfg.FastPricingMode = "multiplier"
-	}
-	if cfg.FastMultiplier <= 0 {
-		cfg.FastMultiplier = 2.5
-	}
+	rawMode := strings.ToLower(strings.TrimSpace(cfg.PricingMode))
 	cfg.PricingMode = normalizePricingMode(cfg.PricingMode)
+	cfg.PricingMigration = rawMode != "" && rawMode != cfg.PricingMode
+	if cfg.AnchorModel == "" {
+		cfg.AnchorModel = "gpt-5.6-sol"
+	}
 	if cfg.LongContextThreshold <= 0 {
 		cfg.LongContextThreshold = 272000
 	}
@@ -175,6 +174,11 @@ func (a *app) configure(raw []byte) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.store != nil && a.cfg.DataPath == cfg.DataPath {
+		catalog, errCatalog := loadPriceCatalog(context.Background(), a.store)
+		if errCatalog != nil {
+			return errCatalog
+		}
+		cfg.PriceCatalog = catalog
 		settings, errLoad := a.store.loadPricingSettings(context.Background(), cfg.pricingSettings())
 		if errLoad != nil {
 			return errLoad
@@ -186,6 +190,11 @@ func (a *app) configure(raw []byte) error {
 		}
 		if ok && savedFit.FittedWeights.Available {
 			cfg.LearnedFit = &savedFit.FittedWeights
+		}
+		if settings.Migrated {
+			if _, err = a.store.recalculatePricing(context.Background(), settings, cfg, nil); err != nil {
+				return fmt.Errorf("migrate pricing history: %w", err)
+			}
 		}
 		a.cfg = cfg
 		if a.cancel != nil {
@@ -212,16 +221,18 @@ func (a *app) configure(raw []byte) error {
 		_ = s.close()
 		return err
 	}
+	catalog, errCatalog := loadPriceCatalog(context.Background(), s)
+	if errCatalog != nil {
+		_ = s.close()
+		return errCatalog
+	}
+	cfg.PriceCatalog = catalog
 	settings, err := s.loadPricingSettings(context.Background(), cfg.pricingSettings())
 	if err != nil {
 		_ = s.close()
 		return err
 	}
 	cfg = cfg.withPricingSettings(settings)
-	if err = s.ensureAstraCalibration(context.Background(), cfg); err != nil {
-		_ = s.close()
-		return fmt.Errorf("calibrate Astra history: %w", err)
-	}
 	fitResult, hasFit, errFit := s.latestWeightFit(context.Background())
 	if errFit != nil {
 		_ = s.close()
@@ -231,6 +242,12 @@ func (a *app) configure(raw []byte) error {
 		cfg.LearnedFit = &fitResult.FittedWeights
 		_ = s.seedOnlineCycleScales(context.Background(), cfg.LearnedFit)
 	}
+	if settings.Migrated {
+		if _, err = s.recalculatePricing(context.Background(), settings, cfg, nil); err != nil {
+			_ = s.close()
+			return fmt.Errorf("migrate pricing history: %w", err)
+		}
+	}
 	a.cfg, a.store = cfg, s
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
@@ -238,9 +255,23 @@ func (a *app) configure(raw []byte) error {
 	return nil
 }
 
+func loadPriceCatalog(ctx context.Context, s *store) (map[string]price, error) {
+	prices, err := s.listPrices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byModel := make(map[string]price, len(prices))
+	for _, p := range prices {
+		byModel[normalizeModel(p.Model)] = p
+	}
+	return byModel, nil
+}
+
 func (a *app) background(ctx context.Context, s *store, cfg config) {
 	a.refreshWeightsIfNeeded(ctx, s, cfg)
-	_, _ = syncPrices(ctx, s, cfg)
+	if _, err := syncPrices(ctx, s, cfg); err == nil {
+		a.refreshPriceCatalog(ctx, s)
+	}
 	_, _ = s.db.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES('last_price_sync_attempt',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.FormatInt(time.Now().Unix(), 10))
 	ticker := time.NewTicker(time.Duration(cfg.PriceSyncIntervalMinutes) * time.Minute)
 	defer ticker.Stop()
@@ -253,7 +284,9 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_, _ = syncPrices(ctx, s, cfg)
+			if _, err := syncPrices(ctx, s, cfg); err == nil {
+				a.refreshPriceCatalog(ctx, s)
+			}
 		case <-cleanup.C:
 			_ = s.cleanup(ctx, cfg.HistoryDays)
 			_ = s.rebuildAllQuotaSegments(ctx)
@@ -287,9 +320,39 @@ func (a *app) refreshWeightsIfNeeded(ctx context.Context, s *store, cfg config) 
 	a.cfg.LearnedFit = &fitResult.FittedWeights
 	_ = s.seedOnlineCycleScales(ctx, a.cfg.LearnedFit)
 	_, _ = s.updateWeightAttributions(ctx, a.cfg.LearnedFit, a.cfg.LongContextThreshold)
-	if normalizePricingMode(a.cfg.PricingMode) == pricingModeLearned {
-		_, _ = s.savePricingSettingsAndRecalculate(ctx, a.cfg.pricingSettings(), a.cfg)
+	a.queueFitRepricing(s, a.cfg)
+}
+
+func (a *app) refreshPriceCatalog(ctx context.Context, s *store) {
+	catalog, err := loadPriceCatalog(ctx, s)
+	if err != nil {
+		return
 	}
+	var changed bool
+	var current config
+	a.mu.Lock()
+	if a.store == s {
+		changed = !samePriceCatalogRates(a.cfg.PriceCatalog, catalog)
+		a.cfg.PriceCatalog = catalog
+		current = a.cfg
+	}
+	a.mu.Unlock()
+	if changed {
+		a.queuePricingReprice(s, current, true)
+	}
+}
+
+func samePriceCatalogRates(left, right map[string]price) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for model, a := range left {
+		b, ok := right[model]
+		if !ok || a.Input != b.Input || a.Output != b.Output || a.CacheRead != b.CacheRead || a.CacheWrite != b.CacheWrite || a.LongInput != b.LongInput || a.LongOutput != b.LongOutput || a.LongRead != b.LongRead || a.LongWrite != b.LongWrite || a.FastInput != b.FastInput || a.FastOutput != b.FastOutput || a.FastRead != b.FastRead || a.FastWrite != b.FastWrite {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *app) shutdown() {
@@ -391,7 +454,7 @@ func (a *app) recordUsage(r usageRecord) error {
 	if a.cfg.CaptureCodexHeaders {
 		captured := make(map[string][]string)
 		for name, values := range r.ResponseHeaders {
-			if strings.HasPrefix(strings.ToLower(name), "x-codex-") {
+			if strings.HasPrefix(strings.ToLower(name), "x-codex-") && !strings.EqualFold(name, "X-Codex-Turn-State") {
 				captured[name] = append([]string(nil), values...)
 			}
 		}
@@ -438,9 +501,7 @@ func (a *app) runGuidedCalibrationRefit(s *store, cfg config, account string) {
 			a.cfg.LearnedFit = &result.FittedWeights
 			_ = s.seedOnlineCycleScales(ctx, a.cfg.LearnedFit)
 			_, _ = s.updateWeightAttributions(ctx, a.cfg.LearnedFit, a.cfg.LongContextThreshold)
-			if normalizePricingMode(a.cfg.PricingMode) == pricingModeLearned {
-				_, _ = s.savePricingSettingsAndRecalculate(ctx, a.cfg.pricingSettings(), a.cfg)
-			}
+			a.queueFitRepricing(s, a.cfg)
 		}
 		a.mu.Unlock()
 	}

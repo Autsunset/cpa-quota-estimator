@@ -48,6 +48,9 @@ func TestCoverageBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.close()
+	if err = seedPrices(context.Background(), s); err != nil {
+		t.Fatal(err)
+	}
 	seedCoverageUsage(t, s, "a-mixed", true, true)
 	seedCoverageUsage(t, s, "b-cpa", true, true)
 	a := &app{cfg: defaultConfig(), store: s}

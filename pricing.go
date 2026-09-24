@@ -11,29 +11,18 @@ import (
 )
 
 const (
+	pricingModeAPI    = "api"
+	pricingModeCustom = "custom"
+	// Old names are accepted at the API boundary only for migration.
 	pricingModeCurrentAPI = "current_api"
 	pricingModeLegacyAPI  = "legacy_api"
 	pricingModeCredits    = "credits"
 	pricingModeLearned    = "learned"
 )
 
-// modelPriceMultiplier is a quota-equivalence calibration, not an upstream
-// price. Keep catalog prices unchanged so syncs and UI retain the base rates.
-func (c config) modelPriceMultiplier(model string) float64 {
-	mode := normalizePricingMode(c.PricingMode)
-	if c.ApplyModelCalibration && mode != pricingModeCredits && mode != pricingModeLearned && normalizeModel(model) == "gpt-6-astra" {
-		return c.AstraMultiplier
-	}
-	return 1
-}
-
-func (c config) modelPriceMultipliers() map[string]float64 {
-	return map[string]float64{"gpt-6-astra": c.modelPriceMultiplier("gpt-6-astra")}
-}
-
 func validPricingMode(mode string) bool {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeCredits, pricingModeLearned:
+	case pricingModeAPI, pricingModeCredits, pricingModeCustom, pricingModeCurrentAPI, pricingModeLegacyAPI, pricingModeLearned:
 		return true
 	default:
 		return false
@@ -42,23 +31,20 @@ func validPricingMode(mode string) bool {
 
 func normalizePricingMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case pricingModeCurrentAPI:
-		return pricingModeCurrentAPI
-	case pricingModeLegacyAPI:
-		return pricingModeLegacyAPI
+	case pricingModeAPI, pricingModeCurrentAPI, pricingModeLegacyAPI:
+		return pricingModeAPI
 	case pricingModeCredits:
 		return pricingModeCredits
+	case pricingModeCustom:
+		return pricingModeCustom
 	case pricingModeLearned:
-		return pricingModeLearned
+		return pricingModeCredits
 	default:
 		return pricingModeCredits
 	}
 }
 
 func pricingValueUnit(mode string) string {
-	if normalizePricingMode(mode) == pricingModeLearned {
-		return "sol_input_equiv"
-	}
 	if normalizePricingMode(mode) == pricingModeCredits {
 		return "credits"
 	}
@@ -67,20 +53,8 @@ func pricingValueUnit(mode string) string {
 
 func priceForPricingMode(p price, mode string) price {
 	mode = normalizePricingMode(mode)
-	if mode == pricingModeCurrentAPI {
+	if mode == pricingModeAPI || mode == pricingModeCustom {
 		return p
-	}
-	if mode == pricingModeLearned {
-		prior := priceForPricingMode(p, pricingModeCredits)
-		prior.Input /= 100
-		prior.CacheRead /= 100
-		prior.Output /= 100
-		prior.CacheWrite /= 100
-		prior.LongInput /= 100
-		prior.LongRead /= 100
-		prior.LongOutput /= 100
-		prior.LongWrite /= 100
-		return prior
 	}
 	if mode == pricingModeCredits {
 		if official, ok := officialCodexCreditPrice(p.Model); ok {
@@ -88,7 +62,7 @@ func priceForPricingMode(p price, mode string) price {
 		}
 		// Keep a clearly documented estimate for models without a published
 		// Codex credit rate, so older history is not silently valued at zero.
-		base := legacyAPIPrice(p)
+		base := p
 		base.Input *= 25
 		base.Output *= 25
 		base.CacheRead *= 25
@@ -100,7 +74,7 @@ func priceForPricingMode(p price, mode string) price {
 		base.FastInput, base.FastOutput, base.FastRead, base.FastWrite = 0, 0, 0, 0
 		return base
 	}
-	return legacyAPIPrice(p)
+	return p
 }
 
 // Published Standard-speed Codex credit rates per million tokens, verified
@@ -141,24 +115,6 @@ func officialCodexCreditPrice(model string) (price, bool) {
 		LongInput: input, LongRead: cached, LongOutput: output,
 		Source: "https://learn.chatgpt.com/docs/pricing",
 	}, true
-}
-
-func legacyAPIPrice(p price) price {
-	switch normalizeModel(p.Model) {
-	case "gpt-5.6", "gpt-5.6-sol":
-		p.Input, p.Output, p.CacheRead, p.CacheWrite = 5, 30, .5, 6.25
-		p.LongInput, p.LongOutput, p.LongRead, p.LongWrite = 10, 45, 1, 12.5
-		p.FastInput, p.FastOutput, p.FastRead, p.FastWrite = 0, 0, 0, 0
-	case "gpt-5.6-terra":
-		p.Input, p.Output, p.CacheRead, p.CacheWrite = 2.5, 15, .25, 3.125
-		p.LongInput, p.LongOutput, p.LongRead, p.LongWrite = 5, 22.5, .5, 6.25
-		p.FastInput, p.FastOutput, p.FastRead, p.FastWrite = 0, 0, 0, 0
-	case "gpt-5.6-luna":
-		p.Input, p.Output, p.CacheRead, p.CacheWrite = 1, 6, .1, 1.25
-		p.LongInput, p.LongOutput, p.LongRead, p.LongWrite = 2, 9, .2, 2.5
-		p.FastInput, p.FastOutput, p.FastRead, p.FastWrite = 0, 0, 0, 0
-	}
-	return p
 }
 
 type catalogProvider struct {
@@ -278,15 +234,23 @@ func decodeCatalog(r io.Reader) ([]price, error) {
 	return out, nil
 }
 
-// Official OpenAI rates verified 2026-09-23:
+// Verified OpenAI Standard rates for the actively used Codex models:
 // https://developers.openai.com/api/docs/pricing
 func officialGPT6Price(model string) (price, bool) {
 	p := price{Model: normalizeModel(model), Source: "https://developers.openai.com/api/docs/pricing", UpdatedAt: time.Now().Unix()}
 	switch p.Model {
+	case "gpt-6-astra":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = 10, 50, 1, 12.5
 	case "gpt-6-sol":
 		p.Input, p.Output, p.CacheRead, p.CacheWrite = 2, 10, .2, 2.5
 	case "gpt-6-luna":
 		p.Input, p.Output, p.CacheRead, p.CacheWrite = .1, .5, .01, .125
+	case "gpt-5.6", "gpt-5.6-sol":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = 4, 20, .4, 5
+	case "gpt-5.6-terra":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = 2, 12, .2, 2.5
+	case "gpt-5.6-luna":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = .2, 1.2, .02, .25
 	default:
 		return price{}, false
 	}
@@ -309,41 +273,49 @@ func seedPrices(ctx context.Context, s *store) error {
 }
 
 func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float64 {
-	if normalizePricingMode(cfg.PricingMode) == pricingModeLearned {
-		if value, ok := learnedEquivalentForUsage(cfg.LearnedFit, p.Model, d, serviceTier, cfg.LongContextThreshold); ok {
-			return value
-		}
-		// Before the first fit, use the published credit shape as a disclosed
-		// prior. Learned mode is rejected by the API until a fit exists.
-		prior := priceForPricingMode(p, pricingModeLearned)
-		read := max(d.CacheReadTokens, d.CachedTokens)
-		input := d.InputTokens - read
-		if input < 0 {
-			input = 0
-		}
-		return (float64(input)*prior.Input + float64(read)*prior.CacheRead + float64(d.OutputTokens)*prior.Output) / 1_000_000
+	mode := normalizePricingMode(cfg.PricingMode)
+	effective, _ := cfg.effectiveModelPrice(p)
+	in, out, read, write := effective.Input, effective.Output, effective.CacheRead, effective.CacheWrite
+	threshold := cfg.LongContextThreshold
+	if mode == pricingModeCustom {
+		threshold = cfg.CustomLongThreshold
 	}
-	p = priceForPricingMode(p, cfg.PricingMode)
-	in, out, read, write := p.Input, p.Output, p.CacheRead, p.CacheWrite
-	if cfg.ApplyLongContextPricing && d.InputTokens > cfg.LongContextThreshold && p.LongInput > 0 {
-		in, out, read, write = p.LongInput, p.LongOutput, p.LongRead, p.LongWrite
+	if threshold <= 0 {
+		threshold = 272000
 	}
-	if cfg.ApplyFastPricing && isFastTier(serviceTier) {
-		if _, official := officialGPT6Price(p.Model); official && normalizePricingMode(cfg.PricingMode) != pricingModeCredits {
-			in, out, read, write = in*cfg.FastMultiplier, out*cfg.FastMultiplier, read*cfg.FastMultiplier, write*cfg.FastMultiplier
-		} else if normalizePricingMode(cfg.PricingMode) == pricingModeCurrentAPI && strings.EqualFold(cfg.FastPricingMode, "source") && p.FastInput > 0 {
-			in, out, read, write = p.FastInput, p.FastOutput, p.FastRead, p.FastWrite
-		} else {
-			in *= cfg.FastMultiplier
-			out *= cfg.FastMultiplier
-			read *= cfg.FastMultiplier
-			write *= cfg.FastMultiplier
+	if d.InputTokens > threshold && (mode != pricingModeCustom || cfg.CustomLongContext) {
+		if effective.LongInput > 0 {
+			in = effective.LongInput
 		}
+		if effective.LongOutput > 0 {
+			out = effective.LongOutput
+		}
+		if effective.LongRead > 0 {
+			read = effective.LongRead
+		}
+		if effective.LongWrite > 0 {
+			write = effective.LongWrite
+		}
+		longFactor := cfg.effectiveLongMultiplier()
+		in *= longFactor
+		out *= longFactor
+		read *= longFactor
+		write *= longFactor
 	}
-	if _, official := officialGPT6Price(p.Model); official && normalizePricingMode(cfg.PricingMode) != pricingModeCredits {
+	if isFastTier(serviceTier) {
+		fast := cfg.effectiveFastMultiplier(p)
+		in *= fast
+		out *= fast
+		read *= fast
+		write *= fast
+	}
+	if mode == pricingModeAPI {
 		switch strings.ToLower(strings.TrimSpace(serviceTier)) {
 		case "batch", "flex":
-			in, out, read, write = in*.5, out*.5, read*.5, write*.5
+			in *= .5
+			out *= .5
+			read *= .5
+			write *= .5
 		}
 	}
 	cacheRead := max(d.CacheReadTokens, d.CachedTokens)
@@ -352,7 +324,7 @@ func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float
 	if uncached < 0 {
 		uncached = 0
 	}
-	return (float64(uncached)*in + float64(cacheRead)*read + float64(cacheWrite)*write + float64(d.OutputTokens)*out) / 1_000_000 * cfg.modelPriceMultiplier(p.Model)
+	return (float64(uncached)*in + float64(cacheRead)*read + float64(cacheWrite)*write + float64(d.OutputTokens)*out) / 1_000_000
 }
 
 func isFastTier(t string) bool {

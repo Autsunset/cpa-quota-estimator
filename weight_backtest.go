@@ -143,7 +143,8 @@ func (a scoreAccumulator) result(mode string) backtestScore {
 }
 
 func prequentialScores(eligible []quotaSegment, prices map[string]price, opts weightLearnerOptions) ([]backtestScore, error) {
-	modes := []string{pricingModeLegacyAPI, pricingModeCurrentAPI, pricingModeCredits, pricingModeLearned}
+	const modelDiagnostic = "weights_model"
+	modes := []string{pricingModeAPI, pricingModeCredits, modelDiagnostic}
 	accumulators := make(map[string]*scoreAccumulator)
 	for _, mode := range modes {
 		accumulators[mode] = &scoreAccumulator{}
@@ -167,7 +168,7 @@ func prequentialScores(eligible []quotaSegment, prices map[string]price, opts we
 	}
 	learnedTracker := newOnlineScaleTracker(learnedFit, opts.RandomWalkSigma)
 	trackers := make(map[string]*onlineScaleTracker)
-	for _, mode := range modes[:3] {
+	for _, mode := range modes[:2] {
 		fit, fitErr := fitReferenceCycleScales(training, prices, mode, cutoff, opts)
 		if fitErr != nil {
 			return nil, fitErr
@@ -186,7 +187,7 @@ func prequentialScores(eligible []quotaSegment, prices map[string]price, opts we
 		}
 		segment := eligible[index]
 		weight := segmentFitWeight(segment, segment.EndAt, opts.HalfLifeDays)
-		for _, mode := range modes[:3] {
+		for _, mode := range modes[:2] {
 			equivalent := referenceEquivalent(segment, mode, prices)
 			if equivalent <= 0 {
 				continue
@@ -205,7 +206,7 @@ func prequentialScores(eligible []quotaSegment, prices map[string]price, opts we
 					interrupt = learnedFit.Interrupted.Value * float64(segment.InterruptedCount)
 				}
 				prediction := math.Exp(state.LogValue)*equivalent + interrupt
-				accumulators[pricingModeLearned].add(prediction, segment.DP)
+				accumulators[modelDiagnostic].add(prediction, segment.DP)
 				state.update(equivalent, segment.DP, weight, interrupt)
 			}
 		}

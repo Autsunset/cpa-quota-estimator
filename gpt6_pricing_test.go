@@ -18,33 +18,29 @@ func TestGPT6OfficialPricing(t *testing.T) {
 		if model == "gpt-6-luna" {
 			scale = .05
 		}
-		for _, mode := range []string{pricingModeCurrentAPI, pricingModeLegacyAPI} {
-			for _, fastMode := range []string{"source", "multiplier"} {
-				cfg := defaultConfig()
-				cfg.PricingMode, cfg.FastPricingMode = mode, fastMode
-				cfg.ApplyLongContextPricing = true
-				for _, tc := range []struct {
-					tier  string
-					input int64
-					want  float64
-				}{
-					{"default", 272000, 1.459},
-					{"default", 272001, 2.418004},
-					{"fast", 272001, 6.04501},
-					{"priority", 272001, 6.04501},
-					{"flex", 272001, 1.209002},
-					{"batch", 272001, 1.209002},
-				} {
-					d := usageDetail{InputTokens: tc.input, CacheReadTokens: 50000, CacheCreationTokens: 10000, OutputTokens: 100000}
-					got := calculateCost(p, d, tc.tier, cfg)
-					if math.Abs(got-tc.want*scale) > 1e-9 {
-						t.Fatalf("%s/%s/%s/%s: got %f want %f", model, mode, fastMode, tc.tier, got, tc.want*scale)
-					}
+		for _, mode := range []string{pricingModeAPI, pricingModeCurrentAPI, pricingModeLegacyAPI} {
+			cfg := defaultConfig()
+			cfg.PricingMode = mode
+			for _, tc := range []struct {
+				tier  string
+				input int64
+				want  float64
+			}{
+				{"default", 272000, 1.459},
+				{"default", 272001, 2.418004},
+				{"fast", 272001, 4.836008},
+				{"priority", 272001, 4.836008},
+				{"flex", 272001, 1.209002},
+				{"batch", 272001, 1.209002},
+			} {
+				d := usageDetail{InputTokens: tc.input, CacheReadTokens: 50000, CacheCreationTokens: 10000, OutputTokens: 100000}
+				got := calculateCost(p, d, tc.tier, cfg)
+				if math.Abs(got-tc.want*scale) > 1e-9 {
+					t.Fatalf("%s/%s/%s: got %f want %f", model, mode, tc.tier, got, tc.want*scale)
 				}
-				cfg.ApplyFastPricing, cfg.ApplyLongContextPricing = false, false
-				if got := calculateCost(p, usageDetail{InputTokens: 1000000}, "fast", cfg); math.Abs(got-2*scale) > 1e-9 {
-					t.Fatal(got)
-				}
+			}
+			if got := calculateCost(p, usageDetail{InputTokens: 1000000}, "fast", cfg); math.Abs(got-8*scale) > 1e-9 {
+				t.Fatal(got)
 			}
 		}
 	}

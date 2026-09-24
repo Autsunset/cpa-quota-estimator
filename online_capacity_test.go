@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"math"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestOnlineScaleBorrowsPreviousCycleBeforeFirstCrossing(t *testing.T) {
@@ -31,5 +34,53 @@ func TestOnlineScaleBorrowsPreviousCycleBeforeFirstCrossing(t *testing.T) {
 	}
 	if math.Abs(online-500) >= math.Abs(legacy.FullWindowCostUSD/100-500) {
 		t.Fatalf("online=%f legacy=%f", online, legacy.FullWindowCostUSD/100)
+	}
+}
+
+func TestSegmentValueUsesActualCustomCostIncludingWritesAndThreshold(t *testing.T) {
+	ctx := context.Background()
+	s, err := openStore(filepath.Join(t.TempDir(), "segments.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	if err = seedPrices(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	cfg := defaultConfig()
+	cfg.PricingMode = pricingModeCustom
+	cfg.CustomLongThreshold = 100_000
+	cfg.CustomLongContext = true
+	zero, one := float64(0), float64(1)
+	first := event{Account: "a", Model: "gpt-5.6-sol", RequestedAt: 100, ObservedAt: 100, UsedPercent: &zero, ResetAt: 1000, WindowMinutes: 15}
+	if err = s.insertEvent(ctx, first, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	second := event{Account: "a", Model: "gpt-5.6-sol", RequestedAt: 200, ObservedAt: 200, UsedPercent: &one, ResetAt: 1000, WindowMinutes: 15, InputTokens: 150_000, CacheWriteTokens: 10_000, TotalTokens: 150_000}
+	p, _, err := s.getPrice(ctx, "gpt-5.6-sol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.CostUSD = calculateCost(p, usageDetail{InputTokens: second.InputTokens, CacheCreationTokens: second.CacheWriteTokens}, "", cfg)
+	if err = s.insertEvent(ctx, second, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	segments, err := s.quotaSegments(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segments) == 0 {
+		t.Fatal("missing crossing segment")
+	}
+	prefix, err := s.segmentCostPrefix(ctx, segments[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := prefix.value(segments[0].FeatureStartEventID, segments[0].FeatureEndEventID)
+	if math.Abs(got-second.CostUSD) > 1e-9 {
+		t.Fatalf("segment selected value=%f request cost=%f", got, second.CostUSD)
+	}
+	if got <= .6 {
+		t.Fatalf("custom long/cache-write cost was lost: %f", got)
 	}
 }

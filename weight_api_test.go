@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestWeightRoutesAndLearnedPricingGuard(t *testing.T) {
+func TestWeightRoutesRemainAvailableAfterLegacyModeMigration(t *testing.T) {
 	s, err := openStore(filepath.Join(t.TempDir(), "weights-api.sqlite"))
 	if err != nil {
 		t.Fatal(err)
@@ -14,12 +14,21 @@ func TestWeightRoutesAndLearnedPricingGuard(t *testing.T) {
 	defer s.close()
 	a := app{cfg: defaultConfig(), store: s}
 	request := managementRequest{Method: "POST", Path: "/cpa-quota-estimator/pricing-settings",
-		Body: []byte(`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"learned"}`)}
-	if response := a.handleManagement(request); response.StatusCode != 400 {
-		t.Fatalf("unfitted learned mode returned %d", response.StatusCode)
+		Body: []byte(`{"pricing_mode":"learned"}`)}
+	response := a.handleManagement(request)
+	if response.StatusCode != 202 {
+		t.Fatalf("legacy learned alias status=%d", response.StatusCode)
+	}
+	var task pricingRecalcTask
+	if err = json.Unmarshal(response.Body, &task); err != nil {
+		t.Fatal(err)
+	}
+	waitPricingTask(t, &a, task.ID)
+	if a.cfg.PricingMode != pricingModeCredits {
+		t.Fatalf("migrated mode=%s", a.cfg.PricingMode)
 	}
 	fit := weightFit{Available: true, Lag: 1, SegmentCount: 25, Models: []learnedModelWeights{{Model: "gpt-5.6-sol", Input: weightEstimate{Value: 1}}}}
-	backtest := weightBacktest{SelectedLag: 1, FittedWeights: fit, Scores: []backtestScore{{Mode: pricingModeLearned, MAE: .2, SegmentCount: 10}}}
+	backtest := weightBacktest{SelectedLag: 1, FittedWeights: fit, Scores: []backtestScore{{Mode: "weights_model", MAE: .2, SegmentCount: 10}}}
 	rawFit, _ := json.Marshal(fit)
 	rawBacktest, _ := json.Marshal(backtest)
 	if _, err = s.db.Exec(`INSERT INTO weight_fits(fitted_at,lag,segment_count,fit_json,backtest_json) VALUES(1,1,25,?,?)`, string(rawFit), string(rawBacktest)); err != nil {
@@ -32,10 +41,7 @@ func TestWeightRoutesAndLearnedPricingGuard(t *testing.T) {
 			t.Fatalf("%s returned %d", path, response.StatusCode)
 		}
 	}
-	if response := a.handleManagement(request); response.StatusCode != 200 || a.cfg.PricingMode != pricingModeLearned {
-		t.Fatalf("learned setting failed: status=%d mode=%s", response.StatusCode, a.cfg.PricingMode)
-	}
-	if pricingValueUnit(a.cfg.PricingMode) != "sol_input_equiv" {
-		t.Fatal("wrong learned unit")
+	if pricingValueUnit(a.cfg.PricingMode) != "credits" {
+		t.Fatal("legacy learned alias must use Credits")
 	}
 }

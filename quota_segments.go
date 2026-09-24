@@ -57,22 +57,24 @@ type segmentFeature struct {
 }
 
 type quotaSegment struct {
-	ID               int64            `json:"id"`
-	Account          string           `json:"account"`
-	Window           string           `json:"window"`
-	CycleID          int64            `json:"cycle_id"`
-	RegimeResetAt    int64            `json:"regime_reset_at"`
-	Lag              int              `json:"lag"`
-	StartEventID     int64            `json:"start_event_id"`
-	EndEventID       int64            `json:"end_event_id"`
-	StartAt          int64            `json:"start_at"`
-	EndAt            int64            `json:"end_at"`
-	DP               float64          `json:"dp"`
-	BoundaryWeight   float64          `json:"boundary_weight"`
-	Features         []segmentFeature `json:"features"`
-	Flags            []string         `json:"flags"`
-	InterruptedCount int              `json:"interrupted_count"`
-	OtherFailedCount int              `json:"other_failed_count"`
+	ID                  int64            `json:"id"`
+	Account             string           `json:"account"`
+	Window              string           `json:"window"`
+	CycleID             int64            `json:"cycle_id"`
+	RegimeResetAt       int64            `json:"regime_reset_at"`
+	Lag                 int              `json:"lag"`
+	StartEventID        int64            `json:"start_event_id"`
+	EndEventID          int64            `json:"end_event_id"`
+	FeatureStartEventID int64            `json:"feature_start_event_id"`
+	FeatureEndEventID   int64            `json:"feature_end_event_id"`
+	StartAt             int64            `json:"start_at"`
+	EndAt               int64            `json:"end_at"`
+	DP                  float64          `json:"dp"`
+	BoundaryWeight      float64          `json:"boundary_weight"`
+	Features            []segmentFeature `json:"features"`
+	Flags               []string         `json:"flags"`
+	InterruptedCount    int              `json:"interrupted_count"`
+	OtherFailedCount    int              `json:"other_failed_count"`
 }
 
 func (s quotaSegment) eligible() bool { return len(s.Flags) == 0 }
@@ -109,7 +111,7 @@ func (s *store) migrateSegments() error {
 	if err != nil {
 		return err
 	}
-	oldTable, newColumn := false, false
+	oldTable, newColumn, featureColumns := false, false, 0
 	for columns.Next() {
 		var cid, notNull, primaryKey int
 		var name, columnType string
@@ -121,6 +123,9 @@ func (s *store) migrateSegments() error {
 		oldTable = true
 		if name == "regime_reset_at" {
 			newColumn = true
+		}
+		if name == "feature_start_event_id" || name == "feature_end_event_id" {
+			featureColumns++
 		}
 	}
 	if err = columns.Err(); err != nil {
@@ -139,6 +144,7 @@ func (s *store) migrateSegments() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		account TEXT NOT NULL, window TEXT NOT NULL, cycle_id INTEGER NOT NULL, regime_reset_at INTEGER NOT NULL, lag INTEGER NOT NULL,
 		start_event_id INTEGER NOT NULL, end_event_id INTEGER NOT NULL,
+		feature_start_event_id INTEGER NOT NULL DEFAULT 0, feature_end_event_id INTEGER NOT NULL DEFAULT 0,
 		start_at INTEGER NOT NULL, end_at INTEGER NOT NULL, dp REAL NOT NULL,
 		boundary_weight REAL NOT NULL, features_json TEXT NOT NULL, flags_json TEXT NOT NULL,
 		interrupted_count INTEGER NOT NULL DEFAULT 0, other_failed_count INTEGER NOT NULL DEFAULT 0,
@@ -164,6 +170,17 @@ func (s *store) migrateSegments() error {
 		PRIMARY KEY(account,window,cycle_id,regime_reset_at)
 	);`); err != nil {
 		return err
+	}
+	if err = ensureColumn(s.db, "quota_segments", "feature_start_event_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err = ensureColumn(s.db, "quota_segments", "feature_end_event_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if oldTable && featureColumns < 2 {
+		if _, err = s.db.Exec(`DELETE FROM metadata WHERE key=?`, segmentBackfillKey); err != nil {
+			return err
+		}
 	}
 	var value string
 	err = s.db.QueryRow(`SELECT value FROM metadata WHERE key=?`, segmentBackfillKey).Scan(&value)
@@ -361,8 +378,8 @@ func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey,
 	}
 	anomalies := detectQuotaRegimeAnomalies(key.CycleID, observations)
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO quota_segments
-		(account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id,start_at,end_at,dp,boundary_weight,features_json,flags_json,interrupted_count,other_failed_count,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+		(account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id,feature_start_event_id,feature_end_event_id,start_at,end_at,dp,boundary_weight,features_json,flags_json,interrupted_count,other_failed_count,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
@@ -378,7 +395,7 @@ func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey,
 				return errJSON
 			}
 			if _, err = stmt.ExecContext(ctx, segment.Account, segment.Window, segment.CycleID, segment.RegimeResetAt, segment.Lag,
-				segment.StartEventID, segment.EndEventID, segment.StartAt, segment.EndAt,
+				segment.StartEventID, segment.EndEventID, segment.FeatureStartEventID, segment.FeatureEndEventID, segment.StartAt, segment.EndAt,
 				segment.DP, segment.BoundaryWeight, string(features), string(flags), segment.InterruptedCount, segment.OtherFailedCount, time.Now().Unix()); err != nil {
 				return err
 			}
@@ -440,6 +457,8 @@ func buildQuotaSegments(key segmentKey, events []segmentEvent, lag int, known ma
 			if start < 0 || end < start {
 				segment.Flags = append(segment.Flags, "lag_incomplete")
 			} else {
+				segment.FeatureStartEventID = events[start].ID
+				segment.FeatureEndEventID = events[end].ID
 				features := make(map[string]*segmentFeature)
 				var totalTokens int64
 				baseReset := events[anchor].ResetAt
@@ -585,7 +604,7 @@ func (s *store) refreshSegmentsForEvent(ctx context.Context, tx *sql.Tx, e event
 }
 
 func (s *store) quotaSegments(ctx context.Context, lag int) ([]quotaSegment, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id,
+	rows, err := s.db.QueryContext(ctx, `SELECT id,account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id,feature_start_event_id,feature_end_event_id,
 		start_at,end_at,dp,boundary_weight,features_json,flags_json,interrupted_count,other_failed_count FROM quota_segments WHERE lag=? ORDER BY end_at,id`, lag)
 	if err != nil {
 		return nil, err
@@ -596,7 +615,7 @@ func (s *store) quotaSegments(ctx context.Context, lag int) ([]quotaSegment, err
 		var segment quotaSegment
 		var features, flags string
 		if err = rows.Scan(&segment.ID, &segment.Account, &segment.Window, &segment.CycleID, &segment.RegimeResetAt, &segment.Lag,
-			&segment.StartEventID, &segment.EndEventID, &segment.StartAt, &segment.EndAt, &segment.DP,
+			&segment.StartEventID, &segment.EndEventID, &segment.FeatureStartEventID, &segment.FeatureEndEventID, &segment.StartAt, &segment.EndAt, &segment.DP,
 			&segment.BoundaryWeight, &features, &flags, &segment.InterruptedCount, &segment.OtherFailedCount); err != nil {
 			return nil, err
 		}

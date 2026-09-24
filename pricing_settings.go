@@ -10,82 +10,149 @@ import (
 )
 
 const pricingSettingsMetadataKey = "pricing_settings"
+const pricingFormulaMetadataKey = "pricing_formula_v015"
 
 type pricingSettings struct {
-	ApplyModelCalibration bool    `json:"apply_model_calibration"`
-	AstraMultiplier       float64 `json:"astra_multiplier"`
-	ApplyLongContext      bool    `json:"apply_long_context_pricing"`
-	ApplyFast             bool    `json:"apply_fast_pricing"`
-	PricingMode           string  `json:"pricing_mode"`
+	PricingMode          string                      `json:"pricing_mode"`
+	AnchorModel          string                      `json:"anchor_model"`
+	CustomPrices         map[string]customModelPrice `json:"custom_prices,omitempty"`
+	CustomFastMultiplier float64                     `json:"custom_fast_multiplier"`
+	CustomLongContext    bool                        `json:"custom_long_context"`
+	CustomLongThreshold  int64                       `json:"custom_long_threshold"`
+	Migrated             bool                        `json:"-"`
 }
 
 type pricingSettingsUpdate struct {
-	ApplyModelCalibration *bool    `json:"apply_model_calibration"`
-	AstraMultiplier       *float64 `json:"astra_multiplier"`
-	ApplyLongContext      *bool    `json:"apply_long_context_pricing"`
-	ApplyFast             *bool    `json:"apply_fast_pricing"`
-	PricingMode           string   `json:"pricing_mode"`
+	PricingMode          string                      `json:"pricing_mode"`
+	AnchorModel          string                      `json:"anchor_model"`
+	CustomPrices         map[string]customModelPrice `json:"custom_prices"`
+	CustomFastMultiplier *float64                    `json:"custom_fast_multiplier"`
+	CustomLongContext    *bool                       `json:"custom_long_context"`
+	CustomLongThreshold  *int64                      `json:"custom_long_threshold"`
+	RestoreOfficial      bool                        `json:"restore_official"`
+}
+
+type pricingRecalcProgress struct {
+	Stage        string `json:"stage"`
+	EventsDone   int64  `json:"events_done"`
+	EventsTotal  int64  `json:"events_total"`
+	SamplesDone  int64  `json:"samples_done"`
+	SamplesTotal int64  `json:"samples_total"`
 }
 
 func (c config) pricingSettings() pricingSettings {
-	return pricingSettings{
-		ApplyModelCalibration: c.ApplyModelCalibration,
-		AstraMultiplier:       c.AstraMultiplier,
-		ApplyLongContext:      c.ApplyLongContextPricing,
-		ApplyFast:             c.ApplyFastPricing,
-		PricingMode:           normalizePricingMode(c.PricingMode),
-	}
+	return pricingSettings{PricingMode: normalizePricingMode(c.PricingMode), AnchorModel: normalizeModel(c.AnchorModel),
+		CustomPrices: c.CustomPrices, CustomFastMultiplier: c.CustomFastMultiplier, CustomLongContext: c.CustomLongContext, CustomLongThreshold: c.CustomLongThreshold, Migrated: c.PricingMigration}
 }
 
 func (c config) withPricingSettings(settings pricingSettings) config {
-	c.ApplyModelCalibration = settings.ApplyModelCalibration
-	if settings.AstraMultiplier != 0 {
-		c.AstraMultiplier = settings.AstraMultiplier
-	}
-	c.ApplyLongContextPricing = settings.ApplyLongContext
-	c.ApplyFastPricing = settings.ApplyFast
 	c.PricingMode = normalizePricingMode(settings.PricingMode)
+	c.AnchorModel = normalizeModel(settings.AnchorModel)
+	if c.AnchorModel == "" {
+		c.AnchorModel = "gpt-5.6-sol"
+	}
+	c.CustomPrices = settings.CustomPrices
+	c.CustomFastMultiplier = settings.CustomFastMultiplier
+	if c.CustomFastMultiplier <= 0 {
+		c.CustomFastMultiplier = 2
+	}
+	c.CustomLongContext = settings.CustomLongContext
+	c.CustomLongThreshold = settings.CustomLongThreshold
+	if c.CustomLongThreshold <= 0 {
+		c.CustomLongThreshold = 272000
+	}
 	return c
 }
 
+func normalizePricingSettings(settings pricingSettings) (pricingSettings, error) {
+	settings.PricingMode = normalizePricingMode(settings.PricingMode)
+	settings.AnchorModel = normalizeModel(settings.AnchorModel)
+	if settings.AnchorModel == "" {
+		settings.AnchorModel = "gpt-5.6-sol"
+	}
+	if settings.CustomFastMultiplier <= 0 {
+		settings.CustomFastMultiplier = 2
+	}
+	if settings.CustomLongThreshold <= 0 {
+		settings.CustomLongThreshold = 272000
+	}
+	if math.IsNaN(settings.CustomFastMultiplier) || math.IsInf(settings.CustomFastMultiplier, 0) || settings.CustomFastMultiplier < .1 || settings.CustomFastMultiplier > 100 {
+		return settings, fmt.Errorf("custom_fast_multiplier must be between 0.1 and 100")
+	}
+	if settings.CustomLongThreshold < 1024 || settings.CustomLongThreshold > 10_000_000 {
+		return settings, fmt.Errorf("custom_long_threshold must be between 1024 and 10000000")
+	}
+	normalized := make(map[string]customModelPrice, len(settings.CustomPrices))
+	for model, p := range settings.CustomPrices {
+		name := normalizeModel(model)
+		if name == "" {
+			return settings, fmt.Errorf("custom price model is required")
+		}
+		if err := validateCustomModelPrice(p); err != nil {
+			return settings, fmt.Errorf("%s: %w", name, err)
+		}
+		normalized[name] = p
+	}
+	settings.CustomPrices = normalized
+	return settings, nil
+}
+
 func (s *store) loadPricingSettings(ctx context.Context, fallback pricingSettings) (pricingSettings, error) {
+	fallback, _ = normalizePricingSettings(fallback)
 	var raw string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, pricingSettingsMetadataKey).Scan(&raw)
 	if err == sql.ErrNoRows {
+		var eventCount int64
+		if countErr := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events`).Scan(&eventCount); countErr != nil {
+			return fallback, countErr
+		}
+		if eventCount > 0 {
+			fallback.Migrated = true
+		}
 		return fallback, nil
 	}
 	if err != nil {
 		return fallback, err
 	}
-	settings := pricingSettings{ApplyModelCalibration: fallback.ApplyModelCalibration, AstraMultiplier: fallback.AstraMultiplier}
-	if settings.AstraMultiplier == 0 {
-		settings.AstraMultiplier = defaultConfig().AstraMultiplier
-	}
+	settings := fallback
 	if err = json.Unmarshal([]byte(raw), &settings); err != nil {
 		return fallback, fmt.Errorf("decode saved pricing settings: %w", err)
 	}
-	if strings.TrimSpace(settings.PricingMode) == "" {
-		// Settings saved before pricing_mode existed implied the former legacy
-		// basis. Keep that meaning across a new-install default change.
-		settings.PricingMode = pricingModeLegacyAPI
-	} else {
-		settings.PricingMode = normalizePricingMode(settings.PricingMode)
-	}
-	if err := validateAstraMultiplier(settings.AstraMultiplier); err != nil {
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal([]byte(raw), &fields); err != nil {
 		return fallback, err
 	}
-	return settings, nil
-}
-
-func validateAstraMultiplier(value float64) error {
-	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0.01 || value > 100 {
-		return fmt.Errorf("astra_multiplier must be between 0.01 and 100")
+	var oldMode string
+	if encoded, ok := fields["pricing_mode"]; ok {
+		_ = json.Unmarshal(encoded, &oldMode)
 	}
-	return nil
+	if strings.TrimSpace(oldMode) == "" {
+		oldMode = pricingModeLegacyAPI
+	}
+	settings.Migrated = normalizePricingMode(oldMode) != strings.ToLower(strings.TrimSpace(oldMode))
+	settings.PricingMode = normalizePricingMode(oldMode)
+	var formula string
+	formulaErr := s.db.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, pricingFormulaMetadataKey).Scan(&formula)
+	if formulaErr != nil && formulaErr != sql.ErrNoRows {
+		return fallback, formulaErr
+	}
+	if formulaErr == sql.ErrNoRows {
+		var eventCount int64
+		if countErr := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events`).Scan(&eventCount); countErr != nil {
+			return fallback, countErr
+		}
+		if eventCount > 0 {
+			settings.Migrated = true
+		}
+	}
+	return normalizePricingSettings(settings)
 }
 
 type costRecalculationEvent struct {
 	ID               int64
+	CycleID          int64
+	RequestedAt      int64
+	Scope            string
 	Model            string
 	ServiceTier      string
 	InputTokens      int64
@@ -94,37 +161,19 @@ type costRecalculationEvent struct {
 	CacheWriteTokens int64
 }
 
-func (s *store) savePricingSettingsAndRecalculate(ctx context.Context, settings pricingSettings, cfg config) (int64, error) {
-	return s.recalculatePricing(ctx, settings, cfg, false)
+type costPrefixEvent struct {
+	At   int64
+	Cost float64
 }
+type sampleCostTarget struct{ ID, CycleID, At int64 }
 
-const astraCalibrationKey = "astra_quota_multiplier_v1_1.8"
-
-// Run once on upgrade; only Astra history changes. The marker, request values,
-// and affected cycle samples commit together and are safe to retry.
-func (s *store) ensureAstraCalibration(ctx context.Context, cfg config) error {
-	var applied string
-	err := s.db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key=?", astraCalibrationKey).Scan(&applied)
-	if err == nil && applied == "applied" {
-		return nil
-	}
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	_, err = s.recalculatePricing(ctx, cfg.pricingSettings(), cfg, true)
-	return err
-}
-
-func (s *store) recalculatePricing(ctx context.Context, settings pricingSettings, cfg config, astraOnly bool) (int64, error) {
-	// Internal callers written before calibration settings have a zero value.
-	// HTTP/config input is validated separately and cannot save a zero rate.
-	if settings.AstraMultiplier == 0 {
-		settings.AstraMultiplier = cfg.AstraMultiplier
-	}
-	if settings.AstraMultiplier == 0 {
-		settings.AstraMultiplier = defaultConfig().AstraMultiplier
-	}
-	if err := validateAstraMultiplier(settings.AstraMultiplier); err != nil {
+// recalculatePricing reprices requests and rebuilds every cumulative sample
+// in one transaction. The caller may observe progress in memory; an error from
+// the callback rolls back both request values and saved settings.
+func (s *store) recalculatePricing(ctx context.Context, settings pricingSettings, cfg config, progress func(pricingRecalcProgress) error) (int64, error) {
+	var err error
+	settings, err = normalizePricingSettings(settings)
+	if err != nil {
 		return 0, err
 	}
 	cfg = cfg.withPricingSettings(settings)
@@ -133,7 +182,6 @@ func (s *store) recalculatePricing(ctx context.Context, settings pricingSettings
 		return 0, err
 	}
 	defer tx.Rollback()
-
 	prices := make(map[string]price)
 	priceRows, err := tx.QueryContext(ctx, `SELECT model,input,output,cache_read,cache_write,long_input,long_output,long_cache_read,long_cache_write,fast_input,fast_output,fast_cache_read,fast_cache_write,source,updated_at FROM model_prices`)
 	if err != nil {
@@ -151,74 +199,116 @@ func (s *store) recalculatePricing(ctx context.Context, settings pricingSettings
 		priceRows.Close()
 		return 0, err
 	}
-	if err = priceRows.Close(); err != nil {
-		return 0, err
-	}
-
-	eventRows, err := tx.QueryContext(ctx, `SELECT id,model,service_tier,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens FROM usage_events ORDER BY id`)
+	priceRows.Close()
+	cfg.PriceCatalog = prices
+	rows, err := tx.QueryContext(ctx, `SELECT id,cycle_id,requested_at,quota_scope,model,service_tier,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens FROM usage_events ORDER BY cycle_id,requested_at,id`)
 	if err != nil {
 		return 0, err
 	}
-	var events []costRecalculationEvent
-	for eventRows.Next() {
-		var event costRecalculationEvent
-		if err = eventRows.Scan(&event.ID, &event.Model, &event.ServiceTier, &event.InputTokens, &event.OutputTokens, &event.CacheReadTokens, &event.CacheWriteTokens); err != nil {
-			eventRows.Close()
+	events := make([]costRecalculationEvent, 0, 10000)
+	for rows.Next() {
+		var e costRecalculationEvent
+		if err = rows.Scan(&e.ID, &e.CycleID, &e.RequestedAt, &e.Scope, &e.Model, &e.ServiceTier, &e.InputTokens, &e.OutputTokens, &e.CacheReadTokens, &e.CacheWriteTokens); err != nil {
+			rows.Close()
 			return 0, err
 		}
-		if !astraOnly || normalizeModel(event.Model) == "gpt-6-astra" {
-			events = append(events, event)
+		events = append(events, e)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	sampleRows, err := tx.QueryContext(ctx, `SELECT id,cycle_id,sampled_at FROM quota_samples ORDER BY cycle_id,sampled_at,id`)
+	if err != nil {
+		return 0, err
+	}
+	samples := make([]sampleCostTarget, 0, 1000)
+	for sampleRows.Next() {
+		var sample sampleCostTarget
+		if err = sampleRows.Scan(&sample.ID, &sample.CycleID, &sample.At); err != nil {
+			sampleRows.Close()
+			return 0, err
+		}
+		samples = append(samples, sample)
+	}
+	if err = sampleRows.Err(); err != nil {
+		sampleRows.Close()
+		return 0, err
+	}
+	sampleRows.Close()
+	state := pricingRecalcProgress{Stage: "events", EventsTotal: int64(len(events)), SamplesTotal: int64(len(samples))}
+	if progress != nil {
+		if err = progress(state); err != nil {
+			return 0, err
 		}
 	}
-	if err = eventRows.Err(); err != nil {
-		eventRows.Close()
-		return 0, err
-	}
-	if err = eventRows.Close(); err != nil {
-		return 0, err
-	}
-
 	updateEvent, err := tx.PrepareContext(ctx, `UPDATE usage_events SET cost_usd=? WHERE id=?`)
 	if err != nil {
 		return 0, err
 	}
 	defer updateEvent.Close()
-	for _, event := range events {
+	byCycle := make(map[int64][]costPrefixEvent)
+	for i, e := range events {
 		cost := float64(0)
-		if p, ok := prices[normalizeModel(event.Model)]; ok {
-			cost = calculateCost(p, usageDetail{
-				InputTokens:         event.InputTokens,
-				OutputTokens:        event.OutputTokens,
-				CacheReadTokens:     event.CacheReadTokens,
-				CacheCreationTokens: event.CacheWriteTokens,
-			}, event.ServiceTier, cfg)
+		if p, ok := prices[normalizeModel(e.Model)]; ok {
+			cost = calculateCost(p, usageDetail{InputTokens: e.InputTokens, OutputTokens: e.OutputTokens, CacheReadTokens: e.CacheReadTokens, CacheCreationTokens: e.CacheWriteTokens}, e.ServiceTier, cfg)
 		}
-		if _, err = updateEvent.ExecContext(ctx, cost, event.ID); err != nil {
+		if _, err = updateEvent.ExecContext(ctx, cost, e.ID); err != nil {
 			return 0, err
+		}
+		if e.Scope == mainQuotaScope {
+			byCycle[e.CycleID] = append(byCycle[e.CycleID], costPrefixEvent{At: e.RequestedAt, Cost: cost})
+		}
+		state.EventsDone = int64(i + 1)
+		if progress != nil && (i%512 == 511 || i == len(events)-1) {
+			if err = progress(state); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if err = updateEvent.Close(); err != nil {
 		return 0, err
 	}
-
-	sampleSQL := `UPDATE quota_samples
-SET window_cost_usd=COALESCE((
- SELECT SUM(usage_events.cost_usd)
- FROM usage_events
- WHERE usage_events.cycle_id=quota_samples.cycle_id
-   AND usage_events.quota_scope=?
-   AND usage_events.requested_at<=quota_samples.sampled_at
-),0)`
-	if astraOnly {
-		sampleSQL += ` WHERE cycle_id IN (SELECT DISTINCT cycle_id FROM usage_events WHERE lower(trim(model))='gpt-6-astra' OR lower(trim(model)) LIKE '%/gpt-6-astra')`
+	state.Stage = "samples"
+	if progress != nil {
+		if err = progress(state); err != nil {
+			return 0, err
+		}
 	}
-	if _, err = tx.ExecContext(ctx, sampleSQL, mainQuotaScope); err != nil {
+	updateSample, err := tx.PrepareContext(ctx, `UPDATE quota_samples SET window_cost_usd=? WHERE id=?`)
+	if err != nil {
 		return 0, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,'applied') ON CONFLICT(key) DO UPDATE SET value=excluded.value`, astraCalibrationKey); err != nil {
+	defer updateSample.Close()
+	var cycleID int64 = -1
+	var eventsInCycle []costPrefixEvent
+	index := 0
+	running := float64(0)
+	for i, sample := range samples {
+		if cycleID != sample.CycleID {
+			cycleID = sample.CycleID
+			eventsInCycle = byCycle[cycleID]
+			index = 0
+			running = 0
+		}
+		for index < len(eventsInCycle) && eventsInCycle[index].At <= sample.At {
+			running += eventsInCycle[index].Cost
+			index++
+		}
+		if _, err = updateSample.ExecContext(ctx, running, sample.ID); err != nil {
+			return 0, err
+		}
+		state.SamplesDone = int64(i + 1)
+		if progress != nil && (i%256 == 255 || i == len(samples)-1) {
+			if err = progress(state); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if err = updateSample.Close(); err != nil {
 		return 0, err
 	}
-
 	raw, err := json.Marshal(settings)
 	if err != nil {
 		return 0, err
@@ -226,8 +316,21 @@ SET window_cost_usd=COALESCE((
 	if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, pricingSettingsMetadataKey, string(raw)); err != nil {
 		return 0, err
 	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,'applied') ON CONFLICT(key) DO UPDATE SET value='applied'`, pricingFormulaMetadataKey); err != nil {
+		return 0, err
+	}
 	if err = tx.Commit(); err != nil {
 		return 0, err
 	}
+	state.Stage = "done"
+	if progress != nil {
+		_ = progress(state)
+	}
 	return int64(len(events)), nil
+}
+
+// Retained for in-process migrations and offline analysis. Management saves
+// use the background task path.
+func (s *store) savePricingSettingsAndRecalculate(ctx context.Context, settings pricingSettings, cfg config) (int64, error) {
+	return s.recalculatePricing(ctx, settings, cfg, nil)
 }
