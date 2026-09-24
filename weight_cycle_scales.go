@@ -118,6 +118,8 @@ func (t *onlineScaleTracker) forSegment(segment quotaSegment) *onlineCycleScale 
 	precision := 1 / (sigma * sigma)
 	if prior == nil {
 		precision = 1 / (2.5 * 2.5)
+	} else if prior.Precision > 0 {
+		precision = 1 / (1/prior.Precision + sigma*sigma)
 	}
 	state := &onlineCycleScale{LogValue: logValue, Precision: precision}
 	t.ByCycle[key] = state

@@ -159,14 +159,17 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, err.Error())
 			}
 			resp["plan_type"] = plan
-			estimate := estimateCapacity(points)
+			estimate, err := a.store.onlineCycleCapacity(ctx, account, selected, points, a.cfg, forecastReference(points, isCurrent))
+			if err != nil {
+				return textResponse(500, err.Error())
+			}
 			resp["estimate"] = estimate
 			allowances, errAllowance := a.store.remainingModelAllowances(ctx, estimate.RemainingCostUSD, a.cfg)
 			if errAllowance != nil {
 				return textResponse(500, errAllowance.Error())
 			}
 			resp["remaining_by_model"] = allowances
-			resp["burn_forecast"] = estimateBurn(points, forecastReference(points, isCurrent))
+			resp["burn_forecast"] = burnWithOnlineCapacity(points, forecastReference(points, isCurrent), estimate)
 			if len(points) > 0 {
 				latest := points[len(points)-1]
 				resp["latest"] = latest
@@ -219,12 +222,15 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, err.Error())
 			}
 		}
-		estimate := estimateCapacity(points)
+		estimate, err := a.store.onlineCycleCapacity(ctx, account, selected, points, a.cfg, forecastReference(points, isCurrent))
+		if err != nil {
+			return textResponse(500, err.Error())
+		}
 		allowances, errAllowance := a.store.remainingModelAllowances(ctx, estimate.RemainingCostUSD, a.cfg)
 		if errAllowance != nil {
 			return textResponse(500, errAllowance.Error())
 		}
-		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "quota_anomalies": anomalies, "range_quota_anomalies": rangeAnomalies, "estimate": estimate, "remaining_by_model": allowances, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "burn_forecast": estimateBurn(points, forecastReference(points, isCurrent))}
+		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "quota_anomalies": anomalies, "range_quota_anomalies": rangeAnomalies, "estimate": estimate, "remaining_by_model": allowances, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "burn_forecast": burnWithOnlineCapacity(points, forecastReference(points, isCurrent), estimate)}
 		hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 		if errWeekly != nil {
 			return textResponse(500, errWeekly.Error())
@@ -429,8 +435,11 @@ func (a *app) buildAccountOverview(ctx context.Context, account string, now int6
 	item.WindowMinutes = selected.WindowMinutes
 	item.IsCurrent = selected.Current
 	item.ScheduleInferred = selected.ScheduleInferred
-	item.Estimate = estimateCapacity(points)
-	item.BurnForecast = estimateBurn(points, forecastReference(points, selected.Current))
+	item.Estimate, err = a.store.onlineCycleCapacity(ctx, account, selected, points, a.cfg, forecastReference(points, selected.Current))
+	if err != nil {
+		return item, err
+	}
+	item.BurnForecast = burnWithOnlineCapacity(points, forecastReference(points, selected.Current), item.Estimate)
 	if len(points) > 0 {
 		latest := points[len(points)-1]
 		item.RemainingPercent, item.QuotaStatus = quotaSnapshotState(latest, now)

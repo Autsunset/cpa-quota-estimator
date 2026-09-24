@@ -65,7 +65,9 @@ func (s *store) loadPricingSettings(ctx context.Context, fallback pricingSetting
 		return fallback, fmt.Errorf("decode saved pricing settings: %w", err)
 	}
 	if strings.TrimSpace(settings.PricingMode) == "" {
-		settings.PricingMode = normalizePricingMode(fallback.PricingMode)
+		// Settings saved before pricing_mode existed implied the former legacy
+		// basis. Keep that meaning across a new-install default change.
+		settings.PricingMode = pricingModeLegacyAPI
 	} else {
 		settings.PricingMode = normalizePricingMode(settings.PricingMode)
 	}

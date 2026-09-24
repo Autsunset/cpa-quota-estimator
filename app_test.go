@@ -125,8 +125,8 @@ func TestPricingSettingsManagementSavesBothSwitches(t *testing.T) {
 	if a.cfg.ApplyLongContextPricing || a.cfg.ApplyFastPricing {
 		t.Fatalf("app settings = long:%v fast:%v, want both disabled", a.cfg.ApplyLongContextPricing, a.cfg.ApplyFastPricing)
 	}
-	if a.cfg.PricingMode != pricingModeLegacyAPI {
-		t.Fatalf("pricing mode = %q, want pre-discount API", a.cfg.PricingMode)
+	if a.cfg.PricingMode != pricingModeCredits {
+		t.Fatalf("pricing mode = %q, want Credits", a.cfg.PricingMode)
 	}
 	settings, err := s.loadPricingSettings(context.Background(), pricingSettings{ApplyLongContext: true, ApplyFast: true})
 	if err != nil {

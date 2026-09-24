@@ -37,7 +37,7 @@ func TestOverviewReturnsEveryRecordedAccount(t *testing.T) {
 	if overview.PluginVersion != pluginVersion {
 		t.Fatalf("plugin_version=%q want %q", overview.PluginVersion, pluginVersion)
 	}
-	if overview.PricingMode != pricingModeLegacyAPI || overview.ValueUnit != "USD" {
+	if overview.PricingMode != pricingModeCredits || overview.ValueUnit != "credits" {
 		t.Fatalf("pricing_mode=%q value_unit=%q", overview.PricingMode, overview.ValueUnit)
 	}
 	if len(overview.Accounts) != 2 {

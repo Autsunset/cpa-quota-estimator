@@ -28,7 +28,8 @@ func TestAstraMultiplierPreservesBasePricesAndAppliesExactlyOnce(t *testing.T) {
 						got := calculateCost(p, d, tier, cfg)
 						withoutCalibration := cfg
 						withoutCalibration.ApplyModelCalibration = false
-						want := calculateCost(p, d, tier, withoutCalibration) * 1.8
+						want := calculateCost(p, d, tier, withoutCalibration)
+						if mode != pricingModeCredits { want *= 1.8 }
 						if math.Abs(got-want) > 1e-9 {
 							t.Fatalf("%s/%s/%t/%t/%s got %f want %f", mode, fastMode, long, fast, tier, got, want)
 						}
@@ -43,7 +44,8 @@ func TestAstraMultiplierPreservesBasePricesAndAppliesExactlyOnce(t *testing.T) {
 	if got := priceForPricingMode(p, pricingModeCurrentAPI); got != p {
 		t.Fatal("current API base prices must remain uncalibrated")
 	}
-	if defaultConfig().modelPriceMultiplier(" openai/GPT-6-ASTRA ") != 1.8 || defaultConfig().modelPriceMultiplier("gpt-5.6-sol") != 1 {
+	legacy := defaultConfig(); legacy.PricingMode = pricingModeLegacyAPI
+	if defaultConfig().modelPriceMultiplier(" openai/GPT-6-ASTRA ") != 1 || legacy.modelPriceMultiplier(" openai/GPT-6-ASTRA ") != 1.8 || defaultConfig().modelPriceMultiplier("gpt-5.6-sol") != 1 {
 		t.Fatal("model normalization or scope")
 	}
 }

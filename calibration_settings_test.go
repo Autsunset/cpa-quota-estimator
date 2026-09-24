@@ -24,7 +24,9 @@ func TestCalibrationSettingsAPIAndPersistence(t *testing.T) {
  INSERT INTO quota_samples(cycle_id,sampled_at,account,used_percent,reset_at,window_minutes,window_cost_usd) VALUES(1,100,'a',1,1000,15,22);`); err != nil {
 		t.Fatal(err)
 	}
-	a := &app{cfg: defaultConfig(), store: s}
+	cfgLegacy := defaultConfig()
+	cfgLegacy.PricingMode = pricingModeLegacyAPI
+	a := &app{cfg: cfgLegacy, store: s}
 	cases := []struct {
 		body       string
 		want, mult float64
@@ -36,7 +38,7 @@ func TestCalibrationSettingsAPIAndPersistence(t *testing.T) {
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"pricing_mode":"legacy_api"}`, 10, 2.3, false},
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"apply_model_calibration":true}`, 23, 2.3, true},
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":0.5}`, 5, .5, true},
-		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":2.3,"pricing_mode":"credits","apply_model_calibration":true}`, 575, 2.3, true},
+		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":2.3,"pricing_mode":"credits","apply_model_calibration":true}`, 250, 2.3, true},
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":1,"pricing_mode":"credits","apply_model_calibration":true}`, 250, 1, true},
 		{`{"apply_long_context_pricing":false,"apply_fast_pricing":true,"astra_multiplier":1.8,"pricing_mode":"current_api"}`, 18, 1.8, true},
 	}
@@ -133,7 +135,7 @@ func TestOldSettingsDefaultCalibrationAndConfigValidation(t *testing.T) {
 
 func TestCalibrationControlIsAlwaysAvailable(t *testing.T) {
 	html := string(dashboardHTML)
-	for _, text := range []string{`id="astraMultiplier"`, "Astra 手动倍率用于 API 和 Credits 口径", "learned mode uses fitted weights", "apply_model_calibration: true"} {
+	for _, text := range []string{`id="astraMultiplier"`, "Astra 手动倍率仅用于 API 口径", "learned uses fitted weights", "apply_model_calibration: true"} {
 		if !strings.Contains(html, text) {
 			t.Fatalf("missing always-on control detail %q", text)
 		}
@@ -143,7 +145,7 @@ func TestCalibrationControlIsAlwaysAvailable(t *testing.T) {
 	}
 }
 
-func TestNewUsersDefaultToLegacyAndSavedModesArePreserved(t *testing.T) {
+func TestNewUsersDefaultToCreditsAndSavedModesArePreserved(t *testing.T) {
 	ctx := context.Background()
 	s, err := openStore(filepath.Join(t.TempDir(), "defaults.sqlite"))
 	if err != nil {
@@ -154,15 +156,22 @@ func TestNewUsersDefaultToLegacyAndSavedModesArePreserved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.PricingMode != pricingModeLegacyAPI || cfg.AstraMultiplier != 1.8 {
+	if cfg.PricingMode != pricingModeCredits || cfg.AstraMultiplier != 1.8 {
 		t.Fatalf("new user defaults=%#v", cfg)
 	}
 	fresh, err := s.loadPricingSettings(ctx, cfg.pricingSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fresh.PricingMode != pricingModeLegacyAPI {
+	if fresh.PricingMode != pricingModeCredits {
 		t.Fatalf("fresh settings=%#v", fresh)
+	}
+	if _, err = s.db.Exec(`INSERT INTO metadata(key,value) VALUES(?,?)`, pricingSettingsMetadataKey, `{"apply_fast_pricing":true,"astra_multiplier":1.8}`); err != nil {
+		t.Fatal(err)
+	}
+	oldSettings, err := s.loadPricingSettings(ctx, cfg.pricingSettings())
+	if err != nil || oldSettings.PricingMode != pricingModeLegacyAPI {
+		t.Fatalf("older saved settings changed basis: %#v err=%v", oldSettings, err)
 	}
 	for _, mode := range []string{pricingModeCurrentAPI, pricingModeCredits, pricingModeLegacyAPI} {
 		raw := `{"pricing_mode":"` + mode + `","apply_long_context_pricing":false,"apply_fast_pricing":true}`

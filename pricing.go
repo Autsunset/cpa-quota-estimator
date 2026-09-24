@@ -20,7 +20,8 @@ const (
 // modelPriceMultiplier is a quota-equivalence calibration, not an upstream
 // price. Keep catalog prices unchanged so syncs and UI retain the base rates.
 func (c config) modelPriceMultiplier(model string) float64 {
-	if c.ApplyModelCalibration && normalizeModel(model) == "gpt-6-astra" {
+	mode := normalizePricingMode(c.PricingMode)
+	if c.ApplyModelCalibration && mode != pricingModeCredits && mode != pricingModeLearned && normalizeModel(model) == "gpt-6-astra" {
 		return c.AstraMultiplier
 	}
 	return 1
@@ -43,12 +44,14 @@ func normalizePricingMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case pricingModeCurrentAPI:
 		return pricingModeCurrentAPI
+	case pricingModeLegacyAPI:
+		return pricingModeLegacyAPI
 	case pricingModeCredits:
 		return pricingModeCredits
 	case pricingModeLearned:
 		return pricingModeLearned
 	default:
-		return pricingModeLegacyAPI
+		return pricingModeCredits
 	}
 }
 

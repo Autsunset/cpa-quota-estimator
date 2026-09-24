@@ -9,18 +9,19 @@ import (
 )
 
 type usageBreakdownRow struct {
-	Model            string   `json:"model"`
-	ServiceTier      string   `json:"service_tier"`
-	Requests         int64    `json:"requests"`
-	Failed           int64    `json:"failed"`
-	InputTokens      int64    `json:"input_tokens"`
-	CacheReadTokens  int64    `json:"cache_read_tokens"`
-	CacheWriteTokens int64    `json:"cache_write_tokens"`
-	OutputTokens     int64    `json:"output_tokens"`
-	TotalTokens      int64    `json:"total_tokens"`
-	CurrentValue     float64  `json:"current_value"`
-	OfficialCredits  *float64 `json:"official_credits,omitempty"`
-	LearnedQuotaPct  *float64 `json:"learned_quota_pct,omitempty"`
+	Model             string   `json:"model"`
+	ServiceTier       string   `json:"service_tier"`
+	Requests          int64    `json:"requests"`
+	Failed            int64    `json:"failed"`
+	InputTokens       int64    `json:"input_tokens"`
+	CacheReadTokens   int64    `json:"cache_read_tokens"`
+	CacheWriteTokens  int64    `json:"cache_write_tokens"`
+	OutputTokens      int64    `json:"output_tokens"`
+	TotalTokens       int64    `json:"total_tokens"`
+	CurrentValue      float64  `json:"current_value"`
+	OfficialCredits   *float64 `json:"official_credits,omitempty"`
+	LearnedQuotaPct   *float64 `json:"learned_quota_pct,omitempty"`
+	EstimatedQuotaPct *float64 `json:"estimated_quota_pct,omitempty"`
 }
 
 type usageBreakdown struct {
@@ -40,6 +41,8 @@ type usageBreakdown struct {
 	QuotaGrowthPercent    float64             `json:"quota_growth_percent"`
 	QuotaCoverageComplete bool                `json:"quota_coverage_complete"`
 	LearnedQuotaPct       float64             `json:"learned_quota_pct"`
+	EstimatedQuotaPct     float64             `json:"estimated_quota_pct"`
+	EstimatedVsActualPct  float64             `json:"estimated_vs_actual_pct"`
 	UnattributedRequests  int64               `json:"unattributed_requests"`
 }
 
@@ -81,21 +84,49 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 	if account == "" {
 		return result, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT model,service_tier,COUNT(*),COALESCE(SUM(failed),0),
+	cycles, err := s.cycles(ctx, account, 1000)
+	if err != nil {
+		return result, err
+	}
+	valuePerPercent := make(map[int64]float64, len(cycles))
+	for _, cycle := range cycles {
+		if cycle.StartedAt >= endAt || cycle.EndedAt > 0 && cycle.EndedAt <= startAt {
+			continue
+		}
+		points, _, errPoints := s.pointsForCycle(ctx, account, cycle.ID, 10000)
+		if errPoints != nil {
+			return result, errPoints
+		}
+		if len(points) == 0 {
+			continue
+		}
+		cycle.Current = true // estimate the corresponding historical cycle at its own last observation
+		estimate, errCapacity := s.onlineCycleCapacity(ctx, account, cycle, points, cfg, points[len(points)-1].Time)
+		if errCapacity != nil {
+			return result, errCapacity
+		}
+		if estimate.ValuePerPercent > 0 {
+			valuePerPercent[cycle.ID] = estimate.ValuePerPercent
+		} else if estimate.FullWindowCostUSD > 0 {
+			valuePerPercent[cycle.ID] = estimate.FullWindowCostUSD / 100
+		}
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT cycle_id,model,service_tier,COUNT(*),COALESCE(SUM(failed),0),
 		COALESCE(SUM(input_tokens),0),COALESCE(SUM(cache_read_tokens),0),COALESCE(SUM(cache_write_tokens),0),
 		COALESCE(SUM(output_tokens),0),COALESCE(SUM(total_tokens),0),COALESCE(SUM(cost_usd),0),
 		SUM(learned_quota_pct),COUNT(learned_quota_pct)
 		FROM usage_events WHERE account=? AND quota_scope=? AND requested_at>=? AND requested_at<?
-		GROUP BY model,service_tier`, account, mainQuotaScope, startAt, endAt)
+		GROUP BY cycle_id,model,service_tier`, account, mainQuotaScope, startAt, endAt)
 	if err != nil {
 		return result, err
 	}
 	byKey := make(map[string]*usageBreakdownRow)
 	for rows.Next() {
 		var row usageBreakdownRow
+		var cycleID int64
 		var learned sql.NullFloat64
 		var attributed int64
-		if err = rows.Scan(&row.Model, &row.ServiceTier, &row.Requests, &row.Failed,
+		if err = rows.Scan(&cycleID, &row.Model, &row.ServiceTier, &row.Requests, &row.Failed,
 			&row.InputTokens, &row.CacheReadTokens, &row.CacheWriteTokens,
 			&row.OutputTokens, &row.TotalTokens, &row.CurrentValue, &learned, &attributed); err != nil {
 			rows.Close()
@@ -106,6 +137,10 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 		if learned.Valid {
 			v := learned.Float64
 			row.LearnedQuotaPct = &v
+		}
+		if perPercent := valuePerPercent[cycleID]; perPercent > 0 {
+			value := row.CurrentValue / perPercent
+			row.EstimatedQuotaPct = &value
 		}
 		result.UnattributedRequests += row.Requests - attributed
 		key := row.Model + "\x00" + row.ServiceTier
@@ -118,6 +153,14 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 			existing.OutputTokens += row.OutputTokens
 			existing.TotalTokens += row.TotalTokens
 			existing.CurrentValue += row.CurrentValue
+			if row.EstimatedQuotaPct != nil {
+				if existing.EstimatedQuotaPct == nil {
+					v := *row.EstimatedQuotaPct
+					existing.EstimatedQuotaPct = &v
+				} else {
+					*existing.EstimatedQuotaPct += *row.EstimatedQuotaPct
+				}
+			}
 			if row.LearnedQuotaPct != nil {
 				if existing.LearnedQuotaPct == nil {
 					v := *row.LearnedQuotaPct
@@ -152,6 +195,9 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 		if row.LearnedQuotaPct != nil {
 			result.LearnedQuotaPct += *row.LearnedQuotaPct
 		}
+		if row.EstimatedQuotaPct != nil {
+			result.EstimatedQuotaPct += *row.EstimatedQuotaPct
+		}
 		result.Rows = append(result.Rows, *row)
 	}
 	sort.Slice(result.Rows, func(i, j int) bool {
@@ -163,10 +209,6 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 		}
 		return result.Rows[i].ServiceTier < result.Rows[j].ServiceTier
 	})
-	cycles, err := s.cycles(ctx, account, 1000)
-	if err != nil {
-		return result, err
-	}
 	for _, cycle := range cycles {
 		if cycle.StartedAt >= endAt || cycle.EndedAt > 0 && cycle.EndedAt <= startAt {
 			continue
@@ -178,5 +220,6 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 		result.QuotaGrowthPercent += growth
 		result.QuotaCoverageComplete = result.QuotaCoverageComplete && complete
 	}
+	result.EstimatedVsActualPct = result.EstimatedQuotaPct - result.QuotaGrowthPercent
 	return result, nil
 }

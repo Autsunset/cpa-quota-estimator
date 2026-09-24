@@ -12,8 +12,8 @@ func TestPublicReleaseDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.PricingMode != pricingModeLegacyAPI {
-		t.Fatalf("pricing mode = %q, want %q", cfg.PricingMode, pricingModeLegacyAPI)
+	if cfg.PricingMode != pricingModeCredits {
+		t.Fatalf("pricing mode = %q, want %q", cfg.PricingMode, pricingModeCredits)
 	}
 	if cfg.HistoryDays != 365 {
 		t.Fatalf("history days = %d, want 365", cfg.HistoryDays)
@@ -227,6 +227,7 @@ func TestEstimateBurnRecentPace(t *testing.T) {
 func TestCalculateCostCacheLongAndFast(t *testing.T) {
 	p := price{Input: 5, Output: 30, CacheRead: .5, CacheWrite: 6.25, LongInput: 10, LongOutput: 45, LongRead: 1, LongWrite: 12.5, FastInput: 10, FastOutput: 60, FastRead: 1, FastWrite: 12.5}
 	cfg := defaultConfig()
+	cfg.PricingMode = pricingModeCurrentAPI
 	cfg.ApplyLongContextPricing = true
 	detail := usageDetail{InputTokens: 300_000, OutputTokens: 10_000, CacheReadTokens: 200_000, CacheCreationTokens: 20_000}
 	got := calculateCost(p, detail, "priority", cfg)

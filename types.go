@@ -116,7 +116,7 @@ func defaultConfig() config {
 		PriceSyncIntervalMinutes: 1440,
 		FastPricingMode:          "multiplier",
 		FastMultiplier:           2.5,
-		PricingMode:              pricingModeLegacyAPI,
+		PricingMode:              pricingModeCredits,
 		ApplyFastPricing:         true,
 		LongContextThreshold:     272000,
 		ApplyLongContextPricing:  false,
@@ -271,24 +271,28 @@ type quotaWindow struct {
 }
 
 type estimate struct {
-	CoverageMode       string  `json:"coverage_mode,omitempty"`
-	Assumption         string  `json:"assumption,omitempty"`
-	SampleConfidence   string  `json:"sample_confidence,omitempty"`
-	UnavailableReason  string  `json:"unavailable_reason,omitempty"`
-	Available          bool    `json:"available"`
-	PercentSpan        float64 `json:"percent_span"`
-	SampleCount        int     `json:"sample_count"`
-	FullWindowTokens   float64 `json:"full_window_tokens"`
-	FullWindowCostUSD  float64 `json:"full_window_cost_usd"`
-	TokenLow           float64 `json:"token_low"`
-	TokenHigh          float64 `json:"token_high"`
-	CostLow            float64 `json:"cost_low"`
-	CostHigh           float64 `json:"cost_high"`
-	RemainingTokens    float64 `json:"remaining_tokens"`
-	RemainingCostUSD   float64 `json:"remaining_cost_usd"`
-	EstimatedExhaustAt int64   `json:"estimated_exhaust_at,omitempty"`
-	Confidence         string  `json:"confidence"`
-	Explanation        string  `json:"explanation"`
+	Method              string  `json:"method,omitempty"`
+	CoverageMode        string  `json:"coverage_mode,omitempty"`
+	Assumption          string  `json:"assumption,omitempty"`
+	SampleConfidence    string  `json:"sample_confidence,omitempty"`
+	UnavailableReason   string  `json:"unavailable_reason,omitempty"`
+	Available           bool    `json:"available"`
+	PercentSpan         float64 `json:"percent_span"`
+	SampleCount         int     `json:"sample_count"`
+	FullWindowTokens    float64 `json:"full_window_tokens"`
+	FullWindowCostUSD   float64 `json:"full_window_cost_usd"`
+	TokenLow            float64 `json:"token_low"`
+	TokenHigh           float64 `json:"token_high"`
+	CostLow             float64 `json:"cost_low"`
+	CostHigh            float64 `json:"cost_high"`
+	ValuePerPercent     float64 `json:"value_per_percent,omitempty"`
+	ValuePerPercentLow  float64 `json:"value_per_percent_low,omitempty"`
+	ValuePerPercentHigh float64 `json:"value_per_percent_high,omitempty"`
+	RemainingTokens     float64 `json:"remaining_tokens"`
+	RemainingCostUSD    float64 `json:"remaining_cost_usd"`
+	EstimatedExhaustAt  int64   `json:"estimated_exhaust_at,omitempty"`
+	Confidence          string  `json:"confidence"`
+	Explanation         string  `json:"explanation"`
 }
 
 type modelAllowance struct {

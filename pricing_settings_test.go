@@ -40,7 +40,7 @@ func TestPricingSettingsPersistAndRecalculateHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := defaultConfig().withPricingSettings(pricingSettings{})
+	cfg := defaultConfig().withPricingSettings(pricingSettings{PricingMode: pricingModeLegacyAPI})
 	count, err := s.savePricingSettingsAndRecalculate(ctx, cfg.pricingSettings(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestPricingSettingsPersistAndRecalculateHistory(t *testing.T) {
 		t.Fatalf("saved settings = %#v, want both disabled", saved)
 	}
 
-	enabled := pricingSettings{ApplyLongContext: true, ApplyFast: true}
+	enabled := pricingSettings{ApplyLongContext: true, ApplyFast: true, PricingMode: pricingModeLegacyAPI}
 	cfg = defaultConfig().withPricingSettings(enabled)
 	if _, err = s.savePricingSettingsAndRecalculate(ctx, enabled, cfg); err != nil {
 		t.Fatal(err)
