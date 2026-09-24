@@ -102,3 +102,20 @@ func TestUnlistedCreditsPriceIsMarkedAsEstimate(t *testing.T) {
 		t.Fatalf("fallback row=%#v", row)
 	}
 }
+
+func TestAdjustmentUsesCurrentReferencePrice(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.PricingMode = pricingModeAPI
+	cfg.LearnedFit = testAnchorFit()
+	astra := price{Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50}
+	cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 5}, "gpt-6-astra": astra}
+	p, _ := cfg.effectiveModelPrice(astra)
+	if math.Abs(p.Input-15) > 1e-9 {
+		t.Fatalf("input=%f want 15 with current reference price 5", p.Input)
+	}
+	delete(cfg.PriceCatalog, "gpt-5.6-sol")
+	p, _ = cfg.effectiveModelPrice(astra)
+	if math.Abs(p.Input-12) > 1e-9 {
+		t.Fatalf("fallback input=%f want 12", p.Input)
+	}
+}

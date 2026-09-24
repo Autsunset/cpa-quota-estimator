@@ -7,12 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
-type store struct{ db *sql.DB }
+type store struct {
+	db                    *sql.DB
+	path                  string
+	attributionBatchMaxNS atomic.Int64
+	walCheckpointing      atomic.Bool
+}
 
 func openStore(path string) (*store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -25,14 +31,14 @@ func openStore(path string) (*store, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	for _, pragma := range []string{
-		"PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA busy_timeout=5000", "PRAGMA foreign_keys=ON",
+		"PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA busy_timeout=5000", "PRAGMA foreign_keys=ON", "PRAGMA wal_autocheckpoint=0",
 	} {
 		if _, err = db.Exec(pragma); err != nil {
 			db.Close()
 			return nil, err
 		}
 	}
-	s := &store{db: db}
+	s := &store{db: db, path: path}
 	if err = s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -44,6 +50,7 @@ func (s *store) migrate() error {
 	_, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS usage_events (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	ingest_id TEXT NOT NULL DEFAULT '',
 	cycle_id INTEGER NOT NULL DEFAULT 0,
  requested_at INTEGER NOT NULL,
 	observed_at INTEGER NOT NULL DEFAULT 0,
@@ -132,6 +139,12 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err = ensureColumn(s.db, "usage_events", "cycle_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err = ensureColumn(s.db, "usage_events", "ingest_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_ingest_id ON usage_events(ingest_id) WHERE ingest_id<>''`); err != nil {
+		return err
+	}
 	if err = ensureColumn(s.db, "usage_events", "observed_at", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -186,7 +199,32 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 func (s *store) close() error { return s.db.Close() }
 
+func (s *store) checkpointWAL(ctx context.Context) error {
+	if s.path == "" || !s.walCheckpointing.CompareAndSwap(false, true) {
+		return nil
+	}
+	defer s.walCheckpointing.Store(false)
+	connection, err := sql.Open("sqlite", s.path)
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	connection.SetMaxOpenConns(1)
+	var busy, logPages, checkpointed int
+	return connection.QueryRowContext(ctx, `PRAGMA wal_checkpoint(PASSIVE)`).Scan(&busy, &logPages, &checkpointed)
+}
+
 func (s *store) insertEvent(ctx context.Context, e event, sampleInterval time.Duration) error {
+	if e.IngestID != "" {
+		var existing int64
+		err := s.db.QueryRowContext(ctx, `SELECT id FROM usage_events WHERE ingest_id=?`, e.IngestID).Scan(&existing)
+		if err == nil {
+			return nil
+		}
+		if err != sql.ErrNoRows {
+			return err
+		}
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -204,11 +242,11 @@ func (s *store) insertEvent(ctx context.Context, e event, sampleInterval time.Du
 		secondaryUsed = *e.SecondaryUsedPercent
 	}
 	inserted, err := tx.ExecContext(ctx, `INSERT INTO usage_events
-	(cycle_id,requested_at,observed_at,account,provider,model,alias,service_tier,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,failed,status_code,used_percent,reset_at,window_minutes,secondary_used_percent,secondary_reset_at,secondary_window_minutes,plan_type,quota_scope,codex_headers_json,learned_quota_pct,learned_secondary_pct)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	(cycle_id,requested_at,observed_at,account,provider,model,alias,service_tier,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_write_tokens,total_tokens,cost_usd,failed,status_code,used_percent,reset_at,window_minutes,secondary_used_percent,secondary_reset_at,secondary_window_minutes,plan_type,quota_scope,codex_headers_json,learned_quota_pct,learned_secondary_pct,ingest_id)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		cycle.ID, e.RequestedAt, eventObservationTime(e), e.Account, e.Provider, e.Model, e.Alias, e.ServiceTier,
 		e.InputTokens, e.OutputTokens, e.ReasoningTokens, e.CacheReadTokens, e.CacheWriteTokens,
-		e.TotalTokens, e.CostUSD, e.Failed, e.StatusCode, used, e.ResetAt, e.WindowMinutes, secondaryUsed, e.SecondaryResetAt, e.SecondaryWindowMinutes, e.PlanType, eventQuotaScope(e), e.CodexHeadersJSON, e.LearnedQuotaPct, e.LearnedSecondaryPct)
+		e.TotalTokens, e.CostUSD, e.Failed, e.StatusCode, used, e.ResetAt, e.WindowMinutes, secondaryUsed, e.SecondaryResetAt, e.SecondaryWindowMinutes, e.PlanType, eventQuotaScope(e), e.CodexHeadersJSON, e.LearnedQuotaPct, e.LearnedSecondaryPct, e.IngestID)
 	if err != nil {
 		return err
 	}

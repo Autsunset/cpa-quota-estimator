@@ -294,8 +294,11 @@ const messages = {
     pricingTaskStatus: '{status} · {percent}% · 请求 {events}/{total} · 样本 {samples}/{sampleTotal}',
     pricingTaskqueued: '排队中',
     pricingTaskrunning: '后台重算中',
+    pricingTaskrolling_back: '正在回滚重算',
     pricingTasksucceeded: '重算完成',
     pricingTaskfailed: '重算失败',
+    pricingRecalculating: '计价值正在后台重算，历史图表可能暂时混用新旧值。',
+    usageDropped: '有 {count} 条用量记录在多次重试后仍未能保存，请检查数据库。',
     calibrationInvalid: 'Astra 倍率须为 0.01 至 100 之间的数字。',
     effectiveRate: '折算 {rate}',
     pricingModeCredits: 'Codex Credits（官方单价）',
@@ -575,8 +578,11 @@ const messages = {
     pricingTaskStatus: '{status} · {percent}% · requests {events}/{total} · samples {samples}/{sampleTotal}',
     pricingTaskqueued: 'Queued',
     pricingTaskrunning: 'Recalculating in background',
+    pricingTaskrolling_back: 'Rolling back recalculation',
     pricingTasksucceeded: 'Recalculation complete',
     pricingTaskfailed: 'Recalculation failed',
+    pricingRecalculating: 'Pricing values are being recalculated; historical charts may temporarily mix old and new values.',
+    usageDropped: '{count} usage records could not be saved after retries. Check the database.',
     calibrationInvalid: 'Astra multiplier must be a number between 0.01 and 100.',
     effectiveRate: 'Effective {rate}',
     pricingModeCredits: 'Codex Credits (published rates)',
@@ -1478,7 +1484,7 @@ async function load() {
   try {
     let runningTask = await api('/pricing-settings/task').catch(() => null);
     if (runningTask) renderPricingTask(runningTask);
-    if (runningTask && ['queued','running'].includes(runningTask.status)) {
+    if (runningTask && ['queued','running','rolling_back'].includes(runningTask.status)) {
       watchPricingTask(runningTask);
       return true;
     }
@@ -2241,6 +2247,7 @@ function renderUsageBreakdown(data) {
     tokens: usageExact(data.total_tokens), credits: usageDecimal(data.official_credits),
     quota: Number(data.quota_growth_percent || 0).toFixed(1)
   });
+  if (data.recalculating) summary += ' · ' + tr('pricingRecalculating');
   if (!data.quota_coverage_complete) summary += tr('usageSummaryPartial');
   if (data.unpriced_requests) summary += tr('usageSummaryUnpriced', {count: usageExact(data.unpriced_requests)});
   if (Number(data.estimated_quota_pct || 0) > 0) summary += tr('usageEstimatedDelta', {
@@ -2739,7 +2746,10 @@ function renderSummary(summary) {
   $('#costRange').textContent = estimate.available
     ? usd(estimate.cost_low) + ' — ' + usd(estimate.cost_high) : '—';
   renderModelAllowances(summary.remaining_by_model, '#allowanceRows', '#allowanceMode', !!estimate.available, estimate);
-  $('#note').textContent = (historical ? tr('historyReview') : '') + estimateExplanation(estimate);
+  let notice=(historical ? tr('historyReview') : '') + estimateExplanation(estimate);
+  if (summary.recalculating) notice += ' ' + tr('pricingRecalculating');
+  if (Number(summary.dropped_usage_events || 0)>0) notice += ' ' + tr('usageDropped',{count:usageExact(summary.dropped_usage_events)});
+  $('#note').textContent = notice;
 }
 
 function svgLine(x1, y1, x2, y2, attributes) {
@@ -3657,7 +3667,7 @@ $('#showSpark').onchange = event => {
 };
 $('#language').onchange = event => setLanguageMode(event.target.value);
 function renderPricingTask(task) {
-  let active = task && ['queued','running'].includes(task.status);
+  let active = task && ['queued','running','rolling_back'].includes(task.status);
   $('#pricingTaskProgress').hidden = !task;
   for (const control of document.querySelectorAll('.pricing-v015 input,.pricing-v015 select,.pricing-v015 button')) control.disabled = !!active;
   if (!task) return;
@@ -3677,7 +3687,7 @@ function renderPricingTask(task) {
 
 function watchPricingTask(task) {
   renderPricingTask(task);
-  if (!task || !['queued','running'].includes(task.status)) return;
+  if (!task || !['queued','running','rolling_back'].includes(task.status)) return;
   if (pricingTaskTimer) return;
   pricingTaskTimer = setInterval(async () => {
     try {
@@ -3750,6 +3760,13 @@ setInterval(async () => {
       calibrationOptionsCache, calibrationAccountsCache, state.account);
   } catch (_) {}
 }, 15000);
+setInterval(async () => {
+  if (document.hidden || !state || pricingTaskTimer) return;
+  try {
+    let task=await api('/pricing-settings/task');
+    if (['queued','running','rolling_back'].includes(task.status)) watchPricingTask(task);
+  } catch (_) {}
+},15000);
 $('#showSpark').checked = showSparkQuota;
 captureStaticText();
 applyLanguage(language);

@@ -145,6 +145,7 @@ type price struct {
 }
 
 type event struct {
+	IngestID               string
 	RequestedAt            int64
 	ObservedAt             int64
 	Account                string
@@ -378,10 +379,13 @@ type accountOverview struct {
 }
 
 type overviewResponse struct {
-	PluginVersion string            `json:"plugin_version"`
-	PricingMode   string            `json:"pricing_mode"`
-	ValueUnit     string            `json:"value_unit"`
-	Accounts      []accountOverview `json:"accounts"`
+	PluginVersion      string            `json:"plugin_version"`
+	PricingMode        string            `json:"pricing_mode"`
+	ValueUnit          string            `json:"value_unit"`
+	Recalculating      bool              `json:"recalculating"`
+	PricingTaskID      string            `json:"pricing_task_id,omitempty"`
+	DroppedUsageEvents int64             `json:"dropped_usage_events"`
+	Accounts           []accountOverview `json:"accounts"`
 }
 
 type monthlyCycle struct {

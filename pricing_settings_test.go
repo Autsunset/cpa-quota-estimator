@@ -220,6 +220,13 @@ func TestSavedLearnedModeMigratesAndRepricesOnConfigure(t *testing.T) {
 	if a.cfg.PricingMode != pricingModeCredits {
 		t.Fatalf("migrated mode=%s", a.cfg.PricingMode)
 	}
+	task, ok := a.latestPricingTask("")
+	if !ok {
+		t.Fatal("migration did not schedule a background task")
+	}
+	if done := waitPricingTask(t, a, task.ID); done.Status != "succeeded" {
+		t.Fatalf("migration task=%#v", done)
+	}
 	var eventCost, sampleCost float64
 	if err = a.store.db.QueryRow(`SELECT cost_usd FROM usage_events`).Scan(&eventCost); err != nil {
 		t.Fatal(err)
@@ -233,5 +240,166 @@ func TestSavedLearnedModeMigratesAndRepricesOnConfigure(t *testing.T) {
 	saved, err := a.store.loadPricingSettings(context.Background(), defaultConfig().pricingSettings())
 	if err != nil || saved.PricingMode != pricingModeCredits || saved.Migrated {
 		t.Fatalf("saved=%#v err=%v", saved, err)
+	}
+}
+
+func TestConcurrentUsageSurvivesBatchedPricingRecalculation(t *testing.T) {
+	s, a := pricingFixture(t)
+	defer s.close()
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt, err := tx.Prepare(`INSERT INTO usage_events(cycle_id,requested_at,account,model,input_tokens,total_tokens,cost_usd,quota_scope) VALUES(1,150,'a','gpt-5.6-sol',1000,1000,99,'main')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 995; i++ {
+		if _, err = stmt.Exec(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stmt.Close()
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	a.pricingProgressHook = func(progress pricingRecalcProgress) error {
+		if progress.Stage == "events" && progress.EventsDone == pricingEventBatchSize {
+			close(entered)
+			<-release
+		}
+		return nil
+	}
+	response := a.handleManagement(managementRequest{Method: "POST", Path: "/cpa-quota-estimator/pricing-settings", Body: []byte(`{"pricing_mode":"api"}`)})
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("task start=%d %s", response.StatusCode, response.Body)
+	}
+	var task pricingRecalcTask
+	if err = json.Unmarshal(response.Body, &task); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first short batch did not finish")
+	}
+	status := a.handleManagement(managementRequest{Method: "GET", Path: "/cpa-quota-estimator/pricing-settings"})
+	var visible map[string]any
+	if status.StatusCode != 200 || json.Unmarshal(status.Body, &visible) != nil || visible["recalculating"] != true {
+		t.Fatalf("task not visible through settings API: %d %s", status.StatusCode, status.Body)
+	}
+	written := make(chan error, 1)
+	go func() {
+		written <- a.recordUsage(usageRecord{AuthID: "a", Model: "gpt-5.6-sol", RequestedAt: time.Unix(1250, 0), Detail: usageDetail{InputTokens: 1_000_000, TotalTokens: 1_000_000}})
+	}()
+	select {
+	case err = <-written:
+		if err != nil {
+			t.Fatalf("concurrent usage failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("usage blocked behind pricing batch")
+	}
+	close(release)
+	done := waitPricingTask(t, a, task.ID)
+	if done.Status != "succeeded" {
+		t.Fatalf("task=%#v", done)
+	}
+	if done.Progress.BatchCount < 3 || done.Progress.MaxBatchLockMS >= 500 {
+		t.Fatalf("unbounded batch: count=%d max=%.2fms", done.Progress.BatchCount, done.Progress.MaxBatchLockMS)
+	}
+	var count int64
+	if err = s.db.QueryRow(`SELECT COUNT(*) FROM usage_events`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1002 {
+		t.Fatalf("event count=%d want 1002", count)
+	}
+	if dropped, errDrop := s.droppedUsageCount(context.Background()); errDrop != nil || dropped != 0 || a.droppedUsagePending.Load() != 0 {
+		t.Fatalf("dropped=%d pending=%d err=%v", dropped, a.droppedUsagePending.Load(), errDrop)
+	}
+	var currentCost float64
+	if err = s.db.QueryRow(`SELECT cost_usd FROM usage_events WHERE requested_at=1250 ORDER BY id DESC LIMIT 1`).Scan(&currentCost); err != nil {
+		t.Fatal(err)
+	}
+	if currentCost != 8 {
+		t.Fatalf("during-task request used old price: %f", currentCost)
+	}
+	rows, err := s.db.Query(`SELECT cycle_id,sampled_at,window_cost_usd FROM quota_samples`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type sample struct {
+		cycle, at int64
+		value     float64
+	}
+	var samples []sample
+	for rows.Next() {
+		var x sample
+		if err = rows.Scan(&x.cycle, &x.at, &x.value); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		samples = append(samples, x)
+	}
+	rows.Close()
+	for _, sample := range samples {
+		var expected float64
+		if err = s.db.QueryRow(`SELECT COALESCE(SUM(cost_usd),0) FROM usage_events WHERE cycle_id=? AND quota_scope='main' AND requested_at<=?`, sample.cycle, sample.at).Scan(&expected); err != nil {
+			t.Fatal(err)
+		}
+		if math.Abs(sample.value-expected) > 1e-8 {
+			t.Fatalf("cycle %d sample %d =%f want %f", sample.cycle, sample.at, sample.value, expected)
+		}
+	}
+}
+
+func TestRollbackRepricesUsageAcceptedDuringTask(t *testing.T) {
+	s, a := pricingFixture(t)
+	defer s.close()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	a.pricingProgressHook = func(p pricingRecalcProgress) error {
+		if p.Stage == "samples" && p.SamplesDone == p.SamplesTotal {
+			close(entered)
+			<-release
+			return errors.New("injected late failure")
+		}
+		return nil
+	}
+	response := a.handleManagement(managementRequest{Method: "POST", Path: "/cpa-quota-estimator/pricing-settings", Body: []byte(`{"pricing_mode":"api"}`)})
+	if response.StatusCode != http.StatusAccepted {
+		t.Fatalf("start=%d", response.StatusCode)
+	}
+	var task pricingRecalcTask
+	if err := json.Unmarshal(response.Body, &task); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("task did not reach sample batch")
+	}
+	if err := a.recordUsage(usageRecord{AuthID: "a", Model: "gpt-5.6-sol", RequestedAt: time.Unix(1250, 0), Detail: usageDetail{InputTokens: 1_000_000, TotalTokens: 1_000_000}}); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if failed := waitPricingTask(t, a, task.ID); failed.Status != "failed" {
+		t.Fatalf("task=%#v", failed)
+	}
+	if a.cfg.PricingMode != pricingModeCredits {
+		t.Fatalf("config did not roll back: %s", a.cfg.PricingMode)
+	}
+	var lateCost, sampleCost float64
+	if err := s.db.QueryRow(`SELECT cost_usd FROM usage_events WHERE requested_at=1250 ORDER BY id DESC LIMIT 1`).Scan(&lateCost); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT window_cost_usd FROM quota_samples WHERE cycle_id=2 AND sampled_at=1300`).Scan(&sampleCost); err != nil {
+		t.Fatal(err)
+	}
+	if lateCost != 100 || sampleCost != 199 {
+		t.Fatalf("late event=%f sample=%f", lateCost, sampleCost)
 	}
 }

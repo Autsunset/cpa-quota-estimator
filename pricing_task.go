@@ -32,19 +32,35 @@ func (a *app) latestPricingTask(id string) (pricingRecalcTask, bool) {
 	return *a.pricingTask, true
 }
 
-func (a *app) startPricingTask(s *store, settings pricingSettings, cfg config) (pricingRecalcTask, error) {
+func (a *app) pricingTaskActive() (bool, string) {
+	task, ok := a.latestPricingTask("")
+	if !ok {
+		return false, ""
+	}
+	return task.Status == "queued" || task.Status == "running" || task.Status == "rolling_back", task.ID
+}
+
+func (a *app) startPricingTask(s *store, settings pricingSettings, _ config) (pricingRecalcTask, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.pricingTaskMu.Lock()
 	defer a.pricingTaskMu.Unlock()
-	if a.pricingTask != nil && (a.pricingTask.Status == "queued" || a.pricingTask.Status == "running") {
+	if a.pricingTask != nil && (a.pricingTask.Status == "queued" || a.pricingTask.Status == "running" || a.pricingTask.Status == "rolling_back") {
 		return *a.pricingTask, fmt.Errorf("pricing recalculation already running")
 	}
+	if a.store != s {
+		return pricingRecalcTask{}, fmt.Errorf("plugin store changed")
+	}
+	previousCfg := a.cfg
+	a.cfg = a.cfg.withPricingSettings(settings)
+	cfg := a.cfg
 	task := pricingRecalcTask{ID: strconv.FormatInt(time.Now().UnixNano(), 36), Status: "queued", PricingMode: settings.PricingMode, AnchorModel: settings.AnchorModel, StartedAt: time.Now().Unix()}
 	a.pricingTask = &task
-	go a.runPricingTask(s, settings, cfg, task.ID)
+	go a.runPricingTask(s, settings, cfg, previousCfg, task.ID)
 	return task, nil
 }
 
-func (a *app) runPricingTask(s *store, settings pricingSettings, cfg config, id string) {
+func (a *app) runPricingTask(s *store, settings pricingSettings, cfg, previousCfg config, id string) {
 	update := func(f func(*pricingRecalcTask)) {
 		a.pricingTaskMu.Lock()
 		if a.pricingTask != nil && a.pricingTask.ID == id {
@@ -55,22 +71,33 @@ func (a *app) runPricingTask(s *store, settings pricingSettings, cfg config, id 
 	update(func(task *pricingRecalcTask) { task.Status = "running" })
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
-	count, err := s.recalculatePricing(ctx, settings, cfg, func(progress pricingRecalcProgress) error {
+	rollbackCfg := func() {
+		update(func(task *pricingRecalcTask) { task.Status = "rolling_back" })
+		a.mu.Lock()
+		if a.store == s {
+			a.cfg = previousCfg
+		}
+		a.mu.Unlock()
+	}
+	count, err := s.recalculatePricingBatches(ctx, settings, cfg, previousCfg, func(progress pricingRecalcProgress) error {
 		update(func(task *pricingRecalcTask) { task.Progress = progress })
 		if a.pricingProgressHook != nil {
 			return a.pricingProgressHook(progress)
 		}
 		return nil
-	})
-	if err == nil {
+	}, rollbackCfg)
+	if err != nil {
 		a.mu.Lock()
 		if a.store == s {
-			a.cfg = a.cfg.withPricingSettings(settings)
-		} else {
-			err = fmt.Errorf("store changed during recalculation")
+			a.cfg = previousCfg
 		}
 		a.mu.Unlock()
 	}
+	go func() {
+		checkpointCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = s.checkpointWAL(checkpointCtx)
+	}()
 	update(func(task *pricingRecalcTask) {
 		task.FinishedAt = time.Now().Unix()
 		if err != nil {
@@ -88,6 +115,9 @@ func (a *app) runPricingTask(s *store, settings pricingSettings, cfg config, id 
 	if a.pricingTask != nil && a.pricingTask.ID == id {
 		a.pricingTaskHistory[id] = *a.pricingTask
 	}
+	if err == nil {
+		a.lastPricedFit = cfg.LearnedFit
+	}
 	if len(a.pricingTaskHistory) > 32 {
 		oldest := ""
 		for key, item := range a.pricingTaskHistory {
@@ -99,8 +129,10 @@ func (a *app) runPricingTask(s *store, settings pricingSettings, cfg config, id 
 	}
 	pending := a.pricingRepricePending
 	includeCustom := a.pricingRepriceIncludeCustom
+	pendingFit := a.pricingFitPending
 	a.pricingRepricePending = false
 	a.pricingRepriceIncludeCustom = false
+	a.pricingFitPending = false
 	a.pricingTaskMu.Unlock()
 	if pending {
 		a.mu.RLock()
@@ -110,10 +142,14 @@ func (a *app) runPricingTask(s *store, settings pricingSettings, cfg config, id 
 			a.queuePricingReprice(s, currentCfg, includeCustom)
 		}
 	}
-}
-
-func (a *app) queueFitRepricing(s *store, cfg config) {
-	a.queuePricingReprice(s, cfg, false)
+	if pendingFit {
+		a.mu.RLock()
+		currentStore, currentCfg := a.store, a.cfg
+		a.mu.RUnlock()
+		if currentStore == s {
+			a.queueFitRepricing(s, currentCfg)
+		}
+	}
 }
 
 func (a *app) queuePricingReprice(s *store, cfg config, includeCustom bool) {

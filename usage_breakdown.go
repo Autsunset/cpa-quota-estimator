@@ -32,6 +32,8 @@ type usageBreakdown struct {
 	Days                  int                 `json:"days"`
 	PricingMode           string              `json:"pricing_mode"`
 	ValueUnit             string              `json:"value_unit"`
+	Recalculating         bool                `json:"recalculating"`
+	PricingTaskID         string              `json:"pricing_task_id,omitempty"`
 	Rows                  []usageBreakdownRow `json:"rows"`
 	Requests              int64               `json:"requests"`
 	Failed                int64               `json:"failed"`

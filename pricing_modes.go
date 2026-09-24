@@ -66,9 +66,13 @@ func (c config) adjustmentForModel(model string, baseInput float64) modelPriceAd
 	if c.LearnedFit == nil || !c.LearnedFit.Available || baseInput <= 0 {
 		return result
 	}
-	refInput := float64(4)
-	if normalizePricingMode(c.PricingMode) == pricingModeCredits {
-		refInput = 100
+	mode := normalizePricingMode(c.PricingMode)
+	refInput := c.baseInputForModel(weightReferenceModel, mode)
+	if refInput <= 0 {
+		refInput = 4
+		if mode == pricingModeCredits {
+			refInput = 100
+		}
 	}
 	for _, row := range c.LearnedFit.Models {
 		if row.Model != model {

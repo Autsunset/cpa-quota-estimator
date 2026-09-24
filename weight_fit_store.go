@@ -163,22 +163,43 @@ type attributionEvent struct {
 	Failed           bool
 }
 
+type attributionUpdate struct {
+	ID                 int64
+	Primary, Secondary *float64
+}
+
 func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, longThreshold int64) (int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,cycle_id,reset_at,secondary_reset_at,account,quota_scope,model,service_tier,
-		input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,
-		CASE WHEN secondary_used_percent IS NOT NULL THEN 1 ELSE 0 END,failed FROM usage_events ORDER BY id`)
+	reader, err := s.openReadOnly()
 	if err != nil {
 		return 0, err
 	}
-	events := make([]attributionEvent, 0, 10000)
+	defer reader.Close()
+	rows, err := reader.QueryContext(ctx, `SELECT id,cycle_id,reset_at,secondary_reset_at,account,quota_scope,model,service_tier,
+  input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,
+  CASE WHEN secondary_used_percent IS NOT NULL THEN 1 ELSE 0 END,failed FROM usage_events ORDER BY id`)
+	if err != nil {
+		return 0, err
+	}
+	updates := make([]attributionUpdate, 0, 10000)
 	for rows.Next() {
 		var e attributionEvent
-		if err = rows.Scan(&e.ID, &e.CycleID, &e.ResetAt, &e.SecondaryResetAt, &e.Account, &e.Scope, &e.Model, &e.Tier,
-			&e.Input, &e.Output, &e.CacheRead, &e.CacheWrite, &e.HasSecondary, &e.Failed); err != nil {
+		if err = rows.Scan(&e.ID, &e.CycleID, &e.ResetAt, &e.SecondaryResetAt, &e.Account, &e.Scope, &e.Model, &e.Tier, &e.Input, &e.Output, &e.CacheRead, &e.CacheWrite, &e.HasSecondary, &e.Failed); err != nil {
 			rows.Close()
 			return 0, err
 		}
-		events = append(events, e)
+		detail := usageDetail{InputTokens: e.Input, OutputTokens: e.Output, CacheReadTokens: e.CacheRead, CacheCreationTokens: e.CacheWrite}
+		update := attributionUpdate{ID: e.ID}
+		if !e.Failed {
+			update.Primary = learnedQuotaAttribution(fit, e.Account, e.Scope, e.Model, e.Tier, e.CycleID, e.ResetAt, detail, longThreshold)
+		}
+		if e.HasSecondary && !e.Failed {
+			window := weeklyQuotaScope
+			if e.Scope == sparkQuotaScope {
+				window = sparkWeeklyQuotaScope
+			}
+			update.Secondary = learnedQuotaAttribution(fit, e.Account, window, e.Model, e.Tier, e.SecondaryResetAt, e.SecondaryResetAt, detail, longThreshold)
+		}
+		updates = append(updates, update)
 	}
 	if err = rows.Err(); err != nil {
 		rows.Close()
@@ -187,36 +208,47 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 	if err = rows.Close(); err != nil {
 		return 0, err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-	stmt, err := tx.PrepareContext(ctx, `UPDATE usage_events SET learned_quota_pct=?,learned_secondary_pct=? WHERE id=?`)
-	if err != nil {
-		return 0, err
-	}
-	defer stmt.Close()
-	for _, e := range events {
-		detail := usageDetail{InputTokens: e.Input, OutputTokens: e.Output, CacheReadTokens: e.CacheRead, CacheCreationTokens: e.CacheWrite}
-		var primary *float64
-		var secondary *float64
-		if !e.Failed {
-			primary = learnedQuotaAttribution(fit, e.Account, e.Scope, e.Model, e.Tier, e.CycleID, e.ResetAt, detail, longThreshold)
+	for start := 0; start < len(updates); start += pricingEventBatchSize {
+		end := min(start+pricingEventBatchSize, len(updates))
+		batchStarted := time.Now()
+		tx, txErr := s.db.BeginTx(ctx, nil)
+		if txErr != nil {
+			return int64(start), txErr
 		}
-		if e.HasSecondary && !e.Failed {
-			window := weeklyQuotaScope
-			if e.Scope == sparkQuotaScope {
-				window = sparkWeeklyQuotaScope
+		stmt, prepErr := tx.PrepareContext(ctx, `UPDATE usage_events SET learned_quota_pct=?,learned_secondary_pct=? WHERE id=?`)
+		if prepErr != nil {
+			tx.Rollback()
+			return int64(start), prepErr
+		}
+		for _, update := range updates[start:end] {
+			if _, err = stmt.ExecContext(ctx, update.Primary, update.Secondary, update.ID); err != nil {
+				stmt.Close()
+				tx.Rollback()
+				return int64(start), err
 			}
-			secondary = learnedQuotaAttribution(fit, e.Account, window, e.Model, e.Tier, e.SecondaryResetAt, e.SecondaryResetAt, detail, longThreshold)
 		}
-		if _, err = stmt.ExecContext(ctx, primary, secondary, e.ID); err != nil {
-			return 0, err
+		if err = stmt.Close(); err != nil {
+			tx.Rollback()
+			return int64(start), err
+		}
+		if err = tx.Commit(); err != nil {
+			return int64(start), err
+		}
+		held := time.Since(batchStarted).Nanoseconds()
+		for {
+			old := s.attributionBatchMaxNS.Load()
+			if held <= old || s.attributionBatchMaxNS.CompareAndSwap(old, held) {
+				break
+			}
+		}
+		if end < len(updates) {
+			time.Sleep(pricingBatchPause)
 		}
 	}
-	if err = tx.Commit(); err != nil {
-		return 0, err
-	}
-	return int64(len(events)), nil
+	go func() {
+		checkpointCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = s.checkpointWAL(checkpointCtx)
+	}()
+	return int64(len(updates)), nil
 }

@@ -53,6 +53,7 @@ func TestCoverageBrowser(t *testing.T) {
 	}
 	seedCoverageUsage(t, s, "a-mixed", true, true)
 	seedCoverageUsage(t, s, "b-cpa", true, true)
+	if err=s.addDroppedUsageCount(context.Background(),2);err!=nil{t.Fatal(err)}
 	a := &app{cfg: defaultConfig(), store: s}
 	var failWrite, delayRead, failRefresh atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

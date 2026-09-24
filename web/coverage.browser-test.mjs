@@ -70,6 +70,7 @@ try {
   await wait("typeof state!=='undefined' && state?.account==='a-mixed' && seriesState && $('#fullTokens').textContent!=='—' && $('#monthTokens').textContent!=='—'", 'initial data');
   assert.equal(await evaluate("$('#coverageMode').value"),'cpa_only');
   assert((await evaluate("$('#coverageExplanation').textContent")).includes('假设全部用量经过 CPA'));
+  assert((await evaluate("$('#note').textContent")).includes('2 条用量记录'));
   assert.equal(await evaluate("document.querySelectorAll('input[name=pricingMode]').length"),3);
   assert.equal(await evaluate("document.querySelector('input[name=pricingMode]:checked').value"),'credits');
   assert.equal(await evaluate("$('#pricingTitle').textContent"),'计价口径');

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -22,8 +23,16 @@ type app struct {
 	pricingTask                 *pricingRecalcTask
 	pricingTaskHistory          map[string]pricingRecalcTask
 	pricingProgressHook         func(pricingRecalcProgress) error
+	attributionWriter           func(context.Context, *store, *weightFit, int64) (int64, error)
+	insertEventWriter           func(context.Context, event, time.Duration) error
+	usageRetryBudget            time.Duration
+	droppedUsagePending         atomic.Int64
+	dropFlushRunning            atomic.Bool
 	pricingRepricePending       bool
 	pricingRepriceIncludeCustom bool
+	pricingFitPending           bool
+	lastPricedFit               *weightFit
+	lastAutoFitRepriceAt        int64
 }
 
 var globalApp = &app{cfg: defaultConfig()}
@@ -171,86 +180,91 @@ func (a *app) configure(raw []byte) error {
 	if err != nil {
 		return err
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.store != nil && a.cfg.DataPath == cfg.DataPath {
-		catalog, errCatalog := loadPriceCatalog(context.Background(), a.store)
-		if errCatalog != nil {
-			return errCatalog
-		}
-		cfg.PriceCatalog = catalog
-		settings, errLoad := a.store.loadPricingSettings(context.Background(), cfg.pricingSettings())
-		if errLoad != nil {
-			return errLoad
-		}
-		cfg = cfg.withPricingSettings(settings)
-		savedFit, ok, errFit := a.store.latestWeightFit(context.Background())
-		if errFit != nil {
-			return errFit
-		}
-		if ok && savedFit.FittedWeights.Available {
-			cfg.LearnedFit = &savedFit.FittedWeights
-		}
-		if settings.Migrated {
-			if _, err = a.store.recalculatePricing(context.Background(), settings, cfg, nil); err != nil {
-				return fmt.Errorf("migrate pricing history: %w", err)
-			}
-		}
-		a.cfg = cfg
-		if a.cancel != nil {
-			a.cancel()
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		a.cancel = cancel
-		go a.background(ctx, a.store, cfg)
-		return nil
+	if task, ok := a.latestPricingTask(""); ok && (task.Status == "queued" || task.Status == "running" || task.Status == "rolling_back") {
+		return fmt.Errorf("pricing recalculation is in progress")
 	}
-	if a.cancel != nil {
-		a.cancel()
-		a.cancel = nil
+	a.mu.RLock()
+	existing := a.store
+	samePath := existing != nil && a.cfg.DataPath == cfg.DataPath
+	a.mu.RUnlock()
+	s := existing
+	opened := false
+	if !samePath {
+		s, err = openStore(cfg.DataPath)
+		if err != nil {
+			return fmt.Errorf("open store: %w", err)
+		}
+		opened = true
+		if err = seedPrices(context.Background(), s); err != nil {
+			s.close()
+			return err
+		}
 	}
-	if a.store != nil {
-		_ = a.store.close()
-		a.store = nil
-	}
-	s, err := openStore(cfg.DataPath)
+	catalog, err := loadPriceCatalog(context.Background(), s)
 	if err != nil {
-		return fmt.Errorf("open store: %w", err)
-	}
-	if err = seedPrices(context.Background(), s); err != nil {
-		_ = s.close()
+		if opened {
+			s.close()
+		}
 		return err
-	}
-	catalog, errCatalog := loadPriceCatalog(context.Background(), s)
-	if errCatalog != nil {
-		_ = s.close()
-		return errCatalog
 	}
 	cfg.PriceCatalog = catalog
 	settings, err := s.loadPricingSettings(context.Background(), cfg.pricingSettings())
 	if err != nil {
-		_ = s.close()
+		if opened {
+			s.close()
+		}
 		return err
 	}
 	cfg = cfg.withPricingSettings(settings)
-	fitResult, hasFit, errFit := s.latestWeightFit(context.Background())
-	if errFit != nil {
-		_ = s.close()
-		return errFit
+	fitResult, hasFit, err := s.latestWeightFit(context.Background())
+	if err != nil {
+		if opened {
+			s.close()
+		}
+		return err
 	}
 	if hasFit && fitResult.FittedWeights.Available {
 		cfg.LearnedFit = &fitResult.FittedWeights
 		_ = s.seedOnlineCycleScales(context.Background(), cfg.LearnedFit)
 	}
-	if settings.Migrated {
-		if _, err = s.recalculatePricing(context.Background(), settings, cfg, nil); err != nil {
-			_ = s.close()
-			return fmt.Errorf("migrate pricing history: %w", err)
+	lastAutoFit, err := s.lastFitRepriceAt(context.Background())
+	if err != nil {
+		if opened {
+			s.close()
 		}
+		return err
 	}
-	a.cfg, a.store = cfg, s
+	a.mu.Lock()
+	if a.store != existing {
+		a.mu.Unlock()
+		if opened {
+			s.close()
+		}
+		return fmt.Errorf("store changed while configuring")
+	}
+	oldStore, oldCancel := a.store, a.cancel
+	a.store, a.cfg = s, cfg
+	a.pricingTaskMu.Lock()
+	a.lastAutoFitRepriceAt = lastAutoFit
+	a.lastPricedFit = cfg.LearnedFit
+	if settings.Migrated {
+		a.lastPricedFit = nil
+	}
+	a.pricingTaskMu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
+	a.mu.Unlock()
+	if oldCancel != nil {
+		oldCancel()
+	}
+	if oldStore != nil && oldStore != s {
+		_ = oldStore.close()
+	}
+	if settings.Migrated {
+		if _, taskErr := a.startPricingTask(s, settings, cfg); taskErr != nil {
+			return fmt.Errorf("schedule pricing migration: %w", taskErr)
+		}
+	}
 	go a.background(ctx, s, cfg)
 	return nil
 }
@@ -279,6 +293,10 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 	defer cleanup.Stop()
 	weights := time.NewTicker(time.Duration(cfg.WeightFitIntervalMinutes) * time.Minute)
 	defer weights.Stop()
+	drops := time.NewTicker(30 * time.Second)
+	defer drops.Stop()
+	checkpoint := time.NewTicker(30 * time.Second)
+	defer checkpoint.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -292,6 +310,10 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 			_ = s.rebuildAllQuotaSegments(ctx)
 		case <-weights.C:
 			a.refreshWeightsIfNeeded(ctx, s, cfg)
+		case <-drops.C:
+			a.startDropFlush(s)
+		case <-checkpoint.C:
+			_ = s.checkpointWAL(ctx)
 		}
 	}
 }
@@ -312,15 +334,27 @@ func (a *app) refreshWeightsIfNeeded(ctx context.Context, s *store, cfg config) 
 	if err != nil || !fitResult.FittedWeights.Available || ctx.Err() != nil {
 		return
 	}
+	a.applyFittedWeights(ctx, s, &fitResult.FittedWeights)
+}
+
+func (a *app) applyFittedWeights(ctx context.Context, s *store, fit *weightFit) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.store != s || ctx.Err() != nil {
+		a.mu.Unlock()
 		return
 	}
-	a.cfg.LearnedFit = &fitResult.FittedWeights
-	_ = s.seedOnlineCycleScales(ctx, a.cfg.LearnedFit)
-	_, _ = s.updateWeightAttributions(ctx, a.cfg.LearnedFit, a.cfg.LongContextThreshold)
-	a.queueFitRepricing(s, a.cfg)
+	a.cfg.LearnedFit = fit
+	cfg := a.cfg
+	a.mu.Unlock()
+	_ = s.seedOnlineCycleScales(ctx, fit)
+	writer := a.attributionWriter
+	if writer == nil {
+		writer = func(ctx context.Context, s *store, fit *weightFit, threshold int64) (int64, error) {
+			return s.updateWeightAttributions(ctx, fit, threshold)
+		}
+	}
+	_, _ = writer(ctx, s, fit, cfg.LongContextThreshold)
+	a.queueFitRepricing(s, cfg)
 }
 
 func (a *app) refreshPriceCatalog(ctx context.Context, s *store) {
@@ -357,15 +391,23 @@ func samePriceCatalogRates(left, right map[string]price) bool {
 
 func (a *app) shutdown() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.cancel != nil {
-		a.cancel()
-	}
-	if a.store != nil {
-		_ = a.store.close()
-	}
+	cancel, s := a.cancel, a.store
 	a.cancel = nil
 	a.store = nil
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if s != nil {
+		if pending := a.droppedUsagePending.Swap(0); pending > 0 {
+			ctx, done := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := s.addDroppedUsageCount(ctx, pending); err != nil {
+				a.droppedUsagePending.Add(pending)
+			}
+			done()
+		}
+		_ = s.close()
+	}
 }
 
 func (a *app) recordUsage(r usageRecord) error {
@@ -440,6 +482,7 @@ func (a *app) recordUsage(r usageRecord) error {
 		account = "unknown"
 	}
 	e := event{RequestedAt: requested, ObservedAt: observed, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, SecondaryUsedPercent: secondaryUsedPtr, SecondaryResetAt: secondaryReset, SecondaryWindowMinutes: secondaryWindow, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type"), QuotaScope: quotaScopeForUsage(r.Model, r.Alias)}
+	e.IngestID = newUsageIngestID()
 	if a.cfg.LearnedFit != nil && !r.Failed {
 		e.LearnedFit = a.cfg.LearnedFit
 		e.LearnedQuotaPct = a.store.learnedQuotaAttributionLive(ctx, a.cfg.LearnedFit, account, e.QuotaScope, r.Model, r.ServiceTier, e.ResetAt, r.Detail, a.cfg.LongContextThreshold)
@@ -466,7 +509,7 @@ func (a *app) recordUsage(r usageRecord) error {
 			e.CodexHeadersJSON = string(raw)
 		}
 	}
-	if err := a.store.insertEvent(ctx, e, time.Duration(a.cfg.SampleIntervalMinutes)*time.Minute); err != nil {
+	if err := a.insertUsageWithRetry(a.store, e, time.Duration(a.cfg.SampleIntervalMinutes)*time.Minute); err != nil {
 		return err
 	}
 	claimed, err := a.store.claimCalibrationRefit(ctx, account)
@@ -496,14 +539,7 @@ func (a *app) runGuidedCalibrationRefit(s *store, cfg config, account string) {
 		}
 	}
 	if err == nil {
-		a.mu.Lock()
-		if a.store == s {
-			a.cfg.LearnedFit = &result.FittedWeights
-			_ = s.seedOnlineCycleScales(ctx, a.cfg.LearnedFit)
-			_, _ = s.updateWeightAttributions(ctx, a.cfg.LearnedFit, a.cfg.LongContextThreshold)
-			a.queueFitRepricing(s, a.cfg)
-		}
-		a.mu.Unlock()
+		a.applyFittedWeights(ctx, s, &result.FittedWeights)
 	}
 	_ = s.finishCalibrationRefit(context.Background(), account, after, err)
 }

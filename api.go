@@ -17,7 +17,13 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	if strings.HasSuffix(req.Path, "/dashboard") {
 		return managementResponse{StatusCode: 200, Headers: map[string][]string{"Content-Type": {"text/html; charset=utf-8"}, "Cache-Control": {"no-store"}}, Body: dashboardHTML}
 	}
-	if (strings.HasSuffix(req.Path, "/repair/early-resets") || strings.HasSuffix(req.Path, "/pricing-settings") || strings.HasSuffix(req.Path, "/coverage-settings")) && strings.EqualFold(req.Method, "POST") {
+	if strings.HasSuffix(req.Path, "/pricing-settings") && strings.EqualFold(req.Method, "POST") {
+		return a.handlePricingSettingsSave(req)
+	}
+	if strings.HasSuffix(req.Path, "/repair/early-resets") && strings.EqualFold(req.Method, "POST") {
+		return a.handleEarlyResetRepair(req)
+	}
+	if strings.HasSuffix(req.Path, "/coverage-settings") && strings.EqualFold(req.Method, "POST") {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 	} else {
@@ -53,11 +59,13 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			}
 			items = append(items, item)
 		}
+		active, taskID := a.pricingTaskActive()
 		return jsonResponse(200, overviewResponse{
 			PluginVersion: pluginVersion,
 			PricingMode:   normalizePricingMode(a.cfg.PricingMode),
 			ValueUnit:     pricingValueUnit(a.cfg.PricingMode),
-			Accounts:      items,
+			Recalculating: active, PricingTaskID: taskID, DroppedUsageEvents: a.totalDroppedUsage(ctx, a.store),
+			Accounts: items,
 		})
 	case strings.HasSuffix(req.Path, "/usage"):
 		if !strings.EqualFold(req.Method, "GET") {
@@ -86,6 +94,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
+		usage.Recalculating, usage.PricingTaskID = a.pricingTaskActive()
 		return jsonResponse(200, usage)
 	case strings.HasSuffix(req.Path, "/weights/backtest"):
 		if !strings.EqualFold(req.Method, "GET") {
@@ -209,7 +218,8 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if account == "" && len(accounts) > 0 {
 			account = accounts[0]
 		}
-		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": pricingSettingsResponse(a.cfg)}
+		active, taskID := a.pricingTaskActive()
+		resp := map[string]any{"plugin_version": pluginVersion, "account": account, "accounts": accounts, "config": pricingSettingsResponse(a.cfg), "recalculating": active, "pricing_task_id": taskID, "dropped_usage_events": a.totalDroppedUsage(ctx, a.store)}
 		if account != "" {
 			hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 			if errWeekly != nil {
@@ -311,7 +321,8 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if errAllowance != nil {
 			return textResponse(500, errAllowance.Error())
 		}
-		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "quota_anomalies": anomalies, "range_quota_anomalies": rangeAnomalies, "estimate": estimate, "remaining_by_model": allowances, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "burn_forecast": burnWithOnlineCapacity(points, forecastReference(points, isCurrent), estimate)}
+		active, taskID := a.pricingTaskActive()
+		response := map[string]any{"account": account, "plan_type": plan, "selected_cycle_id": selected.ID, "selected_reset_at": selected.ResetAt, "is_current": isCurrent, "cycle": selected, "points": points, "capacity_points": capacityHistory(points), "range_points": rangePoints, "range_capacity_points": capacityHistoryForCycles(rangePoints), "range_cycles": rangeCycles, "quota_anomalies": anomalies, "range_quota_anomalies": rangeAnomalies, "estimate": estimate, "remaining_by_model": allowances, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "burn_forecast": burnWithOnlineCapacity(points, forecastReference(points, isCurrent), estimate), "recalculating": active, "pricing_task_id": taskID}
 		hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 		if errWeekly != nil {
 			return textResponse(500, errWeekly.Error())
@@ -371,7 +382,8 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
-		response := map[string]any{"account": account, "months": months, "summary": monthly, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode)}
+		active, taskID := a.pricingTaskActive()
+		response := map[string]any{"account": account, "months": months, "summary": monthly, "pricing_mode": normalizePricingMode(a.cfg.PricingMode), "value_unit": pricingValueUnit(a.cfg.PricingMode), "recalculating": active, "pricing_task_id": taskID}
 		hasWeeklyQuota, errWeekly := a.store.hasFiveHourWeeklyQuota(ctx, account)
 		if errWeekly != nil {
 			return textResponse(500, errWeekly.Error())
@@ -449,62 +461,15 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		return jsonResponse(200, task)
 	case strings.HasSuffix(req.Path, "/pricing-settings"):
 		if strings.EqualFold(req.Method, "GET") {
-			return jsonResponse(200, pricingSettingsResponse(a.cfg))
+			settings := pricingSettingsResponse(a.cfg)
+			active, id := a.pricingTaskActive()
+			settings["recalculating"], settings["pricing_task_id"] = active, id
+			return jsonResponse(200, settings)
 		}
 		if !strings.EqualFold(req.Method, "POST") {
 			return textResponse(405, "method not allowed")
 		}
-		var update pricingSettingsUpdate
-		if err := json.Unmarshal(req.Body, &update); err != nil {
-			return textResponse(400, "invalid pricing settings: "+err.Error())
-		}
-		mode := strings.TrimSpace(update.PricingMode)
-		if mode == "" {
-			mode = a.cfg.PricingMode
-		}
-		if !validPricingMode(mode) {
-			return textResponse(400, "pricing_mode must be api, credits, or custom")
-		}
-		settings := a.cfg.pricingSettings()
-		settings.PricingMode = normalizePricingMode(mode)
-		if update.AnchorModel != "" {
-			settings.AnchorModel = normalizeModel(update.AnchorModel)
-		}
-		if update.RestoreOfficial {
-			settings.CustomPrices = map[string]customModelPrice{}
-			settings.CustomFastMultiplier = 2
-			settings.CustomLongContext = true
-			settings.CustomLongThreshold = 272000
-		}
-		if update.CustomPrices != nil {
-			settings.CustomPrices = update.CustomPrices
-		}
-		if update.CustomFastMultiplier != nil {
-			settings.CustomFastMultiplier = *update.CustomFastMultiplier
-		}
-		if update.CustomLongContext != nil {
-			settings.CustomLongContext = *update.CustomLongContext
-		}
-		if update.CustomLongThreshold != nil {
-			settings.CustomLongThreshold = *update.CustomLongThreshold
-		}
-		settings, err := normalizePricingSettings(settings)
-		if err != nil {
-			return textResponse(400, err.Error())
-		}
-		if settings.PricingMode != pricingModeCustom && a.cfg.baseInputForModel(settings.AnchorModel, settings.PricingMode) <= 0 {
-			return textResponse(400, "anchor_model has no official price")
-		}
-		for model := range settings.CustomPrices {
-			if _, ok := a.cfg.PriceCatalog[model]; !ok {
-				return textResponse(400, "unknown custom price model: "+model)
-			}
-		}
-		task, err := a.startPricingTask(a.store, settings, a.cfg.withPricingSettings(settings))
-		if err != nil {
-			return jsonResponse(409, map[string]any{"error": err.Error(), "task_id": task.ID, "status": task.Status})
-		}
-		return jsonResponse(202, task)
+		return a.handlePricingSettingsSave(req)
 	case strings.HasSuffix(req.Path, "/prices/sync"):
 		count, err := syncPrices(ctx, a.store, a.cfg)
 		if err != nil {
@@ -521,10 +486,92 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		for _, p := range prices {
 			rows = append(rows, a.cfg.priceRow(p))
 		}
-		return jsonResponse(200, map[string]any{"prices": prices, "rows": rows, "settings": pricingSettingsResponse(a.cfg)})
+		active, id := a.pricingTaskActive()
+		return jsonResponse(200, map[string]any{"prices": prices, "rows": rows, "settings": pricingSettingsResponse(a.cfg), "recalculating": active, "pricing_task_id": id})
 	default:
 		return textResponse(404, "not found")
 	}
+}
+
+func (a *app) handleEarlyResetRepair(req managementRequest) managementResponse {
+	a.mu.RLock()
+	s := a.store
+	a.mu.RUnlock()
+	if s == nil {
+		return textResponse(503, "plugin store is not ready")
+	}
+	account := req.Query.Get("account")
+	if account == "" {
+		return textResponse(400, "account is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	report, err := s.repairFalseEarlyResets(ctx, account, true)
+	if err != nil {
+		return textResponse(500, err.Error())
+	}
+	return jsonResponse(200, report)
+}
+
+func (a *app) handlePricingSettingsSave(req managementRequest) managementResponse {
+	a.mu.RLock()
+	s, cfg := a.store, a.cfg
+	a.mu.RUnlock()
+	if s == nil {
+		return textResponse(503, "plugin store is not ready")
+	}
+	var update pricingSettingsUpdate
+	if err := json.Unmarshal(req.Body, &update); err != nil {
+		return textResponse(400, "invalid pricing settings: "+err.Error())
+	}
+	mode := strings.TrimSpace(update.PricingMode)
+	if mode == "" {
+		mode = cfg.PricingMode
+	}
+	if !validPricingMode(mode) {
+		return textResponse(400, "pricing_mode must be api, credits, or custom")
+	}
+	settings := cfg.pricingSettings()
+	settings.PricingMode = normalizePricingMode(mode)
+	if update.AnchorModel != "" {
+		settings.AnchorModel = normalizeModel(update.AnchorModel)
+	}
+	if update.RestoreOfficial {
+		settings.CustomPrices = map[string]customModelPrice{}
+		settings.CustomFastMultiplier = 2
+		settings.CustomLongContext = true
+		settings.CustomLongThreshold = 272000
+	}
+	if update.CustomPrices != nil {
+		settings.CustomPrices = update.CustomPrices
+	}
+	if update.CustomFastMultiplier != nil {
+		settings.CustomFastMultiplier = *update.CustomFastMultiplier
+	}
+	if update.CustomLongContext != nil {
+		settings.CustomLongContext = *update.CustomLongContext
+	}
+	if update.CustomLongThreshold != nil {
+		settings.CustomLongThreshold = *update.CustomLongThreshold
+	}
+	var err error
+	settings, err = normalizePricingSettings(settings)
+	if err != nil {
+		return textResponse(400, err.Error())
+	}
+	if settings.PricingMode != pricingModeCustom && cfg.baseInputForModel(settings.AnchorModel, settings.PricingMode) <= 0 {
+		return textResponse(400, "anchor_model has no official price")
+	}
+	for model := range settings.CustomPrices {
+		if _, ok := cfg.PriceCatalog[model]; !ok {
+			return textResponse(400, "unknown custom price model: "+model)
+		}
+	}
+	task, err := a.startPricingTask(s, settings, cfg.withPricingSettings(settings))
+	if err != nil {
+		return jsonResponse(409, map[string]any{"error": err.Error(), "task_id": task.ID, "status": task.Status})
+	}
+	return jsonResponse(202, task)
 }
 
 func (a *app) buildAccountOverview(ctx context.Context, account string, now int64) (accountOverview, error) {
