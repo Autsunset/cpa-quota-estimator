@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"time"
 )
@@ -46,16 +47,25 @@ func (s *store) openReadOnly() (*sql.DB, error) {
 	if s.path == "" {
 		return nil, fmt.Errorf("store path is required for read-only pricing snapshot")
 	}
-	uri := (&url.URL{Scheme: "file", Path: s.path, RawQuery: "mode=ro"}).String()
-	db, err := sql.Open("sqlite", uri)
+	absolute, err := filepath.Abs(s.path)
 	if err != nil {
 		return nil, err
+	}
+	uriPath := filepath.ToSlash(absolute)
+	if filepath.VolumeName(absolute) != "" && uriPath[0] != '/' {
+		// SQLite requires /C:/... for an absolute Windows drive path.
+		uriPath = "/" + uriPath
+	}
+	uri := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "mode=ro"}).String()
+	db, err := sql.Open("sqlite", uri)
+	if err != nil {
+		return nil, fmt.Errorf("initialize read-only SQLite connection: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	if _, err = db.Exec(`PRAGMA query_only=ON; PRAGMA busy_timeout=5000`); err != nil {
 		db.Close()
-		return nil, err
+		return nil, fmt.Errorf("initialize read-only SQLite connection: %w", err)
 	}
 	return db, nil
 }
