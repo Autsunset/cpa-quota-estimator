@@ -546,7 +546,7 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 			segments = append(segments, segment)
 		}
 	}
-	fit := weightFit{FittedAt: now, SegmentCount: len(segments), HalfLifeDays: opts.HalfLifeDays}
+	fit := weightFit{FittedAt: now, SegmentCount: len(segments), HalfLifeDays: opts.HalfLifeDays, RandomWalkSigma: opts.RandomWalkSigma}
 	for _, segment := range segments {
 		if segment.EndEventID > fit.MaxEndEventID {
 			fit.MaxEndEventID = segment.EndEventID

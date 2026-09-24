@@ -47,6 +47,39 @@ func (s *store) refreshWeightFit(ctx context.Context, opts weightLearnerOptions)
 	if err != nil {
 		return result, err
 	}
+	return s.saveWeightFit(ctx, result, now)
+}
+
+// The hourly path reuses the latest selected lag and scores. A full rolling
+// backtest is still run daily and whenever calibration explicitly requests it.
+func (s *store) refreshWeightFitScheduled(ctx context.Context, opts weightLearnerOptions, previous weightBacktest, hasPrevious bool) (weightBacktest, error) {
+	now := time.Now().Unix()
+	if !hasPrevious || previous.GeneratedAt <= 0 || now-previous.GeneratedAt >= 24*3600 ||
+		previous.FittedWeights.RandomWalkSigma != opts.RandomWalkSigma || previous.FittedWeights.HalfLifeDays != opts.HalfLifeDays {
+		return s.refreshWeightFit(ctx, opts)
+	}
+	segments, err := s.quotaSegments(ctx, previous.SelectedLag)
+	if err != nil {
+		return weightBacktest{}, err
+	}
+	priceRows, err := s.listPrices(ctx)
+	if err != nil {
+		return weightBacktest{}, err
+	}
+	prices := make(map[string]price, len(priceRows))
+	for _, p := range priceRows {
+		prices[normalizeModel(p.Model)] = p
+	}
+	fit, err := fitQuotaWeights(segments, prices, now, opts)
+	if err != nil {
+		return weightBacktest{}, err
+	}
+	fit.Lag = previous.SelectedLag
+	previous.FittedWeights = fit
+	return s.saveWeightFit(ctx, previous, now)
+}
+
+func (s *store) saveWeightFit(ctx context.Context, result weightBacktest, fittedAt int64) (weightBacktest, error) {
 	rawFit, err := json.Marshal(result.FittedWeights)
 	if err != nil {
 		return result, err
@@ -56,7 +89,7 @@ func (s *store) refreshWeightFit(ctx context.Context, opts weightLearnerOptions)
 		return result, err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO weight_fits(fitted_at,lag,segment_count,fit_json,backtest_json) VALUES(?,?,?,?,?)`,
-		now, result.SelectedLag, result.FittedWeights.SegmentCount, string(rawFit), string(rawBacktest))
+		fittedAt, result.SelectedLag, result.FittedWeights.SegmentCount, string(rawFit), string(rawBacktest))
 	if err != nil {
 		return result, err
 	}

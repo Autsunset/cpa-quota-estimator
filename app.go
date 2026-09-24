@@ -172,7 +172,7 @@ func fitNeedsRefresh(result weightBacktest, hasFit bool, cfg config) bool {
 	if result.FittedWeights.RandomWalkSigma != cfg.WeightRandomWalkSigma || result.FittedWeights.HalfLifeDays != cfg.WeightHalfLifeDays {
 		return true
 	}
-	return time.Now().Unix()-result.GeneratedAt > int64(cfg.WeightFitIntervalMinutes*60)
+	return time.Now().Unix()-result.FittedWeights.FittedAt > int64(cfg.WeightFitIntervalMinutes*60)
 }
 
 func (a *app) configure(raw []byte) error {
@@ -327,10 +327,10 @@ func (a *app) refreshWeightsIfNeeded(ctx context.Context, s *store, cfg config) 
 	if err != nil {
 		return
 	}
-	if hasPrevious && newestSegment <= previous.GeneratedAt && !fitNeedsRefresh(previous, hasPrevious, cfg) && time.Now().Unix()-previous.GeneratedAt < 24*3600 {
+	if hasPrevious && newestSegment <= previous.FittedWeights.FittedAt && !fitNeedsRefresh(previous, hasPrevious, cfg) && time.Now().Unix()-previous.GeneratedAt < 24*3600 {
 		return
 	}
-	fitResult, err := s.refreshWeightFit(ctx, weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80, RandomWalkSigma: cfg.WeightRandomWalkSigma})
+	fitResult, err := s.refreshWeightFitScheduled(ctx, weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80, RandomWalkSigma: cfg.WeightRandomWalkSigma}, previous, hasPrevious)
 	if err != nil || !fitResult.FittedWeights.Available || ctx.Err() != nil {
 		return
 	}
