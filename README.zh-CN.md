@@ -227,6 +227,11 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 | GET | `/v0/management/cpa-quota-estimator/usage?account=<AuthID>&days=7` | 最近 1、7 或 30 天的分模型用量、官方 Credits 参考值及账号总体额度增长 |
 | GET | `/v0/management/cpa-quota-estimator/weights` | 最新学习权重、区间、倍率及诊断 |
 | GET | `/v0/management/cpa-quota-estimator/weights/backtest` | 最新滚动回测四口径对照与 lag 诊断 |
+| GET | `/v0/management/cpa-quota-estimator/calibration/options` | 可选模型和当前锁定先验的目标模型 |
+| GET | `/v0/management/cpa-quota-estimator/calibration?account=<AuthID>` | 引导式标定状态、进度、污染及请求 ID 段 |
+| POST | `/v0/management/cpa-quota-estimator/calibration/start` | 为账号和模型对开始同周期被动标定 |
+| POST | `/v0/management/cpa-quota-estimator/calibration/end` | 结束当前阶段；两阶段完成后触发学习器重拟合 |
+| POST | `/v0/management/cpa-quota-estimator/calibration/cancel` | 取消正在进行的标定会话 |
 | GET | `/v0/management/cpa-quota-estimator/summary` | 所选额度周期与预测摘要 |
 | GET | `/v0/management/cpa-quota-estimator/series` | 所选额度周期图表采样数据 |
 | GET | `/v0/management/cpa-quota-estimator/monthly` | 自然月用量、重置与容量汇总 |

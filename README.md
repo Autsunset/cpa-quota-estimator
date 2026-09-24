@@ -227,6 +227,11 @@ All management routes are protected by CPA Management Key:
 | GET | `/v0/management/cpa-quota-estimator/usage?account=<AuthID>&days=7` | Recent per-model usage for 1, 7, or 30 days, with official-rate credit references and account-wide quota growth |
 | GET | `/v0/management/cpa-quota-estimator/weights` | Latest learned model weights, intervals, factors, and diagnostics |
 | GET | `/v0/management/cpa-quota-estimator/weights/backtest` | Latest rolling-backtest comparison with lag diagnostics |
+| GET | `/v0/management/cpa-quota-estimator/calibration/options` | Available models and currently prior-locked target models |
+| GET | `/v0/management/cpa-quota-estimator/calibration?account=<AuthID>` | Guided calibration state, progress, contamination, and request-ID spans |
+| POST | `/v0/management/cpa-quota-estimator/calibration/start` | Start a same-cycle passive comparison for an account and model pair |
+| POST | `/v0/management/cpa-quota-estimator/calibration/end` | End the current phase; completion triggers a learner refit |
+| POST | `/v0/management/cpa-quota-estimator/calibration/cancel` | Cancel an active calibration session |
 | GET | `/v0/management/cpa-quota-estimator/summary` | Selected quota-cycle and forecast summary |
 | GET | `/v0/management/cpa-quota-estimator/series` | Selected quota-cycle chart samples |
 | GET | `/v0/management/cpa-quota-estimator/monthly` | Calendar-month usage, reset, and capacity summary |
