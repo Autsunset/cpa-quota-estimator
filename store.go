@@ -17,6 +17,7 @@ type store struct {
 	db                    *sql.DB
 	path                  string
 	attributionBatchMaxNS atomic.Int64
+	segmentBatchMaxNS     atomic.Int64
 	walCheckpointing      atomic.Bool
 }
 

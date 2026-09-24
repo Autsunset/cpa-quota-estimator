@@ -121,6 +121,64 @@ func TestQuotaSegmentHistoricalBackfill(t *testing.T) {
 	}
 }
 
+func TestBulkSegmentRebuildRemovesStaleKeysAndKeepsConcurrentInsert(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "bulk-concurrent.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	ctx := context.Background()
+	if err = seedPrices(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	for index, used := range []float64{0, 1} {
+		value := used
+		e := event{RequestedAt: int64(100 + index*10), ObservedAt: int64(100 + index*10), Account: "a", Model: "gpt-5.6-sol", InputTokens: 100,
+			TotalTokens: 100, UsedPercent: &value, ResetAt: 1000, WindowMinutes: 15, QuotaScope: mainQuotaScope}
+		if err = s.insertEvent(ctx, e, 5*time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = s.db.ExecContext(ctx, `INSERT INTO quota_segment_progress(account,window,cycle_id,regime_reset_at,peak_integer,last_observed_at) VALUES('stale','main',99,9999,1,1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.rebuildAllQuotaSegments(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.segmentBatchMaxNS.Load() <= 0 {
+		t.Fatal("no per-key transaction was measured")
+	}
+	var stale int
+	if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM quota_segment_progress WHERE account='stale'`).Scan(&stale); err != nil || stale != 0 {
+		t.Fatalf("stale key count=%d err=%v", stale, err)
+	}
+	var key segmentKey
+	if err = s.db.QueryRowContext(ctx, `SELECT account,window,cycle_id,regime_reset_at FROM quota_segment_progress WHERE account='a'`).Scan(&key.Account, &key.Window, &key.CycleID, &key.ResetAt); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := s.openReadOnly()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := prepareQuotaSegmentKey(ctx, reader, key, map[string]bool{"gpt-5.6-sol": true}, 272000)
+	reader.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := 2.0
+	if err = s.insertEvent(ctx, event{RequestedAt: 120, ObservedAt: 120, Account: "a", Model: "gpt-5.6-sol", InputTokens: 100,
+		TotalTokens: 100, UsedPercent: &value, ResetAt: 1000, WindowMinutes: 15, QuotaScope: mainQuotaScope}, 5*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.writePreparedQuotaSegmentKey(ctx, key, prepared); err != nil {
+		t.Fatal(err)
+	}
+	segments, err := s.quotaSegments(ctx, 0)
+	if err != nil || len(segments) != 2 {
+		t.Fatalf("concurrent crossing overwritten: %d segments, err=%v", len(segments), err)
+	}
+}
+
 func TestQuotaSegmentsRefreshOnNewCrossing(t *testing.T) {
 	s, err := openStore(filepath.Join(t.TempDir(), "incremental.sqlite"))
 	if err != nil {

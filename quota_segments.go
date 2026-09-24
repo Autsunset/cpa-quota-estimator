@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -194,7 +195,12 @@ func (s *store) migrateSegments() error {
 }
 
 func (s *store) rebuildAllQuotaSegments(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT account,quota_scope,cycle_id,reset_at,window_minutes,
+	reader, err := s.openReadOnly()
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	rows, err := reader.QueryContext(ctx, `SELECT account,quota_scope,cycle_id,reset_at,window_minutes,
 		used_percent,secondary_used_percent,secondary_reset_at,secondary_window_minutes
 		FROM usage_events WHERE used_percent IS NOT NULL OR secondary_used_percent IS NOT NULL`)
 	if err != nil {
@@ -229,27 +235,65 @@ func (s *store) rebuildAllQuotaSegments(ctx context.Context) error {
 	if err = rows.Close(); err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	readTx, err := reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM quota_segments; DELETE FROM quota_segment_progress`); err != nil {
-		return err
-	}
-	known, err := knownSegmentModels(ctx, tx)
+	known, err := knownSegmentModels(ctx, readTx)
+	readTx.Rollback()
 	if err != nil {
 		return err
 	}
-	for _, key := range clusteredSegmentKeys(keys) {
-		if err = rebuildQuotaSegmentsForKey(ctx, tx, key, known, 272000); err != nil {
+	current := clusteredSegmentKeys(keys)
+	currentSet := make(map[segmentKey]bool, len(current))
+	for _, key := range current {
+		currentSet[key] = true
+	}
+	// Capture stale keys before writes begin. A concurrent request can create a
+	// new key while the rebuild runs; it must not be mistaken for stale history.
+	staleRows, err := reader.QueryContext(ctx, `SELECT account,window,cycle_id,regime_reset_at FROM quota_segment_progress
+		UNION SELECT account,window,cycle_id,regime_reset_at FROM quota_segments`)
+	if err != nil {
+		return err
+	}
+	var stale []segmentKey
+	for staleRows.Next() {
+		var key segmentKey
+		if err = staleRows.Scan(&key.Account, &key.Window, &key.CycleID, &key.ResetAt); err != nil {
+			staleRows.Close()
+			return err
+		}
+		if !currentSet[key] {
+			stale = append(stale, key)
+		}
+	}
+	err = staleRows.Err()
+	staleRows.Close()
+	if err != nil {
+		return err
+	}
+	// Keep the completion marker clear until every key has been replaced.
+	if _, err = s.db.ExecContext(ctx, `DELETE FROM metadata WHERE key=?`, segmentBackfillKey); err != nil {
+		return err
+	}
+	for _, key := range current {
+		prepared, err := prepareQuotaSegmentKey(ctx, reader, key, known, 272000)
+		if err != nil {
+			return fmt.Errorf("prepare %s/%s/%d: %w", key.Account, key.Window, key.CycleID, err)
+		}
+		if err = s.writePreparedQuotaSegmentKey(ctx, key, prepared); err != nil {
 			return fmt.Errorf("rebuild %s/%s/%d: %w", key.Account, key.Window, key.CycleID, err)
 		}
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, segmentBackfillKey, "complete"); err != nil {
-		return err
+	// Old keys may disappear after history cleanup or reset repair. Remove
+	// them individually so the writer never owns the connection for all keys.
+	for _, key := range stale {
+		if err = s.writePreparedQuotaSegmentKey(ctx, key, preparedSegmentKey{}); err != nil {
+			return err
+		}
 	}
-	return tx.Commit()
+	_, err = s.db.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, segmentBackfillKey, "complete")
+	return err
 }
 
 func clusteredSegmentKeys(raw map[segmentKey]struct{}) []segmentKey {
@@ -362,21 +406,68 @@ func loadSegmentEvents(ctx context.Context, tx *sql.Tx, key segmentKey) ([]segme
 	return events, rows.Err()
 }
 
-func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey, known map[string]bool, longThreshold int64) error {
-	events, err := loadSegmentEvents(ctx, tx, key)
-	if err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM quota_segments WHERE account=? AND window=? AND cycle_id=? AND regime_reset_at=?`, key.Account, key.Window, key.CycleID, key.ResetAt); err != nil {
-		return err
-	}
+type preparedSegmentRow struct {
+	segment      quotaSegment
+	featuresJSON string
+	flagsJSON    string
+}
+
+type preparedSegmentKey struct {
+	rows  []preparedSegmentRow
+	peak  int64
+	last  int64
+	maxID int64
+	valid bool
+}
+
+func prepareSegmentEvents(key segmentKey, events []segmentEvent, known map[string]bool, longThreshold int64) (preparedSegmentKey, error) {
+	prepared := preparedSegmentKey{peak: -1, valid: true}
 	observations := make([]quotaRegimeObservation, 0, len(events))
 	for _, e := range events {
+		if e.ID > prepared.maxID {
+			prepared.maxID = e.ID
+		}
 		if e.HasUsed && !e.Failed {
 			observations = append(observations, quotaRegimeObservation{RequestedAt: e.pointTime(), UsedPercent: e.UsedPercent, ResetAt: e.ResetAt, WindowMinutes: e.WindowMinutes})
 		}
 	}
 	anomalies := detectQuotaRegimeAnomalies(key.CycleID, observations)
+	for lag := 0; lag <= 2; lag++ {
+		for _, segment := range buildQuotaSegments(key, events, lag, known, longThreshold, anomalies) {
+			features, errJSON := json.Marshal(segment.Features)
+			if errJSON != nil {
+				return preparedSegmentKey{}, errJSON
+			}
+			flags, errJSON := json.Marshal(segment.Flags)
+			if errJSON != nil {
+				return preparedSegmentKey{}, errJSON
+			}
+			prepared.rows = append(prepared.rows, preparedSegmentRow{segment: segment, featuresJSON: string(features), flagsJSON: string(flags)})
+		}
+	}
+	for _, e := range events {
+		if e.pointTime() > prepared.last {
+			prepared.last = e.pointTime()
+		}
+		if e.HasUsed && !e.Failed && e.UsedPercent < 100 {
+			if p := int64(math.Floor(e.UsedPercent + 1e-7)); p > prepared.peak {
+				prepared.peak = p
+			}
+		}
+	}
+	return prepared, nil
+}
+
+func writePreparedSegmentEvents(ctx context.Context, tx *sql.Tx, key segmentKey, prepared preparedSegmentKey) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM quota_segments WHERE account=? AND window=? AND cycle_id=? AND regime_reset_at=?`, key.Account, key.Window, key.CycleID, key.ResetAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM quota_segment_progress WHERE account=? AND window=? AND cycle_id=? AND regime_reset_at=?`, key.Account, key.Window, key.CycleID, key.ResetAt); err != nil {
+		return err
+	}
+	if !prepared.valid {
+		return nil
+	}
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO quota_segments
 		(account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id,feature_start_event_id,feature_end_event_id,start_at,end_at,dp,boundary_weight,features_json,flags_json,interrupted_count,other_failed_count,created_at)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
@@ -384,39 +475,88 @@ func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey,
 		return err
 	}
 	defer stmt.Close()
-	for lag := 0; lag <= 2; lag++ {
-		for _, segment := range buildQuotaSegments(key, events, lag, known, longThreshold, anomalies) {
-			features, errJSON := json.Marshal(segment.Features)
-			if errJSON != nil {
-				return errJSON
-			}
-			flags, errJSON := json.Marshal(segment.Flags)
-			if errJSON != nil {
-				return errJSON
-			}
-			if _, err = stmt.ExecContext(ctx, segment.Account, segment.Window, segment.CycleID, segment.RegimeResetAt, segment.Lag,
-				segment.StartEventID, segment.EndEventID, segment.FeatureStartEventID, segment.FeatureEndEventID, segment.StartAt, segment.EndAt,
-				segment.DP, segment.BoundaryWeight, string(features), string(flags), segment.InterruptedCount, segment.OtherFailedCount, time.Now().Unix()); err != nil {
-				return err
-			}
-		}
-	}
-	peak, last := int64(-1), int64(0)
-	for _, e := range events {
-		if e.pointTime() > last {
-			last = e.pointTime()
-		}
-		if e.HasUsed && !e.Failed && e.UsedPercent < 100 {
-			if p := int64(math.Floor(e.UsedPercent + 1e-7)); p > peak {
-				peak = p
-			}
+	createdAt := time.Now().Unix()
+	for _, row := range prepared.rows {
+		segment := row.segment
+		if _, err = stmt.ExecContext(ctx, segment.Account, segment.Window, segment.CycleID, segment.RegimeResetAt, segment.Lag,
+			segment.StartEventID, segment.EndEventID, segment.FeatureStartEventID, segment.FeatureEndEventID, segment.StartAt, segment.EndAt,
+			segment.DP, segment.BoundaryWeight, row.featuresJSON, row.flagsJSON, segment.InterruptedCount, segment.OtherFailedCount, createdAt); err != nil {
+			return err
 		}
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO quota_segment_progress(account,window,cycle_id,regime_reset_at,peak_integer,last_observed_at)
 		VALUES(?,?,?,?,?,?) ON CONFLICT(account,window,cycle_id,regime_reset_at) DO UPDATE SET
 		peak_integer=excluded.peak_integer,last_observed_at=excluded.last_observed_at`,
-		key.Account, key.Window, key.CycleID, key.ResetAt, peak, last)
+		key.Account, key.Window, key.CycleID, key.ResetAt, prepared.peak, prepared.last)
 	return err
+}
+
+func rebuildQuotaSegmentsForKey(ctx context.Context, tx *sql.Tx, key segmentKey, known map[string]bool, longThreshold int64) error {
+	events, err := loadSegmentEvents(ctx, tx, key)
+	if err != nil {
+		return err
+	}
+	prepared, err := prepareSegmentEvents(key, events, known, longThreshold)
+	if err != nil {
+		return err
+	}
+	return writePreparedSegmentEvents(ctx, tx, key, prepared)
+}
+
+func prepareQuotaSegmentKey(ctx context.Context, reader *sql.DB, key segmentKey, known map[string]bool, longThreshold int64) (preparedSegmentKey, error) {
+	tx, err := reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return preparedSegmentKey{}, err
+	}
+	defer tx.Rollback()
+	events, err := loadSegmentEvents(ctx, tx, key)
+	if err != nil {
+		return preparedSegmentKey{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return preparedSegmentKey{}, err
+	}
+	return prepareSegmentEvents(key, events, known, longThreshold)
+}
+
+func segmentMaxEventID(ctx context.Context, tx *sql.Tx, key segmentKey) (int64, error) {
+	query, args := segmentSource(key)
+	where := query[strings.Index(query, " WHERE "):strings.Index(query, " ORDER BY ")]
+	var maxID int64
+	err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(id),0) FROM usage_events`+where, args...).Scan(&maxID)
+	return maxID, err
+}
+
+func (s *store) writePreparedQuotaSegmentKey(ctx context.Context, key segmentKey, prepared preparedSegmentKey) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	started := time.Now()
+	defer tx.Rollback()
+	if prepared.valid {
+		latest, err := segmentMaxEventID(ctx, tx, key)
+		if err != nil {
+			return err
+		}
+		if latest != prepared.maxID {
+			// A concurrent insert rebuilt this key from newer events. Preserve it.
+			return nil
+		}
+	}
+	if err = writePreparedSegmentEvents(ctx, tx, key, prepared); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	elapsed := time.Since(started).Nanoseconds()
+	for previous := s.segmentBatchMaxNS.Load(); elapsed > previous; previous = s.segmentBatchMaxNS.Load() {
+		if s.segmentBatchMaxNS.CompareAndSwap(previous, elapsed) {
+			break
+		}
+	}
+	return nil
 }
 
 func buildQuotaSegments(key segmentKey, events []segmentEvent, lag int, known map[string]bool, longThreshold int64, anomalies []quotaRegimeAnomaly) []quotaSegment {
