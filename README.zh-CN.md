@@ -68,6 +68,8 @@
 
 `POST /pricing-settings` 立即返回 HTTP 202 和任务 ID；通过 `GET /pricing-settings/task?id=<id>` 查看请求／样本进度。任务进行中再次保存返回 409。任务读取快照前先切换内存口径，让新请求立刻使用目标价格；历史行按批次更新，`recalculating` 标明期间可能短暂混用新旧值。失败时按批恢复旧口径和历史值。旧接口名称 `legacy_api`、`current_api` 映射到 `api`，`learned` 映射到 `credits`；已有保存设置升级时后台分批迁移，不因重计价拖慢插件注册。
 
+`GET /pricing-settings` 除当前 `pricing_mode` 外，还通过 `available_modes` 列出 `api`、`credits`、`custom`。
+
 ## 估算方法
 
 对于同一额度周期内相邻的额度增长样本：

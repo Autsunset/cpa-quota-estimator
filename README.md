@@ -68,6 +68,8 @@ Choose `api`, `credits`, or `custom` in the dashboard. API and Credits anchor th
 
 `POST /pricing-settings` returns HTTP 202 with a task ID. Poll `GET /pricing-settings/task?id=<id>` for event/sample progress; another save receives 409 while a task runs. The in-memory pricing basis switches before the read snapshot, so new requests use it immediately. Historical rows are updated in batches; `recalculating` marks the temporary mixed state. On failure, the old basis and historical values are restored in batches. API aliases `legacy_api` and `current_api` map to `api`; `learned` maps to `credits`. Existing saved settings schedule a background batched migration on upgrade, without delaying plugin registration for repricing.
 
+`GET /pricing-settings` lists `api`, `credits`, and `custom` in `available_modes` alongside the active `pricing_mode`.
+
 ## Estimation
 
 For adjacent quota-growth samples in the same quota cycle:
@@ -246,7 +248,7 @@ Use `?account=<AuthID>` to select a credential, `?cycle_id=<ID>` on `summary` or
 
 `summary`, `series`, monthly summaries, and overview account records expose `collection_coverage`: `mode`, `configured`, `usage_source: "cpa"`, `quota_source: "account_quota_pool"`, and `capacity_estimation_enabled`. The default has `configured: false` and `assumption: "all_usage_through_cpa"`; this is an assumption, not verified coverage. Estimates also expose `coverage_mode`, `assumption`, and `sample_confidence`. In mixed/unknown modes, `available` is false, `confidence` is `"unavailable"`, and `unavailable_reason` is `"partial_usage_collection"` or `"usage_coverage_unknown"`. Capacity amounts and ranges serialize as JSON `null`, capacity-history arrays are empty, and model allowances are cleared. `sample_confidence` and sample counts remain available independently. Monthly capacity fields follow the same policy; `quota_coverage_complete` still refers only to month-boundary baseline coverage, not collection of external routes.
 
-`summary` and `series` include `remaining_by_model`, while an automatically detected `weekly_quota` includes its own list. Pricing settings expose `pricing_mode` and `value_unit`; changing the mode through `POST /pricing-settings` recalculates all retained historical cycles before the response succeeds.
+`summary` and `series` include `remaining_by_model`, while an automatically detected `weekly_quota` includes its own list. Pricing settings expose `pricing_mode` and `value_unit`; changing the mode through `POST /pricing-settings` returns a task ID immediately, and `/pricing-settings/task` reports when historical recalculation completes.
 
 For an account whose latest valid primary observation is a 5-hour window and also contains a larger Secondary window, `summary`, `series`, and `monthly` return `five_hour_quota_detected: true`. `series` then automatically includes an independent `weekly_quota`, and `monthly` includes `weekly_summary`; no opt-in query parameter is needed. Weekly calculations use only requests carrying a detected 5-hour primary window, so weekly-only Pro accounts retain the original primary-only response shape and accounting.
 

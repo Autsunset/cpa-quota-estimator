@@ -712,6 +712,7 @@ func quotaState(usedPercent float64, resetAt, now int64) (float64, string) {
 
 func pricingSettingsResponse(cfg config) map[string]any {
 	return map[string]any{
+		"available_modes":        []string{pricingModeAPI, pricingModeCredits, pricingModeCustom},
 		"pricing_mode":           normalizePricingMode(cfg.PricingMode),
 		"value_unit":             pricingValueUnit(cfg.PricingMode),
 		"anchor_model":           normalizeModel(cfg.AnchorModel),
