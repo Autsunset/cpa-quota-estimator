@@ -171,7 +171,17 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err = s.reconcileOpenCycleQuotaRegimes(); err != nil {
 		return err
 	}
-	return s.migrateSegments()
+	if err = s.migrateSegments(); err != nil {
+		return err
+	}
+	boundaries, err := s.repairMissedAdvancedEarlyResets(context.Background())
+	if err != nil {
+		return err
+	}
+	if len(boundaries) > 0 {
+		return s.rebuildAllQuotaSegments(context.Background())
+	}
+	return nil
 }
 
 func (s *store) close() error { return s.db.Close() }

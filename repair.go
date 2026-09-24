@@ -10,7 +10,173 @@ const (
 	falseResetMinimumPeak       = 20.0
 	falseResetMinimumChain      = 2
 	falseResetReboundMaxSeconds = 10 * 60
+	missedResetRepairKey        = "missed_advanced_early_resets_v1"
 )
+
+type missedResetBoundary struct {
+	CycleID       int64
+	EventID       int64
+	At            int64
+	OldReset      int64
+	NewReset      int64
+	WindowMinutes int64
+	PlanType      string
+}
+
+// repairMissedAdvancedEarlyResets upgrades cycles created before advanced
+// early-reset detection existed. A confirmed low run in a new weekly schedule
+// is required; the entire repair and its marker commit atomically.
+func (s *store) repairMissedAdvancedEarlyResets(ctx context.Context) ([]missedResetBoundary, error) {
+	var marker string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, missedResetRepairKey).Scan(&marker)
+	if err == nil && marker == "complete" {
+		return nil, nil
+	}
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,started_at,ended_at FROM quota_cycles ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	type cycleStart struct{ id, started, ended int64 }
+	var cycles []cycleStart
+	for rows.Next() {
+		var c cycleStart
+		if err = rows.Scan(&c.id, &c.started, &c.ended); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		cycles = append(cycles, c)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	var boundaries []missedResetBoundary
+	for _, cycle := range cycles {
+		found, errFind := s.missedResetInCycle(ctx, cycle.id, cycle.started, cycle.ended)
+		if errFind != nil {
+			return nil, errFind
+		}
+		if found.EventID != 0 {
+			boundaries = append(boundaries, found)
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	for _, b := range boundaries {
+		var account, reason string
+		var ended int64
+		if err = tx.QueryRowContext(ctx, `SELECT account,ended_at,close_reason FROM quota_cycles WHERE id=?`, b.CycleID).Scan(&account, &ended, &reason); err != nil {
+			return nil, err
+		}
+		result, errInsert := tx.ExecContext(ctx, `INSERT INTO quota_cycles(account,started_at,ended_at,reset_at,window_minutes,plan_type,close_reason)
+			VALUES(?,?,?,?,?,?,?)`, account, b.At, ended, b.NewReset, b.WindowMinutes, b.PlanType, reason)
+		if errInsert != nil {
+			return nil, errInsert
+		}
+		newID, errID := result.LastInsertId()
+		if errID != nil {
+			return nil, errID
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE quota_cycles SET ended_at=?,reset_at=?,close_reason='early_reset' WHERE id=?`, b.At, b.OldReset, b.CycleID); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE usage_events SET cycle_id=? WHERE cycle_id=? AND quota_scope=? AND (requested_at>? OR (requested_at=? AND id>=?))`, newID, b.CycleID, mainQuotaScope, b.At, b.At, b.EventID); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE quota_samples SET cycle_id=? WHERE cycle_id=? AND sampled_at>=? AND reset_at>=?`, newID, b.CycleID, b.At, b.NewReset-segmentResetSlack); err != nil {
+			return nil, err
+		}
+		var firstUsed float64
+		if err = tx.QueryRowContext(ctx, `SELECT used_percent FROM usage_events WHERE id=?`, b.EventID).Scan(&firstUsed); err != nil {
+			return nil, err
+		}
+		firstEvent := event{Account: account, RequestedAt: b.At, ObservedAt: b.At, UsedPercent: &firstUsed, ResetAt: b.NewReset, WindowMinutes: b.WindowMinutes, PlanType: b.PlanType}
+		if err = insertSampleFromRecordedEvent(ctx, tx, quotaCycle{ID: newID}, b.EventID, firstEvent); err != nil {
+			return nil, err
+		}
+		if err = refreshCycleDerivedData(ctx, tx, b.CycleID); err != nil {
+			return nil, err
+		}
+		if err = refreshCycleDerivedData(ctx, tx, newID); err != nil {
+			return nil, err
+		}
+	}
+	if len(boundaries) > 0 {
+		// Rebuild segments and fits after migrateSegments has ensured their schema.
+		if _, err = tx.ExecContext(ctx, `DELETE FROM metadata WHERE key=?`, segmentBackfillKey); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM weight_fits; DELETE FROM online_cycle_scales`); err != nil {
+			return nil, err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?, 'complete') ON CONFLICT(key) DO UPDATE SET value='complete'`, missedResetRepairKey); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return boundaries, nil
+}
+
+func (s *store) missedResetInCycle(ctx context.Context, cycleID, startedAt, endedAt int64) (missedResetBoundary, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,requested_at,CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent,reset_at,window_minutes,plan_type,failed
+		FROM usage_events WHERE cycle_id=? AND quota_scope=? AND used_percent IS NOT NULL AND reset_at>0
+		ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,id`, cycleID, mainQuotaScope)
+	if err != nil {
+		return missedResetBoundary{}, err
+	}
+	defer rows.Close()
+	var events []recordedQuotaEvent
+	for rows.Next() {
+		var e recordedQuotaEvent
+		if err = rows.Scan(&e.ID, &e.RequestedAt, &e.ObservedAt, &e.UsedPercent, &e.ResetAt, &e.WindowMinutes, &e.PlanType, &e.Failed); err != nil {
+			return missedResetBoundary{}, err
+		}
+		events = append(events, e)
+	}
+	if err = rows.Err(); err != nil {
+		return missedResetBoundary{}, err
+	}
+	for i := 1; i < len(events); i++ {
+		old, first := events[i-1], events[i]
+		if old.Failed || first.Failed || old.UsedPercent < 20 || first.UsedPercent > resetLowPercent || first.ResetAt <= old.ResetAt+scheduledResetTolerance || first.WindowMinutes != old.WindowMinutes || !compatiblePlan(first.PlanType, old.PlanType) {
+			continue
+		}
+		declared := first.ResetAt - first.WindowMinutes*60
+		// A low immediately before an already recorded boundary belongs to that
+		// boundary; it is not evidence that a long merged cycle needs splitting.
+		if endedAt > 0 && endedAt-first.RequestedAt < 3600 {
+			continue
+		}
+		if declared <= startedAt || absInt64(declared-first.ObservedAt) > scheduledResetTolerance || first.ObservedAt >= old.ResetAt-scheduledResetTolerance {
+			continue
+		}
+		count, lastAt := 1, first.ObservedAt
+		for j := i + 1; j < len(events); j++ {
+			next := events[j]
+			if next.ObservedAt-first.ObservedAt > 10*60 {
+				break
+			}
+			if next.Failed || absInt64(next.ResetAt-first.ResetAt) > segmentResetSlack || next.UsedPercent > resetLowPercent+resetPercentTolerance {
+				break
+			}
+			count++
+			lastAt = next.ObservedAt
+		}
+		if count >= resetConfirmationSamples && lastAt-first.ObservedAt >= resetConfirmationMinSeconds {
+			return missedResetBoundary{CycleID: cycleID, EventID: first.ID, At: first.RequestedAt, OldReset: old.ResetAt, NewReset: first.ResetAt, WindowMinutes: first.WindowMinutes, PlanType: first.PlanType}, nil
+		}
+	}
+	return missedResetBoundary{}, nil
+}
 
 type earlyResetRepairCandidate struct {
 	FromCycleID   int64 `json:"from_cycle_id"`

@@ -262,6 +262,9 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 	}
 	if !regimeChanged && peak > 0 && !e.Failed &&
 		((!resetAtChanged && resetCandidate(peak, *e.UsedPercent)) || advancedCandidate) {
+		// The advanced branch is essential for a new weekly allocation before
+		// the old reset deadline. The pre-September implementation required
+		// !resetAtChanged here and merged the 2026-08-28 29% -> 0% reset.
 		first, confirmed, errConfirm := confirmEarlyReset(ctx, tx, current, e)
 		if errConfirm != nil {
 			return quotaCycle{}, false, errConfirm
