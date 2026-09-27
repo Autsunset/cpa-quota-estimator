@@ -475,7 +475,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if err != nil {
 			return textResponse(502, err.Error())
 		}
-		go a.refreshPriceCatalog(context.Background(), a.store)
+		a.refreshPriceCatalog(ctx, a.store)
 		return jsonResponse(200, map[string]any{"ok": true, "count": count, "source": a.cfg.PriceSourceURL})
 	case strings.HasSuffix(req.Path, "/prices"):
 		prices, err := a.store.listPrices(ctx)

@@ -75,6 +75,10 @@ try {
   assert.equal(await evaluate("document.querySelector('input[name=pricingMode]:checked').value"),'credits');
   assert.equal(await evaluate("$('#pricingTitle').textContent"),'计价口径');
   assert((await evaluate("$('#pricePreviewRows').children.length"))>=6,'price preview has model rows');
+  assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-5.4'))"),false,'retired model hidden from price preview');
+  assert(await evaluate("$('#account').getBoundingClientRect().width<=185 && $('#sync').getBoundingClientRect().height===$('#refresh').getBoundingClientRect().height"),'toolbar control sizes');
+  await evaluate("$('#refresh').click();true");
+  await wait("$('#toolbarStatus').textContent.includes('已重新读取页面数据')",'refresh feedback');
   assert.equal(await evaluate("document.getElementById('astraMultiplier')===null"),true);
   await evaluate("document.querySelector('input[name=pricingMode][value=custom]').click();true");
   assert.equal(await visible('customPriceEditor'),true);

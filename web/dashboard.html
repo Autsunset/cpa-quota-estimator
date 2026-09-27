@@ -29,10 +29,13 @@
 .collection-settings{margin-bottom:13px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--control)}.collection-header{display:flex;align-items:center;justify-content:space-between;gap:16px}.collection-header h2{margin:0 0 4px;font-size:15px}.collection-account{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.collection-controls{display:flex;align-items:end;gap:8px;flex-shrink:0}.collection-controls label{display:grid;gap:5px;font-size:12px;color:var(--muted)}.collection-controls select{max-width:100%}.collection-explanation{margin:12px 0 6px;font-size:13px;line-height:1.6}.collection-facts{display:flex;flex-wrap:wrap;gap:5px 18px;color:var(--muted);font-size:12px;line-height:1.6}.collection-status{display:block;margin-top:6px;min-height:1em;font-size:12px;color:var(--muted)}.quota-trend-note{margin:0 0 13px}@media(max-width:720px){.collection-header{align-items:stretch;flex-direction:column;gap:12px}.collection-controls{align-items:end}.collection-controls label{flex:1;min-width:0}.collection-controls select{width:100%}.collection-settings{margin-bottom:8px;padding:12px}}
 .collection-limited [data-capacity-view]{display:none!important}.collection-limited .charts,.collection-limited .details{grid-template-columns:1fr}
 .collection-controls button:disabled,.collection-controls select:disabled{opacity:.55;cursor:default}
+.top-toolbar{display:grid;justify-items:end;gap:4px;min-width:0}.top-toolbar .actions{min-width:0;flex-wrap:wrap;justify-content:flex-end}.top-toolbar .actions>select,.top-toolbar .actions>button{height:40px}.top-toolbar .actions>#account{width:185px;max-width:185px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-toolbar .actions>button{width:auto;min-width:106px;padding:0 16px;white-space:nowrap;flex:0 0 auto}.top-toolbar .actions>button:disabled{opacity:.6;cursor:default}.toolbar-status{min-height:1em;color:var(--muted);font-size:11px;text-align:right}
+@media(max-width:900px){.top-toolbar{width:100%;justify-items:stretch}.top-toolbar .actions{justify-content:flex-start}.toolbar-status{text-align:left}}
+@media(max-width:600px){.top-toolbar .actions>#account{width:100%;max-width:100%}.top-toolbar .actions>button{width:100%}}
 </style>
 </head>
 <body><main class="wrap">
-<div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与所选计价口径的等效容量</span></h1><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="预测周期"><option value="">当前预测</option></select><select id="language" aria-label="界面语言"></select><label class="spark-toggle spark-toggle-top"><input id="showSpark" type="checkbox"><span>显示 Spark 额度</span></label><button id="sync">同步价格</button><button id="refresh" class="primary">刷新</button></div></div>
+<div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与所选计价口径的等效容量</span></h1><div class="top-toolbar"><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="预测周期"><option value="">当前预测</option></select><select id="language" aria-label="界面语言"></select><label class="spark-toggle spark-toggle-top"><input id="showSpark" type="checkbox"><span>显示 Spark 额度</span></label><button id="sync" type="button">同步价格</button><button id="refresh" class="primary" type="button">刷新数据</button></div><span id="toolbarStatus" class="toolbar-status" role="status">刷新只重读已记录数据；额度在新请求后更新</span></div></div>
 <section class="pricing-settings pricing-v015" aria-labelledby="pricingTitle"><div class="section-head"><div><h2 id="pricingTitle">计价口径</h2></div></div><div class="pricing-choice-list"><label class="pricing-choice"><input type="radio" name="pricingMode" value="api"><span><b>官方 API · 美元</b><small>以当前官方 API 价为基础，按学习器模型倍率调整；锚定模型保持官方价。</small></span></label><label class="pricing-choice"><input type="radio" name="pricingMode" value="credits"><span><b>Codex Credits</b><small>以官方 Credits 价为基础，采用同一锚定规则；与 API 美元价×25 的差别主要在缓存写入、长上下文和 Fast。</small></span></label><label class="pricing-choice"><input type="radio" name="pricingMode" value="custom"><span><b>自定义美元价格</b><small>逐模型编辑价格；预测只测量当前周期容量，不应用学习器价格调整。</small></span></label></div><div class="pricing-anchor" id="pricingAnchor"><label>锚定模型 <select id="anchorModel"></select></label></div><div class="custom-price-editor" id="customPriceEditor" hidden><div class="custom-price-options"><label>Fast 倍率 <input id="customFastMultiplier" type="number" min="0.1" max="100" step="0.1"></label><label><input id="customLongContext" type="checkbox">长上下文价格</label><label>阈值 Token <input id="customLongThreshold" type="number" min="1024" max="10000000" step="1"></label><button id="restoreOfficialPrices" type="button">恢复官方价格</button></div><div class="cycle-table-wrap custom-price-scroll"><table class="cycle-table"><thead><tr><th>模型</th><th>输入 $/1M</th><th>缓存读取 $/1M</th><th>输出 $/1M</th><th>缓存写入 $/1M</th></tr></thead><tbody id="customPriceRows"></tbody></table></div></div><div class="pricing-save-line"><button id="savePricingSettings" class="primary" type="button">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" role="status"></span></div><div class="pricing-task-progress" id="pricingTaskProgress" hidden><div class="capacity-bar"><i id="pricingTaskBar"></i></div><span id="pricingTaskText"></span></div></section>
 <section class="chart price-preview"><div class="section-head"><div><h2>价格表</h2><div class="sub" id="priceComparison">—</div></div></div><div class="cycle-table-wrap price-preview-scroll"><table class="cycle-table"><thead><tr><th>模型</th><th>输入</th><th>缓存读取</th><th>输出</th><th>缓存写入</th><th>Fast 倍率</th><th>长上下文输入倍率</th></tr></thead><tbody id="pricePreviewRows"></tbody></table></div></section>
 <section class="chart overview"><div class="section-head"><div><h2>全部账号额度概览</h2><div class="sub">合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；点击有样本的账号查看详情</div></div><div class="overview-head-actions"><span class="sub" id="overviewCount">—</span><button id="overviewClearFilters" type="button">清除筛选</button><button id="overviewToggle" type="button" aria-expanded="true" aria-controls="overviewBody">折叠概览</button></div></div><div class="overview-body" id="overviewBody"><div class="overview-table-wrap"><table class="overview-table"><thead><tr class="overview-heading-row"><th><button class="overview-sort" type="button" data-sort-key="account"><span>账号</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="plan"><span>计划类型</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="remaining"><span>当前剩余额度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="reset"><span>重置时间</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="requests"><span>CPA 请求数</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="tokens"><span>CPA Token</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="cost"><span>CPA 计价值</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="capacity"><span>完整周期容量估计</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="confidence"><span>采样充分程度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="forecast"><span>预计耗尽 / 状态</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th></tr><tr class="overview-filter-row"><th><input class="overview-filter" data-overview-filter="account"></th><th><input class="overview-filter" data-overview-filter="plan"></th><th><input class="overview-filter" data-overview-filter="remaining"></th><th><input class="overview-filter" data-overview-filter="reset"></th><th><input class="overview-filter" data-overview-filter="requests"></th><th><input class="overview-filter" data-overview-filter="tokens"></th><th><input class="overview-filter" data-overview-filter="cost"></th><th><input class="overview-filter" data-overview-filter="capacity"></th><th><input class="overview-filter" data-overview-filter="confidence"></th><th><input class="overview-filter" data-overview-filter="forecast"></th></tr></thead><tbody id="overviewRows"></tbody></table></div></div></section>
@@ -275,6 +278,12 @@ const messages = {
     loadFailed: '加载失败：{message}',
     syncFailed: '同步失败：{message}',
     syncSuccess: '已从 models.dev 同步 {count} 个 OpenAI 模型价格。',
+    syncLoading: '正在同步价格…',
+    syncReloadFailed: '价格已同步，但页面数据重新读取失败。',
+    refreshLoading: '正在重新读取页面数据…',
+    refreshDone: '已重新读取页面数据 · {time}；额度在新请求后更新。',
+    refreshFailed: '重新读取失败，请重试。',
+    currentCodexPriceModels: '仅显示常用 Codex 模型；历史模型价格仍用于已有记录',
     pricingSettingsSaving: '正在保存并重算…',
     pricingSettingsSaved: '已保存，重算 {count} 条历史请求。',
     pricingSettingsFailed: '保存失败：{message}',
@@ -559,6 +568,12 @@ const messages = {
     loadFailed: 'Failed to load: {message}',
     syncFailed: 'Failed to sync: {message}',
     syncSuccess: 'Synced pricing for {count} OpenAI models from models.dev.',
+    syncLoading: 'Syncing prices…',
+    syncReloadFailed: 'Prices synced, but page data could not be reloaded.',
+    refreshLoading: 'Reloading page data…',
+    refreshDone: 'Page data reloaded · {time}; quota updates after a new request.',
+    refreshFailed: 'Reload failed. Please retry.',
+    currentCodexPriceModels: 'Shows common Codex models; historical prices still value recorded usage',
     pricingSettingsSaving: 'Saving and recalculating…',
     pricingSettingsSaved: 'Saved and recalculated {count} historical requests.',
     pricingSettingsFailed: 'Failed to save: {message}',
@@ -880,6 +895,8 @@ const staticEnglish = {
   '估算额度 %（当前口径分摊）': 'Estimated quota % (selected-basis allocation)',
   '上游额度百分比属于整个账号；模型混用时，不能把它按表格行分摊。学习器分摊为模型估计，未收录模型留空。': 'Upstream quota percentages belong to the whole account. Per-model attribution is an estimate; unlisted models remain blank.',
   '刷新': 'Refresh',
+  '刷新数据': 'Reload data',
+  '刷新只重读已记录数据；额度在新请求后更新': 'Reload reads recorded data; quota updates after a new request',
   '全部账号额度概览': 'All-account quota overview',
   '合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；点击有样本的账号查看详情': 'Merge configured Codex OAuth credentials with plugin samples, combine 5-hour and weekly quotas, and open sampled accounts for details',
   '清除筛选': 'Clear filters',
@@ -2058,6 +2075,7 @@ function renderAccounts(summary) {
     select.append(option);
   });
   select.value = summary.account || old;
+  select.title = select.value;
 }
 
 function renderPeriods(summary) {
@@ -2607,8 +2625,8 @@ function renderPricePreview(data) {
   let unit = data.settings && data.settings.value_unit || pricingUnitLabel();
   let body = $('#pricePreviewRows');
   body.replaceChildren();
-  let rows = data.rows || [];
-  let priority = ['gpt-5.6-sol','gpt-6-astra','gpt-6-sol','gpt-6-luna','gpt-5.6-terra','gpt-5.6-luna'];
+  let priority = ['gpt-6-astra','gpt-6-sol','gpt-6-luna','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'];
+  let rows = (data.rows || []).filter(item => priority.includes(item.model));
   rows = [...rows].sort((a,b) => {
     let ia=priority.indexOf(a.model), ib=priority.indexOf(b.model);
     if (ia<0) ia=1000; if (ib<0) ib=1000;
@@ -2642,7 +2660,8 @@ function renderPricePreview(data) {
     }
     body.append(row);
   });
-  $('#priceComparison').textContent = activePricingMode() === 'credits' ? tr('creditsVsAPI') : tr('pricingFastLongComparison');
+  $('#priceComparison').textContent = (activePricingMode() === 'credits' ? tr('creditsVsAPI') : tr('pricingFastLongComparison'))
+    + ' · ' + tr('currentCodexPriceModels');
 }
 
 function pricingRate(value, unit) {
@@ -3583,7 +3602,20 @@ $('#loginBtn').onclick = () => {
 $('#key').onkeydown = event => {
   if (event.key === 'Enter') $('#loginBtn').click();
 };
-$('#refresh').onclick = load;
+$('#refresh').onclick = async () => {
+  let button = $('#refresh');
+  if (button.disabled) return;
+  button.disabled = true;
+  $('#toolbarStatus').textContent = tr('refreshLoading');
+  try {
+    let refreshed = await load();
+    $('#toolbarStatus').textContent = refreshed
+      ? tr('refreshDone', {time: new Date().toLocaleTimeString(language === 'en' ? 'en-US' : 'zh-CN')})
+      : tr('refreshFailed');
+  } finally {
+    button.disabled = false;
+  }
+};
 $('#coverageMode').onchange = () => {
   let coverage = state && state.collection_coverage || {mode: 'cpa_only'};
   coverageSettingsDirty = $('#coverageMode').value !== coverage.mode;
@@ -3740,11 +3772,12 @@ $('#savePricingSettings').onclick = async () => {
 $('#sync').onclick = async () => {
   try {
     $('#sync').disabled = true;
+    $('#toolbarStatus').textContent = tr('syncLoading');
     let result = await api('/prices/sync', {method: 'POST'});
-    $('#note').textContent = tr('syncSuccess', {count: result.count});
-    await load();
+    let reloaded = await load();
+    $('#toolbarStatus').textContent = reloaded ? tr('syncSuccess', {count: result.count}) : tr('syncReloadFailed');
   } catch (error) {
-    $('#note').textContent = tr('syncFailed', {message: error.message});
+    $('#toolbarStatus').textContent = tr('syncFailed', {message: error.message});
   } finally {
     $('#sync').disabled = false;
   }

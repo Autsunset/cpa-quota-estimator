@@ -51,6 +51,9 @@ func TestCoverageBrowser(t *testing.T) {
 	if err = seedPrices(context.Background(), s); err != nil {
 		t.Fatal(err)
 	}
+	if err = s.upsertPrices(context.Background(), []price{{Model: "gpt-5.4", Input: 2.5, Output: 15, CacheRead: .25}}); err != nil {
+		t.Fatal(err)
+	}
 	seedCoverageUsage(t, s, "a-mixed", true, true)
 	seedCoverageUsage(t, s, "b-cpa", true, true)
 	if err=s.addDroppedUsageCount(context.Background(),2);err!=nil{t.Fatal(err)}
