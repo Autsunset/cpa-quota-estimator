@@ -26,6 +26,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 ## At a glance
 
 - **All accounts in one view:** merge recorded accounts with the configured Codex OAuth inventory when available, including accounts awaiting their first sample and credentials that are disabled or unavailable. The table supports per-column filters, type-aware sorting, persisted resizing, and keyboard controls.
+- **A focused daily workspace:** search or compare accounts, open an account’s quota and forecast, then move to usage, model pricing, history, or settings without losing context. The account list orders sampled accounts by remaining quota and risk; zero-sample accounts explain the next step instead of displaying another account’s forecast.
 - **Independent quota scopes:** automatically separate a detected 5-hour Primary quota from its weekly Secondary quota for both the main Codex allowance and `gpt-5.3-codex-spark`, while keeping all Spark usage in a completely independent ledger.
 - **Capacity in practical units:** estimate full-cycle and remaining capacity in Tokens and the selected pricing basis—official API USD rates, Codex Credits, or custom USD rates—with uncertainty ranges and confidence levels.
 - **Actionable forecasts:** compare actual usage with a sustainable baseline, cumulative-average pace, and recent pace to estimate exhaustion time and whether a quota will survive until reset.
@@ -58,7 +59,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 - Provides an explicit preview/apply repair API for historical false early-reset chains. It preserves raw usage rows and leaves confirmed normal cycles unchanged.
 - Adds calendar-month reporting for actual Tokens, selected-basis request value, requests, involved cycles, confirmed resets, early resets, cumulative quota-consumption equivalents, unconsumed quota at reset, and estimated capacity allocated by cycles starting in that month.
 - Automatically follows the official CPA or CPAMP panel language, supports Chinese/English manual switching, and remembers the selected mode in the browser.
-- Includes a responsive embedded dashboard with dark/light themes and mobile layouts.
+- Provides a responsive account workspace with desktop master/detail, a mobile list/detail flow and return action, account search and `Ctrl/⌘ K` quick search, keyboard tabs, inline actions, visible loading/empty/error/offline feedback, dark/light themes, and reduced-motion support. The embedded implementation adapts [shadcn/ui Sidebar](https://ui.shadcn.com/docs/components/base/sidebar), [Tabs](https://ui.shadcn.com/docs/components/base/tabs), and [Command](https://ui.shadcn.com/docs/components/base/command) patterns to native HTML controls without an external runtime or CDN.
 - Separates the forecast-cycle selector from the chart range. Changing the forecast cycle updates all selected-cycle statistics and resets the charts to that cycle. A manual chart range may span multiple cycles and changes only chart rendering, while statistics remain scoped to the selected forecast cycle. Each cycle is drawn as a separate segment at its real timestamps, with one x-axis grid interval per day and the forecast cycle highlighted.
 - Retains data for 365 days by default and never stores request or response bodies.
 - Runs independently of CPA Manager Plus (CPAMP).
@@ -266,7 +267,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.15.1
+make package VERSION=0.16.0
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
