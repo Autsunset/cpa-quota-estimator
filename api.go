@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -11,7 +12,18 @@ import (
 )
 
 //go:embed web/dashboard.html
-var dashboardHTML []byte
+var dashboardTemplate []byte
+
+//go:embed web/workbench.css
+var workbenchStyles []byte
+
+//go:embed web/workbench.js
+var workbenchScript []byte
+
+var dashboardHTML = func() []byte {
+	html := bytes.Replace(dashboardTemplate, []byte("/*__WORKBENCH_STYLE__*/"), workbenchStyles, 1)
+	return bytes.Replace(html, []byte("//__WORKBENCH_SCRIPT__"), workbenchScript, 1)
+}()
 
 func (a *app) handleManagement(req managementRequest) managementResponse {
 	if strings.HasSuffix(req.Path, "/dashboard") {
@@ -22,6 +34,25 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 	}
 	if strings.HasSuffix(req.Path, "/repair/early-resets") && strings.EqualFold(req.Method, "POST") {
 		return a.handleEarlyResetRepair(req)
+	}
+	if strings.HasSuffix(req.Path, "/prices/sync") {
+		if !strings.EqualFold(req.Method, "POST") {
+			return textResponse(405, "method not allowed")
+		}
+		a.mu.RLock()
+		s, cfg := a.store, a.cfg
+		a.mu.RUnlock()
+		if s == nil {
+			return textResponse(503, "plugin store is not ready")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		count, err := syncPrices(ctx, s, cfg)
+		if err != nil {
+			return textResponse(502, err.Error())
+		}
+		a.refreshPriceCatalog(ctx, s)
+		return jsonResponse(200, map[string]any{"ok": true, "count": count, "source": cfg.PriceSourceURL})
 	}
 	if strings.HasSuffix(req.Path, "/coverage-settings") && strings.EqualFold(req.Method, "POST") {
 		a.mu.Lock()
@@ -470,13 +501,6 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			return textResponse(405, "method not allowed")
 		}
 		return a.handlePricingSettingsSave(req)
-	case strings.HasSuffix(req.Path, "/prices/sync"):
-		count, err := syncPrices(ctx, a.store, a.cfg)
-		if err != nil {
-			return textResponse(502, err.Error())
-		}
-		a.refreshPriceCatalog(ctx, a.store)
-		return jsonResponse(200, map[string]any{"ok": true, "count": count, "source": a.cfg.PriceSourceURL})
 	case strings.HasSuffix(req.Path, "/prices"):
 		prices, err := a.store.listPrices(ctx)
 		if err != nil {

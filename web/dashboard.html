@@ -29,6 +29,7 @@
 .collection-settings{margin-bottom:13px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--control)}.collection-header{display:flex;align-items:center;justify-content:space-between;gap:16px}.collection-header h2{margin:0 0 4px;font-size:15px}.collection-account{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.collection-controls{display:flex;align-items:end;gap:8px;flex-shrink:0}.collection-controls label{display:grid;gap:5px;font-size:12px;color:var(--muted)}.collection-controls select{max-width:100%}.collection-explanation{margin:12px 0 6px;font-size:13px;line-height:1.6}.collection-facts{display:flex;flex-wrap:wrap;gap:5px 18px;color:var(--muted);font-size:12px;line-height:1.6}.collection-status{display:block;margin-top:6px;min-height:1em;font-size:12px;color:var(--muted)}.quota-trend-note{margin:0 0 13px}@media(max-width:720px){.collection-header{align-items:stretch;flex-direction:column;gap:12px}.collection-controls{align-items:end}.collection-controls label{flex:1;min-width:0}.collection-controls select{width:100%}.collection-settings{margin-bottom:8px;padding:12px}}
 .collection-limited [data-capacity-view]{display:none!important}.collection-limited .charts,.collection-limited .details{grid-template-columns:1fr}
 .collection-controls button:disabled,.collection-controls select:disabled{opacity:.55;cursor:default}
+/*__WORKBENCH_STYLE__*/
 .top-toolbar{display:grid;justify-items:end;gap:4px;min-width:0}.top-toolbar .actions{min-width:0;flex-wrap:wrap;justify-content:flex-end}.top-toolbar .actions>select,.top-toolbar .actions>button{height:40px}.top-toolbar .actions>#account{width:185px;max-width:185px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-toolbar .actions>button{width:auto;min-width:106px;padding:0 16px;white-space:nowrap;flex:0 0 auto}.top-toolbar .actions>button:disabled{opacity:.6;cursor:default}.toolbar-status{min-height:1em;color:var(--muted);font-size:11px;text-align:right}
 @media(max-width:900px){.top-toolbar{width:100%;justify-items:stretch}.top-toolbar .actions{justify-content:flex-start}.toolbar-status{text-align:left}}
 @media(max-width:600px){.top-toolbar .actions>#account{width:100%;max-width:100%}.top-toolbar .actions>button{width:100%}}
@@ -63,7 +64,7 @@
 <div class="spark-section" id="sparkQuota" hidden><div class="spark-section-head"><div><h2>Spark 独立额度</h2><div class="sub">Spark 的容量、消耗当量、周期和月度统计均单独计算，不计入主额度</div></div></div><section class="chart spark-quota"><div class="spark-head"><div><h2>Spark 额度变化与容量估算</h2><div class="sub">按 Spark 自身响应头、重置时间和请求负载独立估算</div></div></div><div class="spark-stats"><div class="spark-stat"><span>当前使用率</span><b id="sparkUsed">—</b></div><div class="spark-stat"><span>Spark 重置时间</span><b id="sparkReset">—</b></div><div class="spark-stat"><span>观测样本</span><b id="sparkObservations">—</b></div><div class="spark-stat"><span>采样充分程度</span><b id="sparkConfidence">—</b></div></div><div id="sparkCurve"></div><div class="legend"><span><i class="dot" style="background:var(--purple)"></i>Spark 额度使用率（%）</span><span><i class="dot" style="background:var(--blue)"></i>Spark 累计 Token</span><span><i class="dot" style="background:var(--amber)"></i>Spark 累计估算费用</span></div></section><section class="details"><div class="chart rows"><h2>Spark 等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="sparkFullTokens">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="sparkFullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="sparkRemainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="sparkRemainCost">—</b></div></div><div class="chart rows"><h2>Spark 采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="sparkGrowthSamples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="sparkSpan">—</b></div><div class="row"><span>完整周期 Token 等效容量区间</span><b id="sparkTokenRange">—</b></div><div class="row"><span>完整周期计价等效容量区间</span><b id="sparkCostRange">—</b></div></div></section><section class="chart monthly"><div class="section-head"><div><h2>Spark 月度额度汇总</h2><div class="sub">仅统计 Spark 请求，并按 Spark 自己的重置时间划分额度周期</div></div><b id="sparkMonthLabel">—</b></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="sparkMonthTokens">—</b><small id="sparkMonthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="sparkMonthCost">—</b><small id="sparkMonthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="sparkMonthCycles">—</b><small id="sparkMonthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="sparkMonthQuotaEquivalent">—</b><small id="sparkMonthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="sparkMonthCapacity">—</b><small id="sparkMonthCapacityCost">—</small></div><div class="monthly-item"><span>可估计周期占比</span><b id="sparkMonthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="sparkMonthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="sparkMonthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="sparkMonthlyNote">仅统计 Spark 请求；所有容量和额度当量均与主额度分开。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>采样充分程度</th></tr></thead><tbody id="sparkCycleRows"></tbody></table></div></section></div>
 <div class="note" id="note">额度百分比来自上游响应头；计价值按所选口径换算，预测不是 OpenAI 官方标称额度。</div>
 </main>
-<div class="login" id="login"><div class="loginbox"><h2>连接 Management API</h2><div class="sub">请输入 CPA Management Key；可选择在此浏览器中记住。</div><input id="key" type="password" placeholder="CPA Management Key" autocomplete="current-password"><label class="remember-key"><input id="rememberKey" type="checkbox"><span>在此浏览器记住密钥</span></label><div class="sub">共享设备请勿勾选；未勾选时只保留在当前标签页。</div><div class="error" id="loginError"></div><button id="loginBtn" class="primary" style="width:100%">进入仪表盘</button></div></div>
+<div class="login" id="login"><div class="loginbox"><h2>连接额度工作台</h2><div class="sub">输入 CPA 管理密钥，读取插件记录的额度数据。</div><label for="key">管理密钥</label><input id="key" type="password" placeholder="CPA Management Key" autocomplete="current-password"><label class="remember-key"><input id="rememberKey" type="checkbox"><span>在此浏览器记住密钥</span></label><div class="sub">共享设备请勿勾选；未勾选时只保留在当前标签页。</div><div class="error" id="loginError"></div><button id="loginBtn" class="primary" style="width:100%">进入工作台</button></div></div>
 <script>
 const $ = selector => document.querySelector(selector);
 const base = '/v0/management/cpa-quota-estimator';
@@ -277,7 +278,7 @@ const messages = {
     requestFailed: '请求失败',
     loadFailed: '加载失败：{message}',
     syncFailed: '同步失败：{message}',
-    syncSuccess: '已从 models.dev 同步 {count} 个 OpenAI 模型价格。',
+    syncSuccess: '已同步 {count} 个模型价格。',
     syncLoading: '正在同步价格…',
     syncReloadFailed: '价格已同步，但页面数据重新读取失败。',
     refreshLoading: '正在重新读取页面数据…',
@@ -567,7 +568,7 @@ const messages = {
     requestFailed: 'Request failed',
     loadFailed: 'Failed to load: {message}',
     syncFailed: 'Failed to sync: {message}',
-    syncSuccess: 'Synced pricing for {count} OpenAI models from models.dev.',
+    syncSuccess: 'Synced prices for {count} models.',
     syncLoading: 'Syncing prices…',
     syncReloadFailed: 'Prices synced, but page data could not be reloaded.',
     refreshLoading: 'Reloading page data…',
@@ -822,6 +823,10 @@ const staticEnglish = {
 	'阈值 Token': 'Threshold Tokens',
 	'恢复官方价格': 'Restore official prices',
 	'价格表': 'Price table',
+	'输入': 'Input',
+	'缓存读取': 'Cached input',
+	'输出': 'Output',
+	'缓存写入': 'Cache write',
 	'输入 $/1M': 'Input $/1M',
 	'缓存读取 $/1M': 'Cached input $/1M',
 	'输出 $/1M': 'Output $/1M',
@@ -1020,6 +1025,10 @@ const staticEnglish = {
   '完整周期等效 Token': 'Full-cycle equivalent Tokens',
   '额度百分比来自上游响应头；计价值按所选口径换算，预测不是 OpenAI 官方标称额度。': 'Quota percentages come from upstream headers. Pricing value uses the selected basis; forecasts are not official OpenAI quota values.',
   '连接 Management API': 'Connect to Management API',
+  '连接额度工作台': 'Connect to quota workspace',
+  '输入 CPA 管理密钥，读取插件记录的额度数据。': 'Enter the CPA Management Key to read quota data recorded by the plugin.',
+  '管理密钥': 'Management Key',
+  '进入工作台': 'Open workspace',
   '请输入 CPA Management Key；可选择在此浏览器中记住。': 'Enter the CPA Management Key. You can choose to remember it in this browser.',
   '在此浏览器记住密钥': 'Remember the key in this browser',
   '共享设备请勿勾选；未勾选时只保留在当前标签页。': 'Do not enable this on a shared device. When disabled, the key stays only in this tab.',
@@ -1140,6 +1149,7 @@ function applyLanguage(nextLanguage) {
   renderCoverageSettings(state);
   renderLanguageSelect();
   renderOverviewControls();
+  renderWorkbenchText();
 }
 
 function setLanguageMode(mode) {
@@ -1498,6 +1508,7 @@ function showLogin(message) {
 
 async function load() {
   const requestID = ++loadSequence;
+  workbenchLoadStart($('#account').value);
   try {
     let runningTask = await api('/pricing-settings/task').catch(() => null);
     if (runningTask) renderPricingTask(runningTask);
@@ -1595,6 +1606,7 @@ async function load() {
       renderPricePreview(priceCatalogState);
     }
     if (coverageStatus.key === 'coverageSavedRefreshFailed') setCoverageStatus('coverageSaved');
+    workbenchLoadEnd(true);
     return true;
   } catch (error) {
     if (requestID !== loadSequence) return false;
@@ -1603,6 +1615,7 @@ async function load() {
     } else {
       $('#note').textContent = tr('loadFailed', {message: error.message});
     }
+    workbenchLoadEnd(false, error);
     return false;
   }
 }
@@ -1991,6 +2004,7 @@ function renderOverviewFromSnapshot() {
 function renderOverview(data, selectedAccount, configured) {
   overviewSnapshot = {data: data, selectedAccount: selectedAccount, configured: configured};
   let items = mergeOverviewAccounts(data, configured);
+  renderWorkbenchAccounts(items, selectedAccount);
   let rows = items.map(overviewRowData).filter(matchesOverviewFilters).sort(compareOverviewRows);
   let body = $('#overviewRows');
   body.replaceChildren();
@@ -2027,7 +2041,7 @@ function renderOverview(data, selectedAccount, configured) {
     row.classList.add(item.sampled ? 'sampled' : 'unsampled');
     if (item.disabled || item.unavailable) row.classList.add('inactive');
     if (item.account === selectedAccount) row.classList.add('selected');
-    if (item.sampled) {
+    if (item.account) {
       row.tabIndex = 0;
       row.setAttribute('role', 'button');
     }
@@ -2043,15 +2057,10 @@ function renderOverview(data, selectedAccount, configured) {
     appendOverviewCell(row, rowData.text.confidence, 'scope-cell');
     appendOverviewCell(row, rowData.text.forecast, 'scope-cell ' + rowData.forecastClass);
     let selectAccount = () => {
-      if (!item.sampled || !item.account || item.account === $('#account').value) return;
-      $('#account').value = item.account;
-      $('#period').value = '';
-      $('#month').value = '';
-      chartRangeManual = false;
-      chartRange = null;
-      load();
+      if (!item.account) return;
+      selectWorkbenchAccount(item.account);
     };
-    if (item.sampled) {
+    if (item.account) {
       row.onclick = selectAccount;
       row.onkeydown = event => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -2074,6 +2083,12 @@ function renderAccounts(summary) {
     option.textContent = account;
     select.append(option);
   });
+  if (summary.account && ![...select.options].some(option => option.value === summary.account)) {
+    let option = document.createElement('option');
+    option.value = summary.account;
+    option.textContent = summary.account;
+    select.append(option);
+  }
   select.value = summary.account || old;
   select.title = select.value;
 }
@@ -2769,6 +2784,7 @@ function renderSummary(summary) {
   if (summary.recalculating) notice += ' ' + tr('pricingRecalculating');
   if (Number(summary.dropped_usage_events || 0)>0) notice += ' ' + tr('usageDropped',{count:usageExact(summary.dropped_usage_events)});
   $('#note').textContent = notice;
+  renderWorkbenchSummary(summary);
 }
 
 function svgLine(x1, y1, x2, y2, attributes) {
@@ -3707,6 +3723,7 @@ function renderPricingTask(task) {
   let done = Number(progress.events_done || 0) + Number(progress.samples_done || 0);
   let total = Number(progress.events_total || 0) + Number(progress.samples_total || 0);
   let percent = total > 0 ? Math.min(100, 100*done/total) : 0;
+  workbenchPricingTaskStatus(task, percent);
   $('#pricingTaskBar').style.width = percent.toFixed(1) + '%';
   $('#pricingTaskText').textContent = tr('pricingTaskStatus', {
     status: tr('pricingTask' + task.status), percent:percent.toFixed(1),
@@ -3729,10 +3746,12 @@ function watchPricingTask(task) {
         clearInterval(pricingTaskTimer);pricingTaskTimer=null;
         pricingSettingsDirty=false;
         if (latest.status === 'succeeded') await load();
+        else workbenchLoadEnd(false, new Error(latest.error || 'Pricing recalculation failed'));
       }
     } catch (error) {
       $('#pricingSaveStatus').textContent=tr('pricingSettingsFailed',{message:error.message});
       clearInterval(pricingTaskTimer);pricingTaskTimer=null;
+      workbenchLoadEnd(false, error);
     }
   },1500);
 }
@@ -3783,6 +3802,8 @@ $('#sync').onclick = async () => {
   }
 };
 
+//__WORKBENCH_SCRIPT__
+setupWorkbench();
 setupOverviewColumnResizers();
 setInterval(async () => {
   if (document.hidden || !state || !$('#calibrationAccount').value) return;

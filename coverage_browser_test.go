@@ -58,6 +58,11 @@ func TestCoverageBrowser(t *testing.T) {
 	seedCoverageUsage(t, s, "b-cpa", true, true)
 	if err=s.addDroppedUsageCount(context.Background(),2);err!=nil{t.Fatal(err)}
 	a := &app{cfg: defaultConfig(), store: s}
+	catalog, err := loadPriceCatalog(context.Background(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.PriceCatalog = catalog
 	var failWrite, delayRead, failRefresh atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/test/fail-write" {
@@ -72,9 +77,14 @@ func TestCoverageBrowser(t *testing.T) {
 			failRefresh.Store(true)
 			return
 		}
+		if r.URL.Path == "/catalog" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"providers":{"openai":{"models":{"gpt-6-sol":{"cost":{"input":2,"output":10,"cache_read":0.2,"cache_write":2.5}}}}}}`)
+			return
+		}
 		if r.URL.Path == "/v0/management/auth-files" {
 			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `{"files":[{"name":"a-mixed","provider":"codex","plan_type":"pro"},{"name":"b-cpa","provider":"codex","plan_type":"pro"}]}`)
+			io.WriteString(w, `{"files":[{"name":"a-mixed","provider":"codex","plan_type":"pro"},{"name":"b-cpa","provider":"codex","plan_type":"pro"},{"name":"waiting-cpa","provider":"codex","plan_type":"plus"}]}`)
 			return
 		}
 		if r.URL.Path == "/" || r.URL.Path == "/dashboard" {
@@ -104,6 +114,7 @@ func TestCoverageBrowser(t *testing.T) {
 		w.Write(response.Body)
 	}))
 	defer server.Close()
+	a.cfg.PriceSourceURL = server.URL + "/catalog"
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, node, "web/coverage.browser-test.mjs", server.URL, chrome, artifacts)
