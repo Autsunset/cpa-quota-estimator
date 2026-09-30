@@ -108,6 +108,7 @@ try {
   await evaluate("history.forward();true");
   await wait("state.account==='a-mixed'",'browser forward restores selected account');
   assert((await evaluate("$('#pricePreviewRows').children.length"))>=6,'price preview has model rows');
+  assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'))"),true,'GPT-6.1 Sol is visible in price preview');
   assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-5.4'))"),false,'retired model hidden from price preview');
   assert(await evaluate("$('#account').getBoundingClientRect().width<=185 && $('#refresh').getBoundingClientRect().height===$('#wbSearchTrigger').getBoundingClientRect().height"),'toolbar control sizes');
   await evaluate("$('#refresh').click();true");

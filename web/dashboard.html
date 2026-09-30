@@ -2640,7 +2640,7 @@ function renderPricePreview(data) {
   let unit = data.settings && data.settings.value_unit || pricingUnitLabel();
   let body = $('#pricePreviewRows');
   body.replaceChildren();
-  let priority = ['gpt-6-astra','gpt-6-sol','gpt-6-luna','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'];
+  let priority = ['gpt-6-astra','gpt-6.1-sol','gpt-6-sol','gpt-6-luna','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'];
   let rows = (data.rows || []).filter(item => priority.includes(item.model));
   rows = [...rows].sort((a,b) => {
     let ia=priority.indexOf(a.model), ib=priority.indexOf(b.model);

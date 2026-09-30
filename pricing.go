@@ -78,7 +78,7 @@ func priceForPricingMode(p price, mode string) price {
 }
 
 // Published Standard-speed Codex credit rates per million tokens, verified
-// 2026-09-23: https://learn.chatgpt.com/docs/pricing. Included Pro quota is
+// 2026-09-30: https://learn.chatgpt.com/docs/pricing. Included Pro quota is
 // account-wide and cannot be inferred from these credit prices alone.
 func officialCodexCreditPrice(model string) (price, bool) {
 	model = normalizeModel(model)
@@ -88,6 +88,8 @@ func officialCodexCreditPrice(model string) (price, bool) {
 		input, cached, output = 250, 25, 1250
 	case "gpt-6-sol":
 		input, cached, output = 50, 5, 250
+	case "gpt-6.1-sol":
+		input, cached, output = 50, 2.5, 250
 	case "gpt-6-luna":
 		input, cached, output = 2.5, .25, 12.5
 	case "gpt-5.6", "gpt-5.6-sol", "daybreak-blue", "gpt-daybreak-blue-latest":
@@ -243,6 +245,8 @@ func officialGPT6Price(model string) (price, bool) {
 		p.Input, p.Output, p.CacheRead, p.CacheWrite = 10, 50, 1, 12.5
 	case "gpt-6-sol":
 		p.Input, p.Output, p.CacheRead, p.CacheWrite = 2, 10, .2, 2.5
+	case "gpt-6.1-sol":
+		p.Input, p.Output, p.CacheRead, p.CacheWrite = 2, 10, .1, 2.5
 	case "gpt-6-luna":
 		p.Input, p.Output, p.CacheRead, p.CacheWrite = .1, .5, .01, .125
 	case "gpt-5.6", "gpt-5.6-sol":
@@ -262,9 +266,10 @@ func officialGPT6Price(model string) (price, bool) {
 func seedPrices(ctx context.Context, s *store) error {
 	now := time.Now().Unix()
 	sol, _ := officialGPT6Price("gpt-6-sol")
+	sol61, _ := officialGPT6Price("gpt-6.1-sol")
 	luna, _ := officialGPT6Price("gpt-6-luna")
 	return s.upsertPrices(ctx, []price{
-		sol, luna,
+		sol, sol61, luna,
 		{Model: "gpt-6-astra", Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5, LongInput: 20, LongOutput: 75, LongRead: 2, LongWrite: 25, FastInput: 20, FastOutput: 100, FastRead: 2, FastWrite: 25, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-sol", Input: 4, Output: 20, CacheRead: .4, CacheWrite: 5, LongInput: 8, LongOutput: 30, LongRead: .8, LongWrite: 10, FastInput: 8, FastOutput: 40, FastRead: .8, FastWrite: 10, Source: "built-in fallback", UpdatedAt: now},
 		{Model: "gpt-5.6-luna", Input: .2, Output: 1.2, CacheRead: .02, CacheWrite: .25, LongInput: .4, LongOutput: 1.8, LongRead: .04, LongWrite: .5, FastInput: .4, FastOutput: 2.4, FastRead: .04, FastWrite: .5, Source: "built-in fallback", UpdatedAt: now},

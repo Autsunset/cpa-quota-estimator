@@ -277,6 +277,7 @@ func TestSubscriptionCreditsUsePublishedCodexRates(t *testing.T) {
 	}{
 		{"gpt-6-astra", 250, 25, 1250},
 		{"gpt-6-sol", 50, 5, 250},
+		{"gpt-6.1-sol", 50, 2.5, 250},
 		{"gpt-6-luna", 2.5, .25, 12.5},
 		{"gpt-5.6-sol", 100, 10, 500},
 		{"gpt-daybreak-blue-latest", 100, 10, 500},
