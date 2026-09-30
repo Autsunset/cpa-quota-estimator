@@ -47,7 +47,7 @@
 - 学习器为每个学习周期建立独立 log 容量尺度，以可配置的高斯随机游走连接相邻周期（σ 默认 **0.35**）；每次新跨越都会在线更新当前周期尺度。新周期第一次跨越前借用上周期尺度；当前周期每 1% 计价值的点估计和区间用于剩余计价值、按模型剩余 Token 与燃尽预测。模型倍率跨周期共享，只有同周期混用提供足够条件 Fisher 信息才放开；共享倍率先在各周期尺度近乎自由的条件下拟合，再用随机游走平滑尺度。缓存／输出类型比例默认固定为 Codex Credits 形状，须同时通过 Fisher 与构成变化门槛才放开；API 与仪表盘会标注先验锁定。继续使用 Huber 损失、默认 21 天衰减和 Laplace 区间。记录状态 0/408/499/502 的中断请求数供敏感性分析，默认拟合不假定其固定费用。逐请求额度百分比仍为估计，不是上游账单。
 - 新增**被动引导式标定**：选择账号、基准模型、Astra 或当前锁定先验的目标模型和每阶段额度目标（默认 5%）。仪表盘追踪同周期的两段纯模型用量、跨越点及按当前计价口径计算的非目标模型污染（超过 5% 警告），完成后重拟合权重并对比目标输入倍率的前后区间。周期重置会使会话作废。`GET /calibration` 返回状态和请求 ID 段，`/calibration/start`、`/calibration/end`、`/calibration/cancel` 分别用于开始、结束阶段和取消；不会生成探针或模型请求。
 - 价格表逐项列出计算价、官方价、相对差异与不确定区间，锚定行差异为 0。已列模型的 API 美元价与 Credits 输入／缓存／输出基础价相差 25 倍；缓存写入、长上下文、Fast 另有规则。可选的 `capture_codex_headers` 不记录无分析价值的 `X-Codex-Turn-State`。
-- 价格表集中展示 GPT-6 Astra／Sol／Luna 与 GPT-5.6 Sol／Terra／Luna；旧模型价格仍留在本地，供历史请求计价。顶部账号选择器缩短后可悬停查看完整名称。**同步价格**从 models.dev 更新本地价格目录；**刷新数据**重读插件已经记录的数据，并在按钮旁显示完成状态。两者都不会向上游请求新的额度样本。
+- 价格表集中展示 GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 与 GPT-5.6 Sol／Terra／Luna；旧模型价格仍留在本地，供历史请求计价。顶部账号选择器缩短后可悬停查看完整名称。**同步价格**从 models.dev 更新本地价格目录；**刷新数据**重读插件已经记录的数据，并在按钮旁显示完成状态。两者都不会向上游请求新的额度样本。
 - 估计完整周期与剩余额度的 Token/计价等效容量，并提供四分位数区间和置信度；还会把所选周期剩余计价值分别换算为各模型的未缓存输入、输出和缓存命中 Token 余量。
 - 展示实际额度轨迹、可持续基准、累计平均预测、近期速率预测、预计耗尽时间、计划重置时间和倒计时。
 - 为每个已确认的额度周期建立独立账本；重置后，旧周期仍可在下拉框中选择和回看。
@@ -185,7 +185,7 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 插件升级会原位迁移 SQLite。历史漏识别的确认重置已由幂等流程修复；伪提前重置链的修复仍须显式调用管理接口。已有保存的旧计价名称映射到三个现行口径，保留的请求和样本计价值从原始 Token 重算。Docker 部署应持久化 `data_path` 所在目录，默认是 `/CLIProxyAPI/data`。
 
-GPT-6 Astra、Sol、Luna 和 GPT-5.6 Sol 使用已核实的 [OpenAI Standard API 价格](https://developers.openai.com/api/docs/pricing) 覆盖滞后的目录条目；[Codex Credits 价目表](https://learn.chatgpt.com/docs/pricing) 则列出独立的订阅 Credits 单价。官方 Fast 与长上下文倍率会和学习器调整值并列显示，API Batch/Flex 仍按 50% 计价。任一公开价目表都不能单独确定账号套餐内含额度。
+GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 和 GPT-5.6 Sol 使用已核实的 [OpenAI Standard API 价格](https://developers.openai.com/api/docs/pricing) 覆盖滞后的目录条目；[Codex Credits 价目表](https://learn.chatgpt.com/docs/pricing) 则列出独立的订阅 Credits 单价。官方 Fast 与长上下文倍率会和学习器调整值并列显示，API Batch/Flex 仍按 50% 计价。`gpt-6.1-sol` 的 API 单价为每百万 Token 输入 $2、缓存读取 $0.10、缓存写入 $2.50、输出 $10；Standard Codex 单价为输入 50、缓存读取 2.5、输出 250 Credits。旧模型 `gpt-6-sol` 保留原有单价。任一公开价目表都不能单独确定账号套餐内含额度。
 
 ## Token 与计价值计算规则
 
@@ -267,7 +267,7 @@ Fast 或长上下文倍率已标定时，用学到的倍率替代官方层级倍
 ```bash
 make test
 make build
-make package VERSION=0.16.0
+make package VERSION=0.17.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
