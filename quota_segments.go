@@ -569,6 +569,9 @@ func (s *store) writePreparedQuotaSegmentKey(ctx context.Context, key segmentKey
 		return err
 	}
 	elapsed := time.Since(started).Nanoseconds()
+	if elapsed <= 0 {
+		elapsed = 1
+	}
 	for previous := s.segmentBatchMaxNS.Load(); elapsed > previous; previous = s.segmentBatchMaxNS.Load() {
 		if s.segmentBatchMaxNS.CompareAndSwap(previous, elapsed) {
 			break
