@@ -109,6 +109,8 @@ try {
   await wait("state.account==='a-mixed'",'browser forward restores selected account');
   assert((await evaluate("$('#pricePreviewRows').children.length"))>=6,'price preview has model rows');
   assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'))"),true,'GPT-6.1 Sol is visible in price preview');
+  assert.deepEqual(await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+']').dataset.calibrationStatus);})()"),['prior','calibrated','prior'],'only the calibrated component receives that status');
+  assert.deepEqual(await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+'] b').textContent);})()"),['50 credits','4 credits','250 credits'],'a cache adjustment leaves input and output at official rates');
   assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-5.4'))"),false,'retired model hidden from price preview');
   assert(await evaluate("$('#account').getBoundingClientRect().width<=185 && $('#refresh').getBoundingClientRect().height===$('#wbSearchTrigger').getBoundingClientRect().height"),'toolbar control sizes');
   await evaluate("$('#refresh').click();true");

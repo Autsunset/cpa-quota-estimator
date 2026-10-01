@@ -65,6 +65,10 @@ func TestCoverageBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.cfg.PriceCatalog = catalog
+	a.cfg.LearnedFit = &weightFit{EligibilityVersion: weightEligibilityVersion, Available: true, Models: []learnedModelWeights{
+		{Model: "gpt-6.1-sol", Input: weightEstimate{Value: .5, PriorLocked: true},
+			Cache: weightEstimate{Value: .04, Low: .035, High: .045, Identified: true}, Output: weightEstimate{Value: 2.5, PriorLocked: true}},
+	}}
 	var failWrite, delayRead, failRefresh atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/test/fail-write" {

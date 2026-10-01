@@ -37,7 +37,7 @@
 </head>
 <body><main class="wrap">
 <div class="top"><h1>额度容量预测<span>把额度百分比变化映射为 Token 与所选计价口径的等效容量</span></h1><div class="top-toolbar"><div class="actions"><select id="account" aria-label="凭证账号"></select><select id="period" aria-label="预测周期"><option value="">当前预测</option></select><select id="language" aria-label="界面语言"></select><label class="spark-toggle spark-toggle-top"><input id="showSpark" type="checkbox"><span>显示 Spark 额度</span></label><button id="sync" type="button">同步价格</button><button id="refresh" class="primary" type="button">刷新数据</button></div><span id="toolbarStatus" class="toolbar-status" role="status">刷新只重读已记录数据；额度在新请求后更新</span></div></div>
-<section class="pricing-settings pricing-v015" aria-labelledby="pricingTitle"><div class="section-head"><div><h2 id="pricingTitle">计价口径</h2></div></div><div class="pricing-choice-list"><label class="pricing-choice"><input type="radio" name="pricingMode" value="api"><span><b>官方 API · 美元</b><small>以当前官方 API 价为基础，按学习器模型倍率调整；锚定模型保持官方价。</small></span></label><label class="pricing-choice"><input type="radio" name="pricingMode" value="credits"><span><b>Codex Credits</b><small>以官方 Credits 价为基础，采用同一锚定规则；与 API 美元价×25 的差别主要在缓存写入、长上下文和 Fast。</small></span></label><label class="pricing-choice"><input type="radio" name="pricingMode" value="custom"><span><b>自定义美元价格</b><small>逐模型编辑价格；预测只测量当前周期容量，不应用学习器价格调整。</small></span></label></div><div class="pricing-anchor" id="pricingAnchor"><label>锚定模型 <select id="anchorModel"></select></label></div><div class="custom-price-editor" id="customPriceEditor" hidden><div class="custom-price-options"><label>Fast 倍率 <input id="customFastMultiplier" type="number" min="0.1" max="100" step="0.1"></label><label><input id="customLongContext" type="checkbox">长上下文价格</label><label>阈值 Token <input id="customLongThreshold" type="number" min="1024" max="10000000" step="1"></label><button id="restoreOfficialPrices" type="button">恢复官方价格</button></div><div class="cycle-table-wrap custom-price-scroll"><table class="cycle-table"><thead><tr><th>模型</th><th>输入 $/1M</th><th>缓存读取 $/1M</th><th>输出 $/1M</th><th>缓存写入 $/1M</th></tr></thead><tbody id="customPriceRows"></tbody></table></div></div><div class="pricing-save-line"><button id="savePricingSettings" class="primary" type="button">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" role="status"></span></div><div class="pricing-task-progress" id="pricingTaskProgress" hidden><div class="capacity-bar"><i id="pricingTaskBar"></i></div><span id="pricingTaskText"></span></div></section>
+<section class="pricing-settings pricing-v015" aria-labelledby="pricingTitle"><div class="section-head"><div><h2 id="pricingTitle">计价口径</h2></div></div><div class="pricing-choice-list"><label class="pricing-choice"><input type="radio" name="pricingMode" value="api"><span><b>官方 API · 美元</b><small>以官方 API 价为基础，分别标定输入、缓存、输出；未标定项保留官方单价。</small></span></label><label class="pricing-choice"><input type="radio" name="pricingMode" value="credits"><span><b>Codex Credits</b><small>以官方 Credits 价为基础，输入、缓存、输出分别标定；未标定项保留官方单价。</small></span></label><label class="pricing-choice"><input type="radio" name="pricingMode" value="custom"><span><b>自定义美元价格</b><small>逐模型编辑价格；预测只测量当前周期容量，不应用学习器价格调整。</small></span></label></div><div class="pricing-anchor" id="pricingAnchor"><label>锚定模型 <select id="anchorModel"></select></label></div><div class="custom-price-editor" id="customPriceEditor" hidden><div class="custom-price-options"><label>Fast 倍率 <input id="customFastMultiplier" type="number" min="0.1" max="100" step="0.1"></label><label><input id="customLongContext" type="checkbox">长上下文价格</label><label>阈值 Token <input id="customLongThreshold" type="number" min="1024" max="10000000" step="1"></label><button id="restoreOfficialPrices" type="button">恢复官方价格</button></div><div class="cycle-table-wrap custom-price-scroll"><table class="cycle-table"><thead><tr><th>模型</th><th>输入 $/1M</th><th>缓存读取 $/1M</th><th>输出 $/1M</th><th>缓存写入 $/1M</th></tr></thead><tbody id="customPriceRows"></tbody></table></div></div><div class="pricing-save-line"><button id="savePricingSettings" class="primary" type="button">保存并重算</button><span class="pricing-save-status" id="pricingSaveStatus" role="status"></span></div><div class="pricing-task-progress" id="pricingTaskProgress" hidden><div class="capacity-bar"><i id="pricingTaskBar"></i></div><span id="pricingTaskText"></span></div></section>
 <section class="chart price-preview"><div class="section-head"><div><h2>价格表</h2><div class="sub" id="priceComparison">—</div></div></div><div class="cycle-table-wrap price-preview-scroll"><table class="cycle-table"><thead><tr><th>模型</th><th>输入</th><th>缓存读取</th><th>输出</th><th>缓存写入</th><th>Fast 倍率</th><th>长上下文输入倍率</th></tr></thead><tbody id="pricePreviewRows"></tbody></table></div></section>
 <section class="chart overview"><div class="section-head"><div><h2>全部账号额度概览</h2><div class="sub">合并 CPA 中已配置的 Codex OAuth 与插件采样；自动合并展示 5 小时与周额度；点击有样本的账号查看详情</div></div><div class="overview-head-actions"><span class="sub" id="overviewCount">—</span><button id="overviewClearFilters" type="button">清除筛选</button><button id="overviewToggle" type="button" aria-expanded="true" aria-controls="overviewBody">折叠概览</button></div></div><div class="overview-body" id="overviewBody"><div class="overview-table-wrap"><table class="overview-table"><thead><tr class="overview-heading-row"><th><button class="overview-sort" type="button" data-sort-key="account"><span>账号</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="plan"><span>计划类型</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="remaining"><span>当前剩余额度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="reset"><span>重置时间</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="requests"><span>CPA 请求数</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="tokens"><span>CPA Token</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="cost"><span>CPA 计价值</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="capacity"><span>完整周期容量估计</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="confidence"><span>采样充分程度</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th><th><button class="overview-sort" type="button" data-sort-key="forecast"><span>预计耗尽 / 状态</span><i class="overview-sort-indicator" aria-hidden="true">↕</i></button></th></tr><tr class="overview-filter-row"><th><input class="overview-filter" data-overview-filter="account"></th><th><input class="overview-filter" data-overview-filter="plan"></th><th><input class="overview-filter" data-overview-filter="remaining"></th><th><input class="overview-filter" data-overview-filter="reset"></th><th><input class="overview-filter" data-overview-filter="requests"></th><th><input class="overview-filter" data-overview-filter="tokens"></th><th><input class="overview-filter" data-overview-filter="cost"></th><th><input class="overview-filter" data-overview-filter="capacity"></th><th><input class="overview-filter" data-overview-filter="confidence"></th><th><input class="overview-filter" data-overview-filter="forecast"></th></tr></thead><tbody id="overviewRows"></tbody></table></div></div></section>
 <section class="collection-settings" aria-labelledby="coverageTitle"><div class="collection-header"><div><h2 id="coverageTitle">本账号采集范围</h2><div class="collection-account" id="coverageAccount"></div></div><div class="collection-controls"><label for="coverageMode"><span id="coverageModeLabel">用量入口</span><select id="coverageMode" aria-describedby="coverageExplanation"></select></label><button id="saveCoverageSettings" type="button" class="primary" disabled>保存</button></div></div><p class="collection-explanation" id="coverageExplanation">假设全部用量经过 CPA</p><div class="collection-facts"><span id="coverageSources"></span><span id="coverageObservedAt"></span><span id="coverageSampleQuality"></span></div><span class="collection-status" id="coverageSaveStatus" role="status" aria-live="polite"></span></section>
@@ -56,7 +56,7 @@
 <section class="chart capacity-history"><h2>周期等效容量估计轨迹</h2><div id="capacityCurve"></div><div class="legend"><span><i class="dot" style="background:var(--blue)"></i>完整周期等效 Token 容量（Token）</span><span><i class="dot" style="background:var(--amber)"></i>完整周期计价等效容量</span><span><i class="dot" style="background:var(--purple)"></i>额度周期边界</span></div></section>
 <section class="details"><div class="chart rows"><h2>主额度等效容量估计（基于当前请求结构）</h2><div class="row"><span>完整周期 Token 等效容量（100% 额度；中位数）</span><b id="fullTokens">—</b></div><div class="row"><span>本周期每 1% 额度计价值（点估计与区间）</span><b id="valuePerPercent">—</b></div><div class="row"><span>完整周期计价等效容量（100% 额度；中位数）</span><b id="fullCost">—</b></div><div class="row"><span>剩余额度的 Token 等效容量（估计值）</span><b id="remainTokens">—</b></div><div class="row"><span>剩余额度的计价等效容量（估计值）</span><b id="remainCost">—</b></div></div><div class="chart rows"><h2>主额度采样质量</h2><div class="row"><span>可用于估计的增长区间数</span><b id="samples">—</b></div><div class="row"><span>有效样本覆盖的额度增量</span><b id="span">—</b></div><div class="row"><span>完整周期 Token 等效容量区间</span><b id="tokenRange">—</b></div><div class="row"><span>完整周期计价等效容量区间</span><b id="costRange">—</b></div></div></section>
 <section class="chart model-allowances"><div class="section-head"><div><h2>按模型估算剩余 Token</h2><div class="sub">每一列分别假设剩余计价值全部用于该模型的未缓存输入、输出或缓存命中；Standard、基础上下文口径</div></div><b id="allowanceMode">—</b></div><div class="cycle-table-wrap"><table class="cycle-table allowance-table"><thead><tr><th>模型</th><th>输入单价</th><th>剩余输入 Token</th><th>输出单价</th><th>剩余输出 Token</th><th>缓存命中单价</th><th>剩余缓存命中 Token</th></tr></thead><tbody id="allowanceRows"></tbody></table></div></section>
-<section class="chart weight-card"><div class="section-head"><div><h2>额度权重（被动学习）</h2><div class="sub">相对 GPT-5.6 Sol 未缓存输入；区间来自有先验的拟合。数据不足时显示先验主导。</div></div></div><p class="weight-card-summary" id="weightSummary">—</p><p class="weight-card-summary" id="weightTypeDiagnostic">—</p><div class="weight-model-diagnostics" id="weightModelDiagnostic"></div><p class="weight-action" id="weightAction" hidden></p><div class="weight-card-grid"><div class="cycle-table-wrap"><table class="cycle-table weight-card-table"><thead><tr><th>模型</th><th>输入权重</th><th>缓存权重</th><th>输出权重</th></tr></thead><tbody id="weightRows"></tbody></table></div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>参考口径 / 诊断</th><th>滚动回测 MAE</th><th>偏差</th><th>测试段数</th></tr></thead><tbody id="weightBacktestRows"></tbody></table></div></div><p class="weight-card-note">缓存／输出默认锁定 Credits 类型比例；模型分摊与周期尺度是估计值，外部流量仍可能影响结果。</p></section>
+<section class="chart weight-card"><div class="section-head"><div><h2>额度权重（被动学习）</h2><div class="sub">相对 GPT-5.6 Sol 未缓存输入；区间来自有先验的拟合。数据不足时显示先验主导。</div></div></div><p class="weight-card-summary" id="weightSummary">—</p><p class="weight-card-summary" id="weightTypeDiagnostic">—</p><div class="weight-model-diagnostics" id="weightModelDiagnostic"></div><p class="weight-action" id="weightAction" hidden></p><div class="weight-card-grid"><div class="cycle-table-wrap"><table class="cycle-table weight-card-table"><thead><tr><th>模型</th><th>输入权重</th><th>缓存权重</th><th>输出权重</th></tr></thead><tbody id="weightRows"></tbody></table></div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>参考口径 / 诊断</th><th>滚动回测 MAE</th><th>偏差</th><th>测试段数</th></tr></thead><tbody id="weightBacktestRows"></tbody></table></div></div><p class="weight-card-note">输入、缓存读取和输出分别标定；数据不足的项保留官方先验。模型分摊与周期尺度是估计值。</p></section>
 <section class="chart guided-calibration" id="guidedCalibration"><div class="section-head"><div><h2>引导式标定（被动）</h2><div class="sub">仅记录实际请求与上游额度头，不发送模型请求。两个阶段必须在同一额度周期。</div></div></div><div class="calibration-controls"><label>账号 <select id="calibrationAccount"></select></label><label>模型 A <select id="calibrationModelA"></select></label><label>模型 B（Astra 或锁定先验） <select id="calibrationModelB"></select></label><label>每阶段目标 % <input id="calibrationTarget" type="number" min="1" max="25" step="0.5" value="5"></label><button id="calibrationStart" class="primary" type="button">开始</button><button id="calibrationEnd" type="button">结束当前阶段</button><button id="calibrationCancel" type="button">取消</button></div><p class="sub" id="calibrationStatus">—</p><div class="calibration-progress"><div id="calibrationPhaseA">—</div><div id="calibrationPhaseB">—</div></div><p class="sub" id="calibrationComparison">—</p><p class="sub" id="calibrationSegments">—</p><p class="error" id="calibrationError" role="status"></p></section>
 <section class="chart usage-breakdown"><div class="section-head"><div><h2>近期模型用量</h2><div class="sub">按账号和模型统计真实 CPA 请求；官方 Credits 为按 Token 价目表折算的参考值，不等于订阅内含额度的实际扣减。</div></div><select id="usageDays" aria-label="用量时间范围"></select></div><div class="usage-breakdown-summary" id="usageBreakdownSummary">—</div><div class="cycle-table-wrap"><table class="cycle-table usage-breakdown-table"><thead><tr><th>模型</th><th>速度档位</th><th>请求数</th><th>失败</th><th>未缓存输入 Token</th><th>缓存读取 Token</th><th>缓存写入 Token</th><th>输出 Token</th><th>总 Token</th><th>官方 Credits 参考值</th><th>学习器额度估计</th><th>当前口径计价值</th><th>估算额度 %（当前口径分摊）</th></tr></thead><tbody id="usageBreakdownRows"></tbody></table></div><p class="usage-breakdown-note">上游额度百分比属于整个账号；模型混用时，不能把它按表格行分摊。学习器分摊为模型估计，未收录模型留空。</p></section>
 <section class="chart monthly"><div class="section-head"><div><h2>主额度月度汇总</h2><div class="sub">仅统计主额度请求；按自然月汇总，并以每次确认的官方重置划分周期</div></div><select id="month" aria-label="统计月份"></select></div><div class="monthly-grid"><div class="monthly-item"><span>本月实际 Token</span><b id="monthTokens">—</b><small id="monthRequests">—</small></div><div class="monthly-item"><span>本月请求计价值</span><b id="monthCost">—</b><small id="monthValueUnit">—</small></div><div class="monthly-item"><span>本月涉及的额度周期</span><b id="monthCycles">—</b><small id="monthResets">—</small></div><div class="monthly-item"><span>本月额度消耗当量</span><b id="monthQuotaEquivalent">—</b><small id="monthQuotaPercent">—</small></div><div class="monthly-item"><span>本月新周期估计总容量</span><b id="monthCapacity">—</b><small id="monthCapacityCost">—</small></div><div class="monthly-item"><span>可估计周期占比</span><b id="monthEstimateCoverage">—</b><small>已估计周期数 / 本月新周期数</small></div><div class="monthly-item"><span>重置时未消耗额度合计</span><b id="monthUnused">—</b><small>各次重置分别累加，可能超过 100%</small></div><div class="monthly-item"><span>额度当量统计质量</span><b id="monthCoverage">—</b><small>是否覆盖各周期月初基线</small></div></div><div class="coverage-note" id="monthlyNote">仅统计主额度请求；检测到 5 小时额度时，周限额在下方自动独立汇总；Spark 可按需显示。</div><div class="cycle-table-wrap"><table class="cycle-table"><thead><tr><th>额度周期</th><th>结束原因</th><th>周期峰值使用率</th><th>本月 Token</th><th>本月计价值</th><th>本月请求</th><th>完整周期等效 Token</th><th>采样充分程度</th></tr></thead><tbody id="cycleRows"></tbody></table></div></section>
@@ -294,6 +294,10 @@ const messages = {
     pricingAnchor: '锚定模型：{model}',
     pricingBaseline: '基准',
     pricingUncalibrated: '未标定',
+    pricingComponentCalibrated: '此项已标定',
+    pricingComponentPrior: '此项未标定，保留官方先验',
+    pricingCacheWritePrior: '缓存写入暂按官方单价',
+    pricingComponentPartial: '{count}/3 项已标定',
     pricingCellDetail: '{source} {official}；差异 {difference}%；±{uncertainty}%',
     pricingOfficialMultiplier: '{source} {value}×',
     pricingSourceOfficial: '官方',
@@ -318,14 +322,16 @@ const messages = {
     weightsIdentified: '已标定',
     weightsPrior: '先验主导',
     weightsCorrelated: '参数相关',
-    weightsPriorRatio: '固定 Credits 先验（非实测）',
+    weightsPriorRatio: '此项未标定 · 官方先验',
+    weightsIndependentComponents: '输入、缓存读取、输出按模型分别拟合；只有各自可辨识的项才调整价格。',
+    weightsTypeInput: '输入',
     weightsTypeCache: '缓存',
     weightsTypeOutput: '输出',
     weightsTypeUnlocked: '可拟合',
     weightsTypeLocked: '固定先验',
     weightsTypeDiagnostic: '{type}：{status}；周期间构成跨度 {range}pp（门槛 {threshold}pp），条件 Fisher {fisher}（门槛 {minimum}）',
     weightsModelDiagnostic: '{model}：{status} · 同周期用量占比变化 {share}pp / {threshold}pp · 有效对照信息 {fisher} / {minimum}',
-    weightsModelHelp: '自动标定需要同周期的有效模型对照，不按请求数或 Token 总量解锁。可先分别纯用 GPT-5.6 Sol 和目标模型各约 5% 额度；同周期长间隔和可计价模型混用可参与拟合；避开失败请求或重置异常，样本不足时继续积累。默认约每小时重拟合。',
+    weightsModelHelp: '自动标定需要同周期中足够的模型与 Token 构成变化，输入、缓存、输出分别解锁，不按请求数或 Token 总量解锁。可先分别纯用 GPT-5.6 Sol 和目标模型各约 5% 额度；同周期长间隔和可计价模型混用可参与拟合；避开失败请求或重置异常，样本不足时继续积累。默认约每小时重拟合。',
     weightsScoreUnit: '百分点',
     usageLearnedTotal: ' · 学习器分摊 {quota}%',
     usageUnattributed: '（{count} 个请求未能分摊）',
@@ -586,6 +592,10 @@ const messages = {
     pricingAnchor: 'Anchor model: {model}',
     pricingBaseline: 'Baseline',
     pricingUncalibrated: 'Uncalibrated',
+    pricingComponentCalibrated: 'This component is calibrated',
+    pricingComponentPrior: 'Uncalibrated component; official prior retained',
+    pricingCacheWritePrior: 'Cache writes retain the official rate',
+    pricingComponentPartial: '{count}/3 components calibrated',
     pricingCellDetail: '{source} {official}; difference {difference}%; ±{uncertainty}%',
     pricingOfficialMultiplier: '{source} {value}×',
     pricingSourceOfficial: 'Official',
@@ -610,14 +620,16 @@ const messages = {
     weightsIdentified: 'Data-supported',
     weightsPrior: 'Prior-dominated',
     weightsCorrelated: 'Correlated parameters',
-    weightsPriorRatio: 'Fixed Credits prior (not measured)',
+    weightsPriorRatio: 'Uncalibrated component · official prior',
+    weightsIndependentComponents: 'Input, cached input, and output are fitted separately for each model. Only identifiable components adjust their own rates.',
+    weightsTypeInput: 'Input',
     weightsTypeCache: 'Cache',
     weightsTypeOutput: 'Output',
     weightsTypeUnlocked: 'fit enabled',
     weightsTypeLocked: 'prior fixed',
     weightsTypeDiagnostic: '{type}: {status}; cross-cycle composition span {range}pp (threshold {threshold}pp), conditional Fisher {fisher} (threshold {minimum})',
     weightsModelDiagnostic: '{model}: {status} · within-cycle usage mix variation {share}pp / {threshold}pp · eligible comparison information {fisher} / {minimum}',
-    weightsModelHelp: 'Automatic calibration needs eligible model comparisons in the same cycle; request and Token totals alone do not unlock it. Start with about 5% quota on GPT-5.6 Sol alone and 5% on the target model. Same-cycle pauses and mixtures of priced models are usable; avoid failed requests or reset anomalies and collect more if needed. Refitting runs about hourly by default.',
+    weightsModelHelp: 'Automatic calibration needs eligible within-cycle model and Token composition variation; input, cache, and output unlock separately rather than by request or Token totals. Start with about 5% quota on GPT-5.6 Sol alone and 5% on the target model. Same-cycle pauses and mixtures of priced models are usable; avoid failed requests or reset anomalies and collect more if needed. Refitting runs about hourly by default.',
     weightsScoreUnit: 'percentage points',
     usageLearnedTotal: ' · learned attribution {quota}%',
     usageUnattributed: ' ({count} requests not attributed)',
@@ -816,9 +828,9 @@ const messages = {
 const staticEnglish = {
 	'计价口径': 'Pricing basis',
 	'官方 API · 美元': 'Official API · USD',
-	'以当前官方 API 价为基础，按学习器模型倍率调整；锚定模型保持官方价。': 'Start from current official API rates, adjust by learned model factors, and keep the anchor at its official rate.',
+	'以官方 API 价为基础，分别标定输入、缓存、输出；未标定项保留官方单价。': 'Start from current official API rates. Input, cache, and output calibrate separately; unsupported components retain official rates.',
 	'Codex Credits': 'Codex Credits',
-	'以官方 Credits 价为基础，采用同一锚定规则；与 API 美元价×25 的差别主要在缓存写入、长上下文和 Fast。': 'Start from official Credits with the same anchor; differences from 25× API USD rates mainly concern cache writes, long context, and Fast.',
+	'以官方 Credits 价为基础，输入、缓存、输出分别标定；未标定项保留官方单价。': 'Start from official Credits. Input, cache, and output calibrate separately; unsupported components retain official rates.',
 	'自定义美元价格': 'Custom USD prices',
 	'逐模型编辑价格；预测只测量当前周期容量，不应用学习器价格调整。': 'Edit prices by model. Forecasts measure cycle capacity without learner price adjustments.',
 	'锚定模型': 'Anchor model',
@@ -889,7 +901,7 @@ const staticEnglish = {
   '滚动回测 MAE': 'Rolling-backtest MAE',
   '偏差': 'Bias',
   '测试段数': 'Test segments',
-  '缓存／输出默认锁定 Credits 类型比例；模型分摊与周期尺度是估计值，外部流量仍可能影响结果。': 'Cache and output ratios default to the fixed Credits shape. Per-model attribution and cycle scales are estimates that may be affected by outside traffic.',
+  '输入、缓存读取和输出分别标定；数据不足的项保留官方先验。模型分摊与周期尺度是估计值。': 'Input, cached input, and output are calibrated independently. Unsupported components retain official priors; attribution and cycle scales remain estimates.',
   '按账号和模型统计真实 CPA 请求；官方 Credits 为按 Token 价目表折算的参考值，不等于订阅内含额度的实际扣减。': 'Actual CPA requests by account and model. Official Credits are a token-rate reference, not the measured consumption of included subscription quota.',
   '速度档位': 'Speed tier',
   '失败': 'Failed',
@@ -2183,20 +2195,13 @@ function renderWeightCard(fit, backtest) {
   });
   if (backtest.lag_ambiguous) summary += tr('weightsLagAmbiguous');
   $('#weightSummary').textContent = summary;
-  $('#weightTypeDiagnostic').textContent = (fit.type_diagnostics || []).map(item => tr('weightsTypeDiagnostic', {
-    type: tr(item.name === 'type:cache' ? 'weightsTypeCache' : 'weightsTypeOutput'),
-    status: tr(item.unlocked ? 'weightsTypeUnlocked' : 'weightsTypeLocked'),
-    range: (Number(item.cycle_ratio_range || 0) * 100).toFixed(1),
-    threshold: (Number(item.min_cycle_ratio_range || 0) * 100).toFixed(1),
-    fisher: Number(item.conditional_fisher || 0).toFixed(1),
-    minimum: Number(item.min_fisher || 0).toFixed(0)
-  })).join(' · ');
+  $('#weightTypeDiagnostic').textContent = tr('weightsIndependentComponents');
   const modelDiagnostics = $('#weightModelDiagnostic');
   modelDiagnostics.replaceChildren();
-  (fit.model_diagnostics || []).forEach(item => {
+  (fit.component_diagnostics || []).forEach(item => {
     const line = document.createElement('p');
     line.textContent = tr('weightsModelDiagnostic', {
-      model: item.name.replace('model:', ''), status: tr(item.unlocked ? 'weightsTypeUnlocked' : 'weightsTypeLocked'),
+      model: item.model + ' / ' + tr(item.token_type==='input'?'weightsTypeInput':item.token_type==='cache'?'weightsTypeCache':'weightsTypeOutput'), status: tr(item.unlocked ? 'weightsTypeUnlocked' : 'weightsTypeLocked'),
       share: (Number(item.within_cycle_share_sd || 0) * 100).toFixed(1),
       threshold: (Number(item.min_share_sd || 0) * 100).toFixed(1),
       fisher: Number(item.conditional_fisher || 0).toFixed(1), minimum: Number(item.min_fisher || 0).toFixed(0)
@@ -2690,21 +2695,31 @@ function renderPricePreview(data) {
   rows.forEach(item => {
     let row = document.createElement('tr');
     let model = document.createElement('td');
-    model.textContent = item.model + (item.adjustment && item.adjustment.baseline ? ' · ' + tr('pricingBaseline')
-      : item.adjustment && !item.adjustment.calibrated && activePricingMode() !== 'custom' ? ' · ' + tr('pricingUncalibrated') : '');
-    if (item.adjustment && item.adjustment.baseline) model.className='baseline';
-    else if (item.adjustment && !item.adjustment.calibrated && activePricingMode() !== 'custom') model.className='uncalibrated';
+    const componentAdjustments = item.component_adjustments || {};
+    const calibratedCount = ['input','cache_read','output'].filter(field => componentAdjustments[field]?.calibrated).length;
+    model.textContent = item.model + (item.adjustment?.baseline ? ' · ' + tr('pricingBaseline')
+      : activePricingMode() !== 'custom' ? ' · ' + tr('pricingComponentPartial', {count:calibratedCount}) : '');
+    if (item.adjustment?.baseline) model.className='baseline';
+    else if (calibratedCount<3 && activePricingMode()!=='custom') model.className='uncalibrated';
     row.append(model);
     for (const field of ['input','cache_read','output','cache_write']) {
       let cell = document.createElement('td');
+      cell.dataset.priceField = field;
+      const adjustment=componentAdjustments[field] || {};
+      cell.dataset.calibrationStatus=activePricingMode()==='custom'?'custom':adjustment.baseline?'baseline':adjustment.calibrated?'calibrated':'prior';
       let value = item.calculated && item.calculated[field] || 0;
       let official = item.official && item.official[field] || 0;
       let main = document.createElement('b'); main.textContent = priceNumber(value,unit); cell.append(main);
       let small = document.createElement('small');
       let difference = official > 0 ? (value/official-1)*100 : 0;
-      let uncertainty = Number(item.uncertainty_percent || 0);
+      let factor=Number(adjustment.factor || 1);
+      let uncertainty=adjustment.calibrated ? Math.max(Math.abs(factor-Number(adjustment.low || factor)),Math.abs(Number(adjustment.high || factor)-factor))/factor*100 : 0;
       small.textContent = tr('pricingCellDetail', {source:tr(item.official_listed === false ? 'pricingSourceEstimate' : 'pricingSourceOfficial'),official:priceNumber(official,unit),
         difference:(difference>=0?'+':'')+difference.toFixed(1), uncertainty:uncertainty.toFixed(1)});
+      if(activePricingMode()!=='custom') {
+        const status=adjustment.baseline?'pricingBaseline':field==='cache_write'?'pricingCacheWritePrior':adjustment.calibrated?'pricingComponentCalibrated':'pricingComponentPrior';
+        small.textContent += ' · ' + tr(status);
+      }
       cell.append(small);row.append(cell);
     }
     for (const [computed,official,uncertainty] of [[item.fast_multiplier,item.official_fast_multiplier,0],[item.long_multiplier,item.official_long_multiplier,item.long_uncertainty_percent]]) {
