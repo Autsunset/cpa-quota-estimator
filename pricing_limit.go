@@ -40,6 +40,11 @@ func fitRepricingDue(priced *weightFit, cfg config, lastAt, now int64) bool {
 	if normalizePricingMode(cfg.PricingMode) == pricingModeCustom || cfg.LearnedFit == nil || !cfg.LearnedFit.Available {
 		return false
 	}
+	// A formula migration must replace old shared-multiplier history even
+	// when an hourly fit was recently repriced or all new rates stay official.
+	if cfg.LearnedFit.EligibilityVersion == weightEligibilityVersion && (priced == nil || priced.EligibilityVersion != weightEligibilityVersion) {
+		return true
+	}
 	if lastAt > 0 && now-lastAt < fitRepriceMinInterval {
 		return false
 	}
@@ -49,8 +54,10 @@ func fitRepricingDue(priced *weightFit, cfg config, lastAt, now int64) bool {
 		return true
 	}
 	for _, p := range cfg.PriceCatalog {
-		if relativeFactorChanged(previous.modelPriceAdjustment(p).Factor, cfg.modelPriceAdjustment(p).Factor) {
-			return true
+		for _, field := range []string{"input", "cache_read", "output"} {
+			if relativeFactorChanged(previous.componentPriceAdjustment(p, field).Factor, cfg.componentPriceAdjustment(p, field).Factor) {
+				return true
+			}
 		}
 		if relativeFactorChanged(previous.effectiveFastMultiplier(p), cfg.effectiveFastMultiplier(p)) {
 			return true

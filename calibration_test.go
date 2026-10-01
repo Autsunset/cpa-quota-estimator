@@ -84,3 +84,16 @@ func TestGuidedCalibrationInvalidatesAcrossReset(t *testing.T) {
 		t.Fatalf("cross-reset session=%#v", session)
 	}
 }
+
+func TestGuidedCalibrationAcceptsPartiallyCalibratedModel(t *testing.T) {
+	s, _ := calibrationTestStore(t)
+	defer s.close()
+	fit := testAnchorFit()
+	fit.Models = append(fit.Models, learnedModelWeights{Model: "gpt-6.1-sol", Input: weightEstimate{Value: .5, Identified: true}, Cache: weightEstimate{Value: .025, PriorLocked: true}, Output: weightEstimate{Value: 2.5, Identified: true}})
+	a := app{cfg: defaultConfig(), store: s}
+	a.cfg.LearnedFit = fit
+	response := a.handleManagement(managementRequest{Method: "POST", Path: "/cpa-quota-estimator/calibration/start", Body: []byte(`{"account":"synthetic","model_a":"gpt-5.6-sol","model_b":"gpt-6.1-sol","target_percent":5}`)})
+	if response.StatusCode != 200 {
+		t.Fatalf("partial cache calibration target rejected: %d %s", response.StatusCode, response.Body)
+	}
+}

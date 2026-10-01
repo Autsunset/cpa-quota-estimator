@@ -12,7 +12,7 @@ const (
 	weightReferenceModel     = "gpt-5.6-sol"
 	weightObservationSD      = 0.35
 	weightHuberDelta         = 0.6
-	weightEligibilityVersion = 1
+	weightEligibilityVersion = 2
 )
 
 type weightLearnerOptions struct {
@@ -40,6 +40,8 @@ func defaultWeightLearnerOptions() weightLearnerOptions {
 
 type identifiabilityDiagnostic struct {
 	Name               string  `json:"name"`
+	Model              string  `json:"model,omitempty"`
+	TokenType          string  `json:"token_type,omitempty"`
 	Unlocked           bool    `json:"unlocked"`
 	WithinCycleShareSD float64 `json:"within_cycle_share_sd"`
 	ConditionalFisher  float64 `json:"conditional_fisher"`
@@ -78,27 +80,28 @@ type learnedModelWeights struct {
 }
 
 type weightFit struct {
-	EligibilityVersion int                         `json:"eligibility_version"`
-	Available          bool                        `json:"available"`
-	FittedAt           int64                       `json:"fitted_at"`
-	Lag                int                         `json:"lag"`
-	SegmentCount       int                         `json:"segment_count"`
-	EffectiveCount     float64                     `json:"effective_count"`
-	MeanAbsError       float64                     `json:"mean_abs_error"`
-	Objective          float64                     `json:"objective"`
-	Models             []learnedModelWeights       `json:"models"`
-	Fast               weightEstimate              `json:"fast"`
-	LongContext        weightEstimate              `json:"long_context"`
-	ParameterNames     []string                    `json:"parameter_names"`
-	LogParameters      []float64                   `json:"log_parameters"`
-	Covariance         [][]float64                 `json:"covariance"`
-	HalfLifeDays       float64                     `json:"half_life_days"`
-	RandomWalkSigma    float64                     `json:"random_walk_sigma"`
-	TypeDiagnostics    []identifiabilityDiagnostic `json:"type_diagnostics"`
-	ModelDiagnostics   []identifiabilityDiagnostic `json:"model_diagnostics"`
-	CycleScales        []learnedCycleScale         `json:"cycle_scales"`
-	MaxEndEventID      int64                       `json:"max_end_event_id"`
-	Interrupted        weightEstimate              `json:"interrupted,omitempty"`
+	EligibilityVersion   int                         `json:"eligibility_version"`
+	Available            bool                        `json:"available"`
+	FittedAt             int64                       `json:"fitted_at"`
+	Lag                  int                         `json:"lag"`
+	SegmentCount         int                         `json:"segment_count"`
+	EffectiveCount       float64                     `json:"effective_count"`
+	MeanAbsError         float64                     `json:"mean_abs_error"`
+	Objective            float64                     `json:"objective"`
+	Models               []learnedModelWeights       `json:"models"`
+	Fast                 weightEstimate              `json:"fast"`
+	LongContext          weightEstimate              `json:"long_context"`
+	ParameterNames       []string                    `json:"parameter_names"`
+	LogParameters        []float64                   `json:"log_parameters"`
+	Covariance           [][]float64                 `json:"covariance"`
+	HalfLifeDays         float64                     `json:"half_life_days"`
+	RandomWalkSigma      float64                     `json:"random_walk_sigma"`
+	TypeDiagnostics      []identifiabilityDiagnostic `json:"type_diagnostics"`
+	ComponentDiagnostics []identifiabilityDiagnostic `json:"component_diagnostics"`
+	ModelDiagnostics     []identifiabilityDiagnostic `json:"model_diagnostics"`
+	CycleScales          []learnedCycleScale         `json:"cycle_scales"`
+	MaxEndEventID        int64                       `json:"max_end_event_id"`
+	Interrupted          weightEstimate              `json:"interrupted,omitempty"`
 }
 
 type randomWalkEdge struct {
@@ -117,18 +120,19 @@ type learningCycle struct {
 }
 
 type weightModel struct {
-	names              []string
-	index              map[string]int
-	priorMean          []float64
-	priorSigma         []float64
-	prices             map[string]price
-	randomWalk         []randomWalkEdge
-	cycles             []learningCycle
-	typeDiagnostics    []identifiabilityDiagnostic
-	modelDiagnostics   []identifiabilityDiagnostic
-	includeInterrupted bool
-	referenceMode      string
-	fixedModels        map[string]float64
+	names                []string
+	index                map[string]int
+	priorMean            []float64
+	priorSigma           []float64
+	prices               map[string]price
+	randomWalk           []randomWalkEdge
+	cycles               []learningCycle
+	typeDiagnostics      []identifiabilityDiagnostic
+	componentDiagnostics []identifiabilityDiagnostic
+	modelDiagnostics     []identifiabilityDiagnostic
+	includeInterrupted   bool
+	referenceMode        string
+	fixedModels          map[string]float64
 }
 
 func modelGroup(segment quotaSegment) string { return segment.Account + "|" + segment.Window }
@@ -228,8 +232,26 @@ func newWeightModel(segments []quotaSegment, prices map[string]price, now int64,
 	opts = weightOptionsWithDefaults(opts)
 	cycles := collectLearningCycles(segments)
 	typeDiagnostics, modelDiagnostics := assessWeightIdentifiability(segments, prices, now, opts)
+	componentDiagnostics := assessComponentIdentifiability(segments, prices, now, opts)
+	// Keep legacy diagnostic shapes available without presenting a removed
+	// shared-model/global-type parameter as independently calibrated.
+	for i := range typeDiagnostics {
+		typeDiagnostics[i].Unlocked = false
+	}
+	for i := range modelDiagnostics {
+		d := &modelDiagnostics[i]
+		d.Unlocked = true
+		d.ConditionalFisher, d.WithinCycleShareSD = math.Inf(1), math.Inf(1)
+		for _, component := range componentDiagnostics {
+			if component.Model == strings.TrimPrefix(d.Name, "model:") {
+				d.Unlocked = d.Unlocked && component.Unlocked
+				d.ConditionalFisher = math.Min(d.ConditionalFisher, component.ConditionalFisher)
+				d.WithinCycleShareSD = math.Min(d.WithinCycleShareSD, component.WithinCycleShareSD)
+			}
+		}
+	}
 	m := weightModel{index: make(map[string]int), prices: prices, cycles: cycles, referenceMode: pricingModeCredits, fixedModels: opts.FixedModelFactors,
-		typeDiagnostics: typeDiagnostics, modelDiagnostics: modelDiagnostics, includeInterrupted: opts.IncludeInterrupted}
+		typeDiagnostics: typeDiagnostics, modelDiagnostics: modelDiagnostics, componentDiagnostics: componentDiagnostics, includeInterrupted: opts.IncludeInterrupted}
 	add := func(name string, mean, sigma float64) {
 		m.index[name] = len(m.names)
 		m.names = append(m.names, name)
@@ -265,13 +287,8 @@ func newWeightModel(segments []quotaSegment, prices map[string]price, now int64,
 		}
 		previousGroup, previousIndex = cycle.Group, currentIndex
 	}
-	for _, diagnostic := range modelDiagnostics {
-		if diagnostic.Unlocked && opts.FixedModelFactors[strings.TrimPrefix(diagnostic.Name, "model:")] <= 0 {
-			add(diagnostic.Name, 0, .5)
-		}
-	}
-	for _, diagnostic := range typeDiagnostics {
-		if diagnostic.Unlocked {
+	for _, diagnostic := range componentDiagnostics {
+		if diagnostic.Unlocked && opts.FixedModelFactors[diagnostic.Model] <= 0 {
 			add(diagnostic.Name, 0, .5)
 		}
 	}
@@ -313,15 +330,11 @@ func (m weightModel) predict(segment quotaSegment, x []float64) (float64, []floa
 			continue
 		}
 		term := float64(feature.Tokens) / 1_000_000 * rate / denominator
-		modelIndex, hasModel := m.index["model:"+normalizeModel(feature.Model)]
+		modelIndex, hasModel := m.index[componentParameter(feature.Model, feature.Type)]
 		if hasModel {
 			term *= math.Exp(x[modelIndex])
 		} else if fixed := m.fixedModels[normalizeModel(feature.Model)]; fixed > 0 {
 			term *= fixed
-		}
-		typeIndex, hasType := m.index["type:"+feature.Type]
-		if hasType {
-			term *= math.Exp(x[typeIndex])
 		}
 		fastIndex, hasFast := m.index["fast"]
 		if feature.Fast && hasFast {
@@ -337,9 +350,6 @@ func (m weightModel) predict(segment quotaSegment, x []float64) (float64, []floa
 		weighted := scale * term
 		if hasModel {
 			grad[modelIndex] += weighted
-		}
-		if hasType {
-			grad[typeIndex] += weighted
 		}
 		if feature.Fast && hasFast {
 			grad[fastIndex] += weighted
@@ -602,6 +612,7 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 	fit.RandomWalkSigma = opts.RandomWalkSigma
 	fit.TypeDiagnostics = m.typeDiagnostics
 	fit.ModelDiagnostics = m.modelDiagnostics
+	fit.ComponentDiagnostics = m.componentDiagnostics
 	var absoluteError float64
 	for _, segment := range segments {
 		prediction, _ := m.predict(segment, x)
@@ -634,6 +645,12 @@ func deriveFactorEstimate(m weightModel, x []float64, covariance [][]float64, na
 				if j == i || covariance[i][i] <= 0 || covariance[j][j] <= 0 {
 					continue
 				}
+				// Component information already projects out independent cycle
+				// capacities. Correlation with that nuisance scale does not by
+				// itself mean two token rates cannot be distinguished.
+				if strings.HasPrefix(name, "component:") && strings.HasPrefix(m.names[j], "scale:") {
+					continue
+				}
 				correlation := covariance[i][j] / math.Sqrt(covariance[i][i]*covariance[j][j])
 				if math.Abs(correlation) >= .9 {
 					correlated = true
@@ -655,15 +672,12 @@ func deriveFactorEstimate(m weightModel, x []float64, covariance [][]float64, na
 
 func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []learnedModelWeights {
 	models := map[string]bool{weightReferenceModel: true}
-	modelUnlocked := make(map[string]bool)
-	typeUnlocked := make(map[string]bool)
+	componentUnlocked := make(map[string]bool)
 	for _, diagnostic := range m.modelDiagnostics {
-		model := strings.TrimPrefix(diagnostic.Name, "model:")
-		models[model] = true
-		modelUnlocked[model] = diagnostic.Unlocked
+		models[strings.TrimPrefix(diagnostic.Name, "model:")] = true
 	}
-	for _, diagnostic := range m.typeDiagnostics {
-		typeUnlocked[strings.TrimPrefix(diagnostic.Name, "type:")] = diagnostic.Unlocked
+	for _, diagnostic := range m.componentDiagnostics {
+		componentUnlocked[diagnostic.Name] = diagnostic.Unlocked
 	}
 	var names []string
 	for name := range models {
@@ -679,24 +693,20 @@ func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []le
 			if base <= 0 {
 				continue
 			}
-			parameterNames := []string{}
-			if model != weightReferenceModel {
-				parameterNames = append(parameterNames, "model:"+model)
-			}
-			if typ != "input" {
-				parameterNames = append(parameterNames, "type:"+typ)
-			}
-			estimate := deriveFactorEstimate(m, x, covariance, parameterNames, base)
+			parameter := componentParameter(model, typ)
+			estimate := deriveFactorEstimate(m, x, covariance, []string{parameter}, base)
 			if fixed := m.fixedModels[model]; fixed > 0 {
 				estimate.Value *= fixed
 				estimate.Low *= fixed
 				estimate.High *= fixed
 				estimate.PriorLocked = true
 				estimate.Identified = false
+				estimate.DataShare = 0
 			}
-			if model != weightReferenceModel && !modelUnlocked[model] || typ != "input" && !typeUnlocked[typ] {
+			if model != weightReferenceModel && !componentUnlocked[parameter] {
 				estimate.PriorLocked = true
 				estimate.Identified = false
+				estimate.DataShare = 0
 			}
 			switch typ {
 			case "input":

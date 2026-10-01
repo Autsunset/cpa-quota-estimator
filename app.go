@@ -226,7 +226,7 @@ func (a *app) configure(raw []byte) error {
 		}
 		return err
 	}
-	if hasFit && fitResult.FittedWeights.Available {
+	if hasFit && fitResult.FittedWeights.Available && fitResult.FittedWeights.EligibilityVersion == weightEligibilityVersion {
 		cfg.LearnedFit = &fitResult.FittedWeights
 		_ = s.seedOnlineCycleScales(context.Background(), cfg.LearnedFit)
 	}

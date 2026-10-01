@@ -21,11 +21,10 @@ func TestWeightLearnerRecoversKnownSyntheticWeights(t *testing.T) {
 		segment := quotaSegment{Account: account, Window: window, CycleID: int64(i/100 + 1),
 			EndAt: now - int64(1600-i)*60, DP: 1, BoundaryWeight: 1, Features: []segmentFeature{}}
 		for j := 0; j < 1+random.Intn(3); j++ {
-			segment.Features = append(segment.Features, segmentFeature{
-				Model: models[random.Intn(len(models))], Type: types[random.Intn(len(types))],
-				Fast: random.Intn(2) == 1, Long: random.Intn(2) == 1,
-				Tokens: int64(300_000 + random.Intn(1_700_000)),
-			})
+			feature := segmentFeature{Model: models[random.Intn(len(models))], Type: types[random.Intn(len(types))], Fast: random.Intn(2) == 1, Long: random.Intn(2) == 1}
+			rate := referenceFeatureRate(feature, pricingModeCredits, nil) / referenceSolRate(pricingModeCredits, nil)
+			feature.Tokens = int64(float64(300000+random.Intn(1700000)) / rate)
+			segment.Features = append(segment.Features, feature)
 		}
 		segments[i] = segment
 	}
@@ -43,12 +42,14 @@ func TestWeightLearnerRecoversKnownSyntheticWeights(t *testing.T) {
 			truth[index] = math.Log(.3)
 		}
 	}
-	for name, value := range map[string]float64{
-		"model:gpt-6-astra": 1.4, "model:gpt-6-sol": 1.1,
-		"model:gpt-6-luna": 2.0, "model:gpt-5.6-terra": 1.3,
-		"type:cache": .8, "type:output": 1.2,
-		"fast": 2.2, "long": 1.4,
-	} {
+	truthFactors := map[string]float64{}
+	for model, factor := range map[string]float64{"gpt-6-astra": 1.4, "gpt-6-sol": 1.1, "gpt-6-luna": 2, "gpt-5.6-terra": 1.3} {
+		truthFactors[componentParameter(model, "input")] = factor
+		truthFactors[componentParameter(model, "cache")] = factor * .8
+		truthFactors[componentParameter(model, "output")] = factor * 1.2
+	}
+	truthFactors["fast"], truthFactors["long"] = 2.2, 1.4
+	for name, value := range truthFactors {
 		index, ok := model.index[name]
 		if !ok {
 			t.Fatalf("missing parameter %s", name)
@@ -65,11 +66,7 @@ func TestWeightLearnerRecoversKnownSyntheticWeights(t *testing.T) {
 	if !fit.Available || fit.SegmentCount != len(segments) {
 		t.Fatalf("fit = %#v", fit)
 	}
-	for name, want := range map[string]float64{
-		"model:gpt-6-astra": 1.4, "model:gpt-6-sol": 1.1,
-		"model:gpt-6-luna": 2, "model:gpt-5.6-terra": 1.3,
-		"type:cache": .8, "type:output": 1.2, "fast": 2.2, "long": 1.4,
-	} {
+	for name, want := range truthFactors {
 		var got float64
 		for i, candidate := range fit.ParameterNames {
 			if candidate == name {

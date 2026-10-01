@@ -6,9 +6,9 @@ import (
 )
 
 func testAnchorFit() *weightFit {
-	return &weightFit{Available: true, Models: []learnedModelWeights{
-		{Model: "gpt-5.6-sol", Input: weightEstimate{Value: 1, Low: 1, High: 1, Identified: true}},
-		{Model: "gpt-6-astra", Input: weightEstimate{Value: 3, Low: 2.4, High: 3.6, Identified: true}},
+	return &weightFit{EligibilityVersion: weightEligibilityVersion, Available: true, Models: []learnedModelWeights{
+		{Model: "gpt-5.6-sol", Input: weightEstimate{Value: 1, Low: 1, High: 1, Identified: true}, Cache: weightEstimate{Value: .1, Low: .1, High: .1, Identified: true}, Output: weightEstimate{Value: 5, Low: 5, High: 5, Identified: true}},
+		{Model: "gpt-6-astra", Input: weightEstimate{Value: 3, Low: 2.4, High: 3.6, Identified: true}, Cache: weightEstimate{Value: .3, Low: .24, High: .36, Identified: true}, Output: weightEstimate{Value: 15, Low: 12, High: 18, Identified: true}},
 		{Model: "gpt-6-sol", Input: weightEstimate{Value: .5, Low: .5, High: .5, PriorLocked: true}},
 	}}
 }
@@ -23,7 +23,7 @@ func TestAnchoredPricesUseOfficialShapeAndRelativeAdjustment(t *testing.T) {
 	cfg.LearnedFit = testAnchorFit()
 	cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": ref, "gpt-6-astra": astra, "gpt-6-sol": sol}
 	got, adjustment := cfg.effectiveModelPrice(astra)
-	for _, check := range []struct{ value, want float64 }{{got.Input, 12}, {got.CacheRead, 1.2}, {got.Output, 60}, {got.CacheWrite, 15}} {
+	for _, check := range []struct{ value, want float64 }{{got.Input, 12}, {got.CacheRead, 1.2}, {got.Output, 60}, {got.CacheWrite, 12.5}} {
 		if math.Abs(check.value-check.want) > 1e-9 {
 			t.Fatalf("adjusted rate=%f want=%f", check.value, check.want)
 		}
@@ -41,7 +41,7 @@ func TestAnchoredPricesUseOfficialShapeAndRelativeAdjustment(t *testing.T) {
 		t.Fatalf("relative anchor price=%f", other.Input)
 	}
 	locked, lockInfo := cfg.effectiveModelPrice(sol)
-	if math.Abs(locked.Input-2/1.2) > 1e-9 || lockInfo.Calibrated {
+	if math.Abs(locked.Input-2) > 1e-9 || lockInfo.Calibrated {
 		t.Fatalf("locked target=%#v info=%#v", locked, lockInfo)
 	}
 	cfg.PricingMode = pricingModeCredits
@@ -104,8 +104,8 @@ func TestLongContextUsesLearnedOrOfficialTier(t *testing.T) {
 		want       float64
 		multiplier float64
 	}{
-		{"api_learned", pricingModeAPI, false, (700_000*12 + 200_000*1.2 + 100_000*15 + 50_000*60) / 1_000_000 * 1.2, 1.2},
-		{"api_locked", pricingModeAPI, true, (700_000*24 + 200_000*2.4 + 100_000*30 + 50_000*90) / 1_000_000, 2},
+		{"api_learned", pricingModeAPI, false, (700_000*12 + 200_000*1.2 + 100_000*12.5 + 50_000*60) / 1_000_000 * 1.2, 1.2},
+		{"api_locked", pricingModeAPI, true, (700_000*24 + 200_000*2.4 + 100_000*25 + 50_000*90) / 1_000_000, 2},
 		{"credits_learned", pricingModeCredits, false, (700_000*300 + 200_000*30 + 100_000*0 + 50_000*1500) / 1_000_000 * 1.2, 1.2},
 		{"credits_locked", pricingModeCredits, true, (700_000*300 + 200_000*30 + 100_000*0 + 50_000*1500) / 1_000_000, 1},
 	} {
@@ -158,15 +158,15 @@ func TestUnlistedCreditsPriceIsMarkedAsEstimate(t *testing.T) {
 	}
 }
 
-func TestAdjustmentUsesCurrentReferencePrice(t *testing.T) {
+func TestAdjustmentKeepsCreditLearningUnitsWhenAPICatalogChanges(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.PricingMode = pricingModeAPI
 	cfg.LearnedFit = testAnchorFit()
 	astra := price{Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50}
 	cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 5}, "gpt-6-astra": astra}
 	p, _ := cfg.effectiveModelPrice(astra)
-	if math.Abs(p.Input-15) > 1e-9 {
-		t.Fatalf("input=%f want 15 with current reference price 5", p.Input)
+	if math.Abs(p.Input-12) > 1e-9 {
+		t.Fatalf("input=%f want 12; API catalog prices must not change the Credits learning unit", p.Input)
 	}
 	delete(cfg.PriceCatalog, "gpt-5.6-sol")
 	p, _ = cfg.effectiveModelPrice(astra)

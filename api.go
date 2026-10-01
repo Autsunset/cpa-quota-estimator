@@ -147,10 +147,10 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if a.cfg.LearnedFit != nil && a.cfg.LearnedFit.Available {
 			for _, row := range a.cfg.LearnedFit.Models {
 				models = append(models, row.Model)
-				if row.Input.PriorLocked {
+				if hasUncalibratedComponent(row) {
 					locked = append(locked, row.Model)
 				}
-				if row.Input.PriorLocked || row.Model == "gpt-6-astra" {
+				if hasUncalibratedComponent(row) || row.Model == "gpt-6-astra" {
 					targets = append(targets, row.Model)
 				}
 			}
@@ -173,8 +173,8 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			return textResponse(409, "weight fit required before calibration")
 		}
 		before := calibrationWeight(a.cfg.LearnedFit, body.ModelB)
-		if before == nil || (!before.PriorLocked && normalizeModel(body.ModelB) != "gpt-6-astra") {
-			return textResponse(400, "model_b must be Astra or currently prior-locked")
+		if before == nil || !calibrationTargetEligible(a.cfg.LearnedFit, body.ModelB) {
+			return textResponse(400, "model_b must be Astra or have an uncalibrated token component")
 		}
 		if calibrationWeight(a.cfg.LearnedFit, body.ModelA) == nil {
 			return textResponse(400, "model_a must be in the weight fit")
@@ -234,6 +234,9 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		}
 		if !ok {
 			return jsonResponse(200, weightFit{Models: []learnedModelWeights{}})
+		}
+		if result.FittedWeights.EligibilityVersion != weightEligibilityVersion {
+			return jsonResponse(200, weightFit{EligibilityVersion: weightEligibilityVersion, Models: []learnedModelWeights{}})
 		}
 		current, err := a.store.overlayOnlineCycleScales(ctx, result.FittedWeights)
 		if err != nil {

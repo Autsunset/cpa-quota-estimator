@@ -21,18 +21,19 @@ type modelPriceAdjustment struct {
 }
 
 type modelPriceRow struct {
-	Model                  string               `json:"model"`
-	Official               price                `json:"official"`
-	OfficialListed         bool                 `json:"official_listed"`
-	Calculated             price                `json:"calculated"`
-	Adjustment             modelPriceAdjustment `json:"adjustment"`
-	DifferencePercent      float64              `json:"difference_percent"`
-	UncertaintyPercent     float64              `json:"uncertainty_percent"`
-	OfficialFastMultiplier float64              `json:"official_fast_multiplier"`
-	FastMultiplier         float64              `json:"fast_multiplier"`
-	OfficialLongMultiplier float64              `json:"official_long_multiplier"`
-	LongMultiplier         float64              `json:"long_multiplier"`
-	LongUncertaintyPercent float64              `json:"long_uncertainty_percent"`
+	Model                  string                          `json:"model"`
+	Official               price                           `json:"official"`
+	OfficialListed         bool                            `json:"official_listed"`
+	Calculated             price                           `json:"calculated"`
+	Adjustment             modelPriceAdjustment            `json:"adjustment"`
+	ComponentAdjustments   map[string]modelPriceAdjustment `json:"component_adjustments"`
+	DifferencePercent      float64                         `json:"difference_percent"`
+	UncertaintyPercent     float64                         `json:"uncertainty_percent"`
+	OfficialFastMultiplier float64                         `json:"official_fast_multiplier"`
+	FastMultiplier         float64                         `json:"fast_multiplier"`
+	OfficialLongMultiplier float64                         `json:"official_long_multiplier"`
+	LongMultiplier         float64                         `json:"long_multiplier"`
+	LongUncertaintyPercent float64                         `json:"long_uncertainty_percent"`
 }
 
 func validateCustomModelPrice(p customModelPrice) error {
@@ -58,37 +59,58 @@ func (c config) baseInputForModel(model, mode string) float64 {
 	return 0
 }
 
-func (c config) adjustmentForModel(model string, baseInput float64) modelPriceAdjustment {
-	result := modelPriceAdjustment{Factor: 1, Low: 1, High: 1}
+func unchangedPriceAdjustment() modelPriceAdjustment {
+	return modelPriceAdjustment{Factor: 1, Low: 1, High: 1}
+}
+
+func componentEstimate(row learnedModelWeights, field string) weightEstimate {
+	switch field {
+	case "cache_read":
+		return row.Cache
+	case "output":
+		return row.Output
+	default:
+		return row.Input
+	}
+}
+
+func componentPrice(p price, field string) float64 {
+	switch field {
+	case "cache_read":
+		return p.CacheRead
+	case "output":
+		return p.Output
+	default:
+		return p.Input
+	}
+}
+
+func (c config) adjustmentForComponent(model, field string) modelPriceAdjustment {
+	result := unchangedPriceAdjustment()
+	if normalizePricingMode(c.PricingMode) == pricingModeCustom || c.LearnedFit == nil || !c.LearnedFit.Available || field == "cache_write" {
+		return result
+	}
 	model = normalizeModel(model)
-	if normalizePricingMode(c.PricingMode) == pricingModeCustom {
+	p, ok := referencePrice(model, pricingModeCredits, c.PriceCatalog)
+	ref, found := referencePrice(weightReferenceModel, pricingModeCredits, c.PriceCatalog)
+	if !ok || !found || ref.Input <= 0 {
 		return result
 	}
-	if c.LearnedFit == nil || !c.LearnedFit.Available || baseInput <= 0 {
+	denominator := componentPrice(p, field) / ref.Input
+	if denominator <= 0 {
 		return result
-	}
-	mode := normalizePricingMode(c.PricingMode)
-	refInput := c.baseInputForModel(weightReferenceModel, mode)
-	if refInput <= 0 {
-		refInput = 4
-		if mode == pricingModeCredits {
-			refInput = 100
-		}
 	}
 	for _, row := range c.LearnedFit.Models {
 		if row.Model != model {
 			continue
 		}
-		if row.Input.PriorLocked || row.Input.Value <= 0 {
+		estimate := componentEstimate(row, field)
+		if estimate.PriorLocked || !estimate.Identified || estimate.Value <= 0 {
 			return result
 		}
-		denominator := baseInput / refInput
-		if denominator <= 0 {
-			return result
-		}
-		result.Factor = row.Input.Value / denominator
-		result.Low = row.Input.Low / denominator
-		result.High = row.Input.High / denominator
+		result.Factor = estimate.Value / denominator
+		result.Low = estimate.Low / denominator
+		result.High = estimate.High / denominator
 		result.Calibrated = true
 		if result.Low <= 0 {
 			result.Low = result.Factor
@@ -101,31 +123,44 @@ func (c config) adjustmentForModel(model string, baseInput float64) modelPriceAd
 	return result
 }
 
-func (c config) modelPriceAdjustment(p price) modelPriceAdjustment {
-	mode := normalizePricingMode(c.PricingMode)
-	result := modelPriceAdjustment{Factor: 1, Low: 1, High: 1}
-	if mode == pricingModeCustom {
+func (c config) componentPriceAdjustment(p price, field string) modelPriceAdjustment {
+	result := unchangedPriceAdjustment()
+	if normalizePricingMode(c.PricingMode) == pricingModeCustom {
 		return result
 	}
 	model := normalizeModel(p.Model)
 	anchor := normalizeModel(c.AnchorModel)
 	if anchor == "" {
-		anchor = "gpt-5.6-sol"
+		anchor = weightReferenceModel
 	}
 	if model == anchor {
 		result.Baseline = true
 		return result
 	}
-	base := priceForPricingMode(p, mode)
-	mine := c.adjustmentForModel(model, base.Input)
-	anchorAdj := c.adjustmentForModel(anchor, c.baseInputForModel(anchor, mode))
-	if anchorAdj.Factor <= 0 {
-		anchorAdj = modelPriceAdjustment{Factor: 1, Low: 1, High: 1}
+	mine := c.adjustmentForComponent(model, field)
+	// An unidentified component retains its own official rate rather than
+	// inheriting an input or anchor adjustment unsupported by its own data.
+	if !mine.Calibrated {
+		return result
 	}
+	anchorAdj := c.adjustmentForComponent(anchor, field)
 	result.Factor = mine.Factor / anchorAdj.Factor
 	result.Low = mine.Low / math.Max(anchorAdj.High, 1e-12)
 	result.High = mine.High / math.Max(anchorAdj.Low, 1e-12)
-	result.Calibrated = mine.Calibrated
+	result.Calibrated = true
+	return result
+}
+
+// Retain the old response's input adjustment for existing API consumers.
+func (c config) modelPriceAdjustment(p price) modelPriceAdjustment {
+	return c.componentPriceAdjustment(p, "input")
+}
+
+func (c config) componentPriceAdjustments(p price) map[string]modelPriceAdjustment {
+	result := make(map[string]modelPriceAdjustment)
+	for _, field := range []string{"input", "cache_read", "output", "cache_write"} {
+		result[field] = c.componentPriceAdjustment(p, field)
+	}
 	return result
 }
 
@@ -150,19 +185,18 @@ func (c config) effectiveModelPrice(p price) (price, modelPriceAdjustment) {
 		}
 		return base, adjustment
 	}
-	factor := adjustment.Factor
-	base.Input *= factor
-	base.CacheRead *= factor
-	base.Output *= factor
-	base.CacheWrite *= factor
-	base.LongInput *= factor
-	base.LongRead *= factor
-	base.LongOutput *= factor
-	base.LongWrite *= factor
-	base.FastInput *= factor
-	base.FastRead *= factor
-	base.FastOutput *= factor
-	base.FastWrite *= factor
+	components := c.componentPriceAdjustments(p)
+	input, cache, output := components["input"].Factor, components["cache_read"].Factor, components["output"].Factor
+	base.Input *= input
+	base.LongInput *= input
+	base.FastInput *= input
+	base.CacheRead *= cache
+	base.LongRead *= cache
+	base.FastRead *= cache
+	base.Output *= output
+	base.LongOutput *= output
+	base.FastOutput *= output
+	// Cache writes have no separate learner parameter and retain their rate.
 	return base, adjustment
 }
 
@@ -218,7 +252,7 @@ func (c config) priceRow(p price) modelPriceRow {
 	if mode == pricingModeCredits {
 		_, listed = officialCodexCreditPrice(p.Model)
 	}
-	row := modelPriceRow{Model: normalizeModel(p.Model), Official: official, OfficialListed: listed, Calculated: calculated, Adjustment: adjustment,
+	row := modelPriceRow{Model: normalizeModel(p.Model), Official: official, OfficialListed: listed, Calculated: calculated, Adjustment: adjustment, ComponentAdjustments: c.componentPriceAdjustments(p),
 		DifferencePercent:      (adjustment.Factor - 1) * 100,
 		UncertaintyPercent:     math.Max(math.Abs(adjustment.Factor-adjustment.Low), math.Abs(adjustment.High-adjustment.Factor)) / math.Max(adjustment.Factor, 1e-12) * 100,
 		OfficialFastMultiplier: c.officialFastMultiplier(p), FastMultiplier: c.effectiveFastMultiplier(p),
