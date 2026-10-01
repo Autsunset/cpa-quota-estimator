@@ -248,16 +248,31 @@ func sortedPooledModels(models map[string]pooledModelEstimate) []pooledModelEsti
 	return result
 }
 
-// Validation uses only earlier history, before the final external review tail.
-// Paired policies see the same crossings and update capacity AFTER prediction.
+// Pick the cutoff from this model's exposure history. Background observations
+// remain available to fit capacity, but cannot put every cold-model observation
+// on the validation side. Paired policies update capacity AFTER prediction.
 func pooledValidation(model string, segments []quotaSegment, prices map[string]price, opts weightLearnerOptions) pooledValidationEvidence {
+	model = normalizeModel(model)
 	sorted := append([]quotaSegment(nil), segments...)
 	sortSegmentsChronologically(sorted)
 	evidence := pooledValidationEvidence{Reason: "insufficient_validation"}
-	if len(sorted) < 10 {
+	var exposureTimes []int64
+	for _, segment := range sorted {
+		for _, feature := range segment.Features {
+			if feature.Tokens > 0 && normalizeModel(feature.Model) == model {
+				exposureTimes = append(exposureTimes, segment.EndAt)
+				break
+			}
+		}
+	}
+	// A two-thirds split needs ten target observations to leave at least four
+	// validation observations. This does not lower the existing admission gate.
+	if len(exposureTimes) < 10 {
 		return evidence
 	}
-	split := len(sorted) * 2 / 3
+	cutoff := exposureTimes[len(exposureTimes)*2/3]
+	// Keep simultaneous observations together, including related quota windows.
+	split := sort.Search(len(sorted), func(i int) bool { return sorted[i].EndAt >= cutoff })
 	training, validation := sorted[:split], sorted[split:]
 	evidence.TrainingSegments = len(training)
 	if len(training) < 5 {

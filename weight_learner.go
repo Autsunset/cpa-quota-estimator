@@ -12,7 +12,7 @@ const (
 	weightReferenceModel     = "gpt-5.6-sol"
 	weightObservationSD      = 0.35
 	weightHuberDelta         = 0.6
-	weightEligibilityVersion = 3
+	weightEligibilityVersion = 4
 )
 
 type weightLearnerOptions struct {
