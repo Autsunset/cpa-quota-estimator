@@ -41,7 +41,7 @@ func TestAnchoredPricesUseOfficialShapeAndRelativeAdjustment(t *testing.T) {
 		t.Fatalf("relative anchor price=%f", other.Input)
 	}
 	locked, lockInfo := cfg.effectiveModelPrice(sol)
-	if math.Abs(locked.Input-2) > 1e-9 || lockInfo.Calibrated {
+	if math.Abs(locked.Input-2/1.2) > 1e-9 || lockInfo.Calibrated {
 		t.Fatalf("locked target=%#v info=%#v", locked, lockInfo)
 	}
 	cfg.PricingMode = pricingModeCredits
@@ -83,8 +83,8 @@ func TestFastAndLongShowLearnedAgainstOfficial(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.PricingMode = pricingModeAPI
 	cfg.LearnedFit = testAnchorFit()
-	cfg.LearnedFit.Fast = weightEstimate{Value: 3, Low: 2.5, High: 3.5}
-	cfg.LearnedFit.LongContext = weightEstimate{Value: 1.2, Low: 1, High: 1.4}
+	cfg.LearnedFit.Fast = weightEstimate{Value: 3, Low: 2.5, High: 3.5, Identified: true}
+	cfg.LearnedFit.LongContext = weightEstimate{Value: 1.2, Low: 1, High: 1.4, Identified: true}
 	row := cfg.priceRow(p)
 	if row.OfficialFastMultiplier != 2 || row.FastMultiplier != 3 || row.OfficialLongMultiplier != 2 || math.Abs(row.LongMultiplier-1.2) > 1e-9 || math.Abs(row.LongUncertaintyPercent-100.0/6) > 1e-9 {
 		t.Fatalf("multipliers=%#v", row)
@@ -114,7 +114,7 @@ func TestLongContextUsesLearnedOrOfficialTier(t *testing.T) {
 			cfg.PricingMode = tc.mode
 			cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 4}, p.Model: p}
 			cfg.LearnedFit = testAnchorFit()
-			cfg.LearnedFit.LongContext = weightEstimate{Value: 1.2, Low: 1, High: 1.4, PriorLocked: tc.locked}
+			cfg.LearnedFit.LongContext = weightEstimate{Value: 1.2, Low: 1, High: 1.4, PriorLocked: tc.locked, Identified: !tc.locked}
 			got := calculateCost(p, detail, "", cfg)
 			if math.Abs(got-tc.want) > 1e-9 {
 				t.Fatalf("cost=%f want=%f", got, tc.want)
@@ -136,7 +136,7 @@ func TestFastUsesLearnedOrOfficialMultiplierWithoutStacking(t *testing.T) {
 			cfg.LongContextThreshold = 2_000_000
 			cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 4}, p.Model: p}
 			cfg.LearnedFit = testAnchorFit()
-			cfg.LearnedFit.Fast = weightEstimate{Value: 3, PriorLocked: locked}
+			cfg.LearnedFit.Fast = weightEstimate{Value: 3, PriorLocked: locked, Identified: !locked}
 			standard := calculateCost(p, usageDetail{InputTokens: 1_000_000}, "", cfg)
 			got := calculateCost(p, usageDetail{InputTokens: 1_000_000}, "fast", cfg)
 			want := 3.0

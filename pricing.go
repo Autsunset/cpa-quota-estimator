@@ -288,6 +288,13 @@ func calculateCost(p price, d usageDetail, serviceTier string, cfg config) float
 	if threshold <= 0 {
 		threshold = 272000
 	}
+	if mode != pricingModeCustom && d.InputTokens > threshold && isFastTier(serviceTier) {
+		if combined, ok := quotaFastLongApplied(cfg.LearnedFit, p.Model); ok {
+			cacheRead := max(d.CacheReadTokens, d.CachedTokens)
+			uncached := max(int64(0), d.InputTokens-cacheRead-d.CacheCreationTokens)
+			return (float64(uncached)*in + float64(cacheRead)*read + float64(d.CacheCreationTokens)*write + float64(d.OutputTokens)*out) / 1_000_000 * combined.Value
+		}
+	}
 	if d.InputTokens > threshold && (mode != pricingModeCustom || cfg.CustomLongContext) {
 		if learned, ok := cfg.learnedLongMultiplier(); ok {
 			// The fit measures the absolute long/standard ratio. It replaces

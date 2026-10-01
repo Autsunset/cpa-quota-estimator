@@ -12,10 +12,14 @@ const (
 	weightReferenceModel     = "gpt-5.6-sol"
 	weightObservationSD      = 0.35
 	weightHuberDelta         = 0.6
-	weightEligibilityVersion = 2
+	weightEligibilityVersion = 3
 )
 
 type weightLearnerOptions struct {
+	DisablePooled             bool
+	PooledDiagnosticOnly      bool
+	ApprovedPooledModels      map[string]bool
+	SkipPooledValidation      bool
 	HalfLifeDays              float64
 	MaxIterations             int
 	RandomWalkSigma           float64
@@ -63,13 +67,16 @@ type learnedCycleScale struct {
 }
 
 type weightEstimate struct {
-	Value       float64 `json:"value"`
-	Low         float64 `json:"low"`
-	High        float64 `json:"high"`
-	Identified  bool    `json:"identified"`
-	DataShare   float64 `json:"data_share"`
-	Correlated  bool    `json:"correlated,omitempty"`
-	PriorLocked bool    `json:"prior_locked,omitempty"`
+	Source      string          `json:"source,omitempty"`
+	Applied     bool            `json:"applied"`
+	Candidate   *weightEstimate `json:"candidate,omitempty"`
+	Value       float64         `json:"value"`
+	Low         float64         `json:"low"`
+	High        float64         `json:"high"`
+	Identified  bool            `json:"identified"`
+	DataShare   float64         `json:"data_share"`
+	Correlated  bool            `json:"correlated,omitempty"`
+	PriorLocked bool            `json:"prior_locked,omitempty"`
 }
 
 type learnedModelWeights struct {
@@ -91,6 +98,7 @@ type weightFit struct {
 	Models               []learnedModelWeights       `json:"models"`
 	Fast                 weightEstimate              `json:"fast"`
 	LongContext          weightEstimate              `json:"long_context"`
+	FastLong             *weightEstimate             `json:"fast_long,omitempty"`
 	ParameterNames       []string                    `json:"parameter_names"`
 	LogParameters        []float64                   `json:"log_parameters"`
 	Covariance           [][]float64                 `json:"covariance"`
@@ -98,6 +106,10 @@ type weightFit struct {
 	RandomWalkSigma      float64                     `json:"random_walk_sigma"`
 	TypeDiagnostics      []identifiabilityDiagnostic `json:"type_diagnostics"`
 	ComponentDiagnostics []identifiabilityDiagnostic `json:"component_diagnostics"`
+	PooledModels         []pooledModelEstimate       `json:"pooled_models"`
+	ModifierDiagnostics  []identifiabilityDiagnostic `json:"modifier_diagnostics"`
+	Guidance             []calibrationGuidance       `json:"guidance"`
+	ObservedModels       []string                    `json:"observed_models"`
 	ModelDiagnostics     []identifiabilityDiagnostic `json:"model_diagnostics"`
 	CycleScales          []learnedCycleScale         `json:"cycle_scales"`
 	MaxEndEventID        int64                       `json:"max_end_event_id"`
@@ -133,6 +145,10 @@ type weightModel struct {
 	includeInterrupted   bool
 	referenceMode        string
 	fixedModels          map[string]float64
+	rejectedParameters   map[string]weightEstimate
+	pooledDiagnostics    []identifiabilityDiagnostic
+	modifierDiagnostics  []identifiabilityDiagnostic
+	pooledModels         map[string]pooledModelEstimate
 }
 
 func modelGroup(segment quotaSegment) string { return segment.Account + "|" + segment.Window }
@@ -177,7 +193,11 @@ func referenceFeatureRate(feature segmentFeature, mode string, prices map[string
 		}
 	}
 	if feature.Fast {
-		rate *= 2.5
+		if mode == pricingModeAPI {
+			rate *= apiFastTokenMultiplier(p, feature.Type)
+		} else {
+			rate *= quotaFastDefault(feature.Model)
+		}
 	}
 	return rate
 }
@@ -233,6 +253,7 @@ func newWeightModel(segments []quotaSegment, prices map[string]price, now int64,
 	cycles := collectLearningCycles(segments)
 	typeDiagnostics, modelDiagnostics := assessWeightIdentifiability(segments, prices, now, opts)
 	componentDiagnostics := assessComponentIdentifiability(segments, prices, now, opts)
+	pooledDiagnostics, modifierDiagnostics := assessPooledAndModifierContrasts(segments, prices, now, opts, componentDiagnostics)
 	// Keep legacy diagnostic shapes available without presenting a removed
 	// shared-model/global-type parameter as independently calibrated.
 	for i := range typeDiagnostics {
@@ -251,7 +272,8 @@ func newWeightModel(segments []quotaSegment, prices map[string]price, now int64,
 		}
 	}
 	m := weightModel{index: make(map[string]int), prices: prices, cycles: cycles, referenceMode: pricingModeCredits, fixedModels: opts.FixedModelFactors,
-		typeDiagnostics: typeDiagnostics, modelDiagnostics: modelDiagnostics, componentDiagnostics: componentDiagnostics, includeInterrupted: opts.IncludeInterrupted}
+		typeDiagnostics: typeDiagnostics, modelDiagnostics: modelDiagnostics, componentDiagnostics: componentDiagnostics, includeInterrupted: opts.IncludeInterrupted,
+		pooledDiagnostics: pooledDiagnostics, modifierDiagnostics: modifierDiagnostics, pooledModels: make(map[string]pooledModelEstimate)}
 	add := func(name string, mean, sigma float64) {
 		m.index[name] = len(m.names)
 		m.names = append(m.names, name)
@@ -292,8 +314,27 @@ func newWeightModel(segments []quotaSegment, prices map[string]price, now int64,
 			add(diagnostic.Name, 0, .5)
 		}
 	}
-	add("fast", math.Log(2.5), .5)
-	add("long", 0, .5)
+	for _, diagnostic := range pooledDiagnostics {
+		m.pooledModels[diagnostic.Model] = pooledModelEstimate{Model: diagnostic.Model, Diagnostic: diagnostic,
+			Estimate: priorWeightEstimate(1, .5), Composition: observedPooledComposition(diagnostic.Model, segments, prices),
+			Evidence: pooledValidationEvidence{Reason: "insufficient_identifiability"}}
+		if diagnostic.Unlocked && !opts.DisablePooled && opts.FixedModelFactors[diagnostic.Model] <= 0 {
+			add(diagnostic.Name, 0, .5)
+		}
+	}
+	for _, diagnostic := range modifierDiagnostics {
+		if diagnostic.Unlocked || (diagnostic.ConditionalFisher > 1e-10 && diagnostic.WithinCycleShareSD > 1e-10) {
+			mean := 0.0
+			if diagnostic.Name == "fast" || diagnostic.Name == "fast_long" {
+				mean = math.Log(2.5)
+			}
+			sigma := .5
+			if diagnostic.Name == "fast_long" {
+				sigma = math.Sqrt(.5)
+			}
+			add(diagnostic.Name, mean, sigma)
+		}
+	}
 	if opts.IncludeInterrupted && opts.FitInterruptedCoefficient {
 		add("interrupt", math.Log(.02), 1.5)
 	}
@@ -331,19 +372,29 @@ func (m weightModel) predict(segment quotaSegment, x []float64) (float64, []floa
 		}
 		term := float64(feature.Tokens) / 1_000_000 * rate / denominator
 		modelIndex, hasModel := m.index[componentParameter(feature.Model, feature.Type)]
+		if !hasModel {
+			modelIndex, hasModel = m.index[pooledParameter(feature.Model)]
+			if hasModel && m.pooledModels != nil && m.pooledModels[normalizeModel(feature.Model)].Composition[feature.Type].Tokens <= 0 {
+				hasModel = false
+			}
+		}
 		if hasModel {
 			term *= math.Exp(x[modelIndex])
 		} else if fixed := m.fixedModels[normalizeModel(feature.Model)]; fixed > 0 {
 			term *= fixed
 		}
 		fastIndex, hasFast := m.index["fast"]
-		if feature.Fast && hasFast {
+		combinedIndex, hasCombined := m.index["fast_long"]
+		combined := feature.Fast && feature.Long && hasCombined
+		if combined {
+			term *= math.Exp(x[combinedIndex] - math.Log(2.5))
+		} else if feature.Fast && hasFast {
 			// The published credit reference already applies 2.5x Fast. The
 			// learned Fast parameter replaces that multiplier.
 			term *= math.Exp(x[fastIndex] - math.Log(2.5))
 		}
 		longIndex, hasLong := m.index["long"]
-		if feature.Long && hasLong {
+		if !combined && feature.Long && hasLong {
 			term *= math.Exp(x[longIndex])
 		}
 		value += term
@@ -351,10 +402,12 @@ func (m weightModel) predict(segment quotaSegment, x []float64) (float64, []floa
 		if hasModel {
 			grad[modelIndex] += weighted
 		}
-		if feature.Fast && hasFast {
+		if combined {
+			grad[combinedIndex] += weighted
+		} else if feature.Fast && hasFast {
 			grad[fastIndex] += weighted
 		}
-		if feature.Long && hasLong {
+		if !combined && feature.Long && hasLong {
 			grad[longIndex] += weighted
 		}
 	}
@@ -559,11 +612,21 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 		}
 	}
 	fit := weightFit{EligibilityVersion: weightEligibilityVersion, FittedAt: now, SegmentCount: len(segments), HalfLifeDays: opts.HalfLifeDays, RandomWalkSigma: opts.RandomWalkSigma}
+	observed := make(map[string]bool)
 	for _, segment := range segments {
+		for _, feature := range segment.Features {
+			if feature.Tokens > 0 {
+				observed[normalizeModel(feature.Model)] = true
+			}
+		}
 		if segment.EndEventID > fit.MaxEndEventID {
 			fit.MaxEndEventID = segment.EndEventID
 		}
 	}
+	for model := range observed {
+		fit.ObservedModels = append(fit.ObservedModels, model)
+	}
+	sort.Strings(fit.ObservedModels)
 	if len(segments) < 5 {
 		return fit, nil
 	}
@@ -571,6 +634,18 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 		opts.MaxIterations = 80
 	}
 	m := newWeightModel(segments, prices, now, opts)
+	if !opts.DisablePooled && !opts.PooledDiagnosticOnly && !opts.SkipPooledValidation {
+		approved := make(map[string]bool)
+		for model, pool := range m.pooledModels {
+			if !pool.Diagnostic.Unlocked {
+				continue
+			}
+			pool.Evidence = pooledValidation(model, segments, prices, opts)
+			approved[model] = pool.Evidence.Accepted
+			m.pooledModels[model] = pool
+		}
+		opts.ApprovedPooledModels = approved
+	}
 	if len(m.names) == 0 || len(m.names) > 64 {
 		return fit, errors.New("weight model has unsupported parameter count")
 	}
@@ -581,6 +656,75 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 	factorX, factorCov, _, _, err := optimizeWeightModel(factorModel, segments, now, opts)
 	if err != nil {
 		return fit, err
+	}
+	factorModel.priorMean = append([]float64(nil), factorModel.priorMean...)
+	factorModel.priorSigma = append([]float64(nil), factorModel.priorSigma...)
+	factorModel.rejectedParameters = make(map[string]weightEstimate)
+	for model, pool := range factorModel.pooledModels {
+		if _, exists := factorModel.index[pooledParameter(model)]; !exists {
+			continue
+		}
+		estimate := deriveFactorEstimate(factorModel, factorX, factorCov, []string{pooledParameter(model)}, 1)
+		if supportedWeight(estimate) {
+			estimate.Source = "pooled"
+		}
+		pool.Estimate = estimate
+		pool.Applied = supportedWeight(estimate) && opts.ApprovedPooledModels[model] && !opts.PooledDiagnosticOnly
+		if supportedWeight(estimate) && pool.Evidence.Reason == "insufficient_identifiability" {
+			pool.Evidence.Reason = "needs_validation"
+		}
+		factorModel.pooledModels[model] = pool
+		if !pool.Applied {
+			factorModel.rejectedParameters[pooledParameter(model)] = estimate
+			factorModel.priorSigma[factorModel.index[pooledParameter(model)]] = 1e-4
+		}
+	}
+	if len(factorModel.rejectedParameters) > 0 {
+		factorX, factorCov, _, _, err = optimizeWeightModel(factorModel, segments, now, opts)
+		if err != nil {
+			return fit, err
+		}
+	}
+	for pass := 0; pass <= len(factorModel.names); pass++ {
+		changed := false
+		for i, name := range factorModel.names {
+			if strings.HasPrefix(name, "scale:") {
+				continue
+			}
+			if _, already := factorModel.rejectedParameters[name]; already {
+				continue
+			}
+			estimate := deriveFactorEstimate(factorModel, factorX, factorCov, []string{name}, 1)
+			if !appliedWeight(estimate) {
+				factorModel.rejectedParameters[name] = estimate
+				factorModel.priorSigma[i] = 1e-4
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+		factorX, factorCov, _, _, err = optimizeWeightModel(factorModel, segments, now, opts)
+		if err != nil {
+			return fit, err
+		}
+		for name := range factorModel.rejectedParameters {
+			factorX[factorModel.index[name]] = factorModel.priorMean[factorModel.index[name]]
+		}
+	}
+	for model, pool := range factorModel.pooledModels {
+		if !pool.Applied {
+			continue
+		}
+		estimate := deriveFactorEstimate(factorModel, factorX, factorCov, []string{pooledParameter(model)}, 1)
+		pool.Applied = supportedWeight(estimate)
+		if pool.Applied {
+			estimate.Source = "pooled"
+		} else {
+			pool.Evidence.Accepted, pool.Evidence.Reason = false, "posterior_not_supported"
+		}
+		pool.Estimate = estimate
+		factorModel.pooledModels[model] = pool
 	}
 	// With shared factors held at their within-cycle estimates, smooth only
 	// the cycle scales using the configured random-walk prior.
@@ -613,6 +757,8 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 	fit.TypeDiagnostics = m.typeDiagnostics
 	fit.ModelDiagnostics = m.modelDiagnostics
 	fit.ComponentDiagnostics = m.componentDiagnostics
+	fit.ModifierDiagnostics = m.modifierDiagnostics
+	fit.PooledModels = sortedPooledModels(factorModel.pooledModels)
 	var absoluteError float64
 	for _, segment := range segments {
 		prediction, _ := m.predict(segment, x)
@@ -622,18 +768,37 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 	fit.Models = deriveModelWeights(factorModel, x, factorCov)
 	fit.Fast = deriveFactorEstimate(factorModel, x, factorCov, []string{"fast"}, 1)
 	fit.LongContext = deriveFactorEstimate(factorModel, x, factorCov, []string{"long"}, 1)
+	if _, exists := factorModel.index["fast_long"]; exists {
+		combined := deriveFactorEstimate(factorModel, x, factorCov, []string{"fast_long"}, 1)
+		fit.FastLong = &combined
+	}
 	if opts.IncludeInterrupted && opts.FitInterruptedCoefficient {
 		fit.Interrupted = deriveFactorEstimate(factorModel, x, factorCov, []string{"interrupt"}, 1)
 	}
 	fit.CycleScales = deriveCycleScales(scaleModel, x, scaleCov)
+	fit.Guidance = guidanceFromFit(fit)
 	return fit, nil
 }
 
 func deriveFactorEstimate(m weightModel, x []float64, covariance [][]float64, names []string, base float64) weightEstimate {
 	var logValue, variance, priorVariance float64
+	var present bool
 	correlated := false
 	for _, name := range names {
+		if rejected, ok := m.rejectedParameters[name]; ok {
+			value := base * math.Exp(m.priorMean[m.index[name]])
+			prior := priorWeightEstimate(value, .5)
+			candidate := rejected
+			if rejected.Candidate != nil {
+				candidate = *rejected.Candidate
+			}
+			candidate.Value, candidate.Low, candidate.High = candidate.Value*base, candidate.Low*base, candidate.High*base
+			candidate.Source, candidate.Candidate = "rejected", nil
+			prior.Candidate = &candidate
+			return prior
+		}
 		if i, ok := m.index[name]; ok {
+			present = true
 			logValue += x[i]
 			priorVariance += m.priorSigma[i] * m.priorSigma[i]
 			for _, other := range names {
@@ -648,7 +813,7 @@ func deriveFactorEstimate(m weightModel, x []float64, covariance [][]float64, na
 				// Component information already projects out independent cycle
 				// capacities. Correlation with that nuisance scale does not by
 				// itself mean two token rates cannot be distinguished.
-				if strings.HasPrefix(name, "component:") && strings.HasPrefix(m.names[j], "scale:") {
+				if (strings.HasPrefix(name, "component:") || strings.HasPrefix(name, "pooled:")) && strings.HasPrefix(m.names[j], "scale:") {
 					continue
 				}
 				correlation := covariance[i][j] / math.Sqrt(covariance[i][i]*covariance[j][j])
@@ -658,16 +823,81 @@ func deriveFactorEstimate(m weightModel, x []float64, covariance [][]float64, na
 			}
 		}
 	}
+	if !present {
+		if len(names) == 1 && names[0] == "fast" {
+			return priorWeightEstimate(2.5, .5)
+		}
+		return priorWeightEstimate(base, .5)
+	}
 	variance = math.Max(0, variance)
 	std := math.Sqrt(variance)
 	share := 1.0
 	if priorVariance > 0 {
 		share = math.Max(0, math.Min(1, 1-variance/priorVariance))
 	}
-	return weightEstimate{
+	result := weightEstimate{
 		Value: base * math.Exp(logValue), Low: base * math.Exp(logValue-1.96*std),
 		High: base * math.Exp(logValue+1.96*std), Identified: share >= .5 && !correlated, DataShare: share, Correlated: correlated,
 	}
+	for _, name := range names {
+		if name != "fast" && name != "long" && name != "fast_long" {
+			continue
+		}
+		for _, diagnostic := range m.modifierDiagnostics {
+			if diagnostic.Name != name || diagnostic.ConditionalFisher <= 1e-10 || diagnostic.WithinCycleShareSD <= 1e-10 {
+				continue
+			}
+			if !diagnostic.Unlocked || !result.Identified {
+				// A positive conditional contrast can support a deliberately
+				// prior-regularized prediction without independent certification.
+				result.Source, result.Identified, result.Applied = "provisional", false, true
+				return result
+			}
+		}
+	}
+	if result.Identified {
+		result.Source = "independent"
+		result.Applied = true
+	} else {
+		scaleOnly := len(names) > 0
+		for _, name := range names {
+			scaleOnly = scaleOnly && strings.HasPrefix(name, "scale:")
+		}
+		if scaleOnly {
+			// A nuisance capacity posterior stays active even when correlated
+			// with adjacent cycles; it is not a claimed token-price calibration.
+			result.Source = "estimated"
+			return result
+		}
+		result.Source = "rejected"
+		priorValue := base
+		for _, name := range names {
+			if i, ok := m.index[name]; ok {
+				priorValue *= math.Exp(m.priorMean[i])
+			}
+		}
+		prior := priorWeightEstimate(priorValue, math.Sqrt(priorVariance))
+		prior.Candidate = &result
+		return prior
+	}
+	return result
+}
+
+func priorWeightEstimate(base, sigma float64) weightEstimate {
+	return weightEstimate{Value: base, Low: base * math.Exp(-1.96*sigma), High: base * math.Exp(1.96*sigma),
+		PriorLocked: true, Source: "prior"}
+}
+
+func supportedWeight(estimate weightEstimate) bool {
+	return estimate.Identified && !estimate.PriorLocked && !estimate.Correlated && isFinitePositive(estimate.Value)
+}
+
+func appliedWeight(estimate weightEstimate) bool {
+	if supportedWeight(estimate) {
+		return true
+	}
+	return estimate.Source == "provisional" && estimate.Applied && !estimate.PriorLocked &&
+		isFinitePositive(estimate.Value) && isFinitePositive(estimate.Low) && isFinitePositive(estimate.High) && estimate.High >= estimate.Low
 }
 
 func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []learnedModelWeights {
@@ -695,6 +925,19 @@ func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []le
 			}
 			parameter := componentParameter(model, typ)
 			estimate := deriveFactorEstimate(m, x, covariance, []string{parameter}, base)
+			if model == weightReferenceModel && typ == "input" {
+				estimate = weightEstimate{Value: base, Low: base, High: base, Source: "anchor", PriorLocked: true}
+			} else if model == weightReferenceModel || !componentUnlocked[parameter] {
+				estimate = priorWeightEstimate(base, .5)
+			}
+			if pool, exists := m.pooledModels[model]; exists && pool.Applied && pool.Composition[typ].Tokens > 0 {
+				// This is an explicitly pooled shape allocation, never an
+				// independently identified token price. Keep component width.
+				estimate.Value = base * pool.Estimate.Value
+				estimate.Low = base * pool.Estimate.Low * math.Exp(-1.96*.5)
+				estimate.High = base * pool.Estimate.High * math.Exp(1.96*.5)
+				estimate.Source = "pooled"
+			}
 			if fixed := m.fixedModels[model]; fixed > 0 {
 				estimate.Value *= fixed
 				estimate.Low *= fixed
@@ -702,6 +945,7 @@ func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []le
 				estimate.PriorLocked = true
 				estimate.Identified = false
 				estimate.DataShare = 0
+				estimate.Source = "fixed"
 			}
 			if model != weightReferenceModel && !componentUnlocked[parameter] {
 				estimate.PriorLocked = true
@@ -739,6 +983,10 @@ func (fit weightFit) predict(segment quotaSegment, prices map[string]price) floa
 		return 0
 	}
 	m := weightModel{index: make(map[string]int), names: fit.ParameterNames, prices: prices}
+	m.pooledModels = make(map[string]pooledModelEstimate)
+	for _, pool := range fit.PooledModels {
+		m.pooledModels[pool.Model] = pool
+	}
 	for i, name := range fit.ParameterNames {
 		m.index[name] = i
 	}

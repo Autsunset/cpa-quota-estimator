@@ -76,6 +76,9 @@ type onlineCycleScale struct {
 	Precision float64
 }
 
+const onlineScaleMaxPrecision = 100.0
+const onlineScaleProcessVariance = .0009 // 3% log-scale drift per independent crossing.
+
 type onlineScaleTracker struct {
 	ByCycle         map[string]*onlineCycleScale
 	LastByGroup     map[string]*onlineCycleScale
@@ -133,6 +136,12 @@ func (s *onlineCycleScale) update(equivalent, observed, weight, interruptedContr
 	}
 	prior := s.LogValue
 	precision := s.Precision
+	if precision <= 0 || math.IsNaN(precision) || math.IsInf(precision, 0) {
+		precision = 1 / (2.5 * 2.5)
+	}
+	// Live and chronological backtests share this update. Each new crossing
+	// adds modest process uncertainty; old precision cannot freeze adaptation.
+	precision = math.Min(onlineScaleMaxPrecision, 1/(1/precision+onlineScaleProcessVariance))
 	x := prior
 	for iteration := 0; iteration < 12; iteration++ {
 		base := math.Exp(x) * equivalent
@@ -156,7 +165,7 @@ func (s *onlineCycleScale) update(equivalent, observed, weight, interruptedContr
 		robust *= weightHuberDelta / a
 	}
 	s.LogValue = x
-	s.Precision = precision + robust*base*base
+	s.Precision = math.Min(onlineScaleMaxPrecision, precision+robust*base*base)
 }
 
 func learnedSegmentEquivalent(segment quotaSegment, fit weightFit) float64 {
@@ -184,11 +193,17 @@ func learnedSegmentEquivalent(segment quotaSegment, fit weightFit) float64 {
 		case "output":
 			rate = row.Output.Value
 		}
+		if feature.Fast && feature.Long {
+			if combined, ok := quotaFastLongApplied(&fit, feature.Model); ok {
+				value += float64(feature.Tokens) / 1_000_000 * rate * combined.Value
+				continue
+			}
+		}
 		if feature.Fast {
-			rate *= fit.Fast.Value
+			rate *= quotaFastApplied(&fit, feature.Model)
 		}
 		if feature.Long {
-			rate *= fit.LongContext.Value
+			rate *= quotaLongApplied(&fit)
 		}
 		value += float64(feature.Tokens) / 1_000_000 * rate
 	}

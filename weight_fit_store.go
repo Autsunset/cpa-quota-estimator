@@ -120,11 +120,16 @@ func learnedEquivalentForUsage(fit *weightFit, model string, d usageDetail, serv
 	}
 	input := uncached + d.CacheCreationTokens
 	value := (float64(input)*row.Input.Value + float64(read)*row.Cache.Value + float64(d.OutputTokens)*row.Output.Value) / 1_000_000
+	if isFastTier(serviceTier) && d.InputTokens > longThreshold {
+		if combined, ok := quotaFastLongApplied(fit, model); ok {
+			return value * combined.Value, true
+		}
+	}
 	if isFastTier(serviceTier) {
-		value *= fit.Fast.Value
+		value *= quotaFastApplied(fit, model)
 	}
 	if d.InputTokens > longThreshold {
-		value *= fit.LongContext.Value
+		value *= quotaLongApplied(fit)
 	}
 	return value, true
 }

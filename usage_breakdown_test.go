@@ -31,14 +31,14 @@ INSERT INTO usage_events(cycle_id,requested_at,account,model,service_tier,input_
 	if got.Requests != 4 || got.Failed != 1 || got.UnpricedRequests != 1 || got.TotalTokens != 3_100_000 {
 		t.Fatalf("totals = %#v", got)
 	}
-	if math.Abs(got.OfficialCredits-232.5) > 1e-9 || got.QuotaGrowthPercent != 3 || !got.QuotaCoverageComplete {
+	if math.Abs(got.OfficialCredits-207.5) > 1e-9 || got.QuotaGrowthPercent != 3 || !got.QuotaCoverageComplete {
 		t.Fatalf("credits or account quota = %#v", got)
 	}
 	byModel := make(map[string]usageBreakdownRow)
 	for _, row := range got.Rows {
 		byModel[row.Model] = row
 	}
-	for model, want := range map[string]float64{"gpt-5.6-sol": 105, "gpt-6-sol": 125, "gpt-6-luna": 2.5} {
+	for model, want := range map[string]float64{"gpt-5.6-sol": 105, "gpt-6-sol": 100, "gpt-6-luna": 2.5} {
 		row := byModel[model]
 		if row.OfficialCredits == nil || math.Abs(*row.OfficialCredits-want) > 1e-9 {
 			t.Fatalf("%s row = %#v, want %g credits", model, row, want)

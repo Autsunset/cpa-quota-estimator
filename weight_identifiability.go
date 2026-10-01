@@ -128,7 +128,9 @@ func assessWeightParameter(segments []quotaSegment, prices map[string]price, now
 			group.Cross += weight * totalDerivative * targetDerivative
 			group.TargetSquared += weight * targetDerivative * targetDerivative
 		}
-		if group.Weight > 0 {
+		// Cycles with no exposure to this parameter provide no mix contrast.
+		// Counting their zero variance dilutes a new model's actual evidence.
+		if group.Weight > 0 && group.TargetSquared > 0 {
 			weightedVariance += group.ShareSquared - group.Share*group.Share/group.Weight
 			totalWeight += group.Weight
 		}

@@ -63,7 +63,7 @@ func TestStableCompositionCannotPretendToCalibrateSeparateRates(t *testing.T) {
 		if row.Model != "gpt-6.1-sol" {
 			continue
 		}
-		if !row.Input.PriorLocked || !row.Cache.PriorLocked || !row.Output.PriorLocked || row.Input.Value != .5 || row.Cache.Value != .025 || row.Output.Value != 2.5 {
+		if !row.Input.PriorLocked || !row.Cache.PriorLocked || !row.Output.PriorLocked || row.Input.Identified || row.Cache.Identified || row.Output.Identified {
 			t.Fatalf("proportional components were falsely identified: %#v", row)
 		}
 		return

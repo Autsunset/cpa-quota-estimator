@@ -8,8 +8,8 @@ import (
 
 func TestFitRepriceRequiresTwoPercentChangeAndSixHours(t *testing.T) {
 	old := testAnchorFit()
-	old.Fast = weightEstimate{Value: 2.5}
-	old.LongContext = weightEstimate{Value: 1}
+	old.Fast = weightEstimate{Value: 2.5, Identified: true}
+	old.LongContext = weightEstimate{Value: 1, Identified: true}
 	current := *old
 	current.Models = append([]learnedModelWeights(nil), old.Models...)
 	cfg := defaultConfig()
