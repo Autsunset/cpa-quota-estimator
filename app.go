@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,8 @@ import (
 type app struct {
 	mu                          sync.RWMutex
 	cfg                         config
+	requestedConfig             config
+	configured                  bool
 	store                       *store
 	cancel                      context.CancelFunc
 	pricingTaskMu               sync.Mutex
@@ -183,9 +186,18 @@ func (a *app) configure(raw []byte) error {
 	if err != nil {
 		return err
 	}
+	a.mu.RLock()
+	unchanged := a.configured && a.store != nil && reflect.DeepEqual(cfg, a.requestedConfig)
+	a.mu.RUnlock()
+	if unchanged {
+		// CPA repeats plugin.reconfigure during startup. Keep the active
+		// store, fit and task intact while returning valid capabilities.
+		return nil
+	}
 	if task, ok := a.latestPricingTask(""); ok && (task.Status == "queued" || task.Status == "running" || task.Status == "rolling_back") {
 		return fmt.Errorf("pricing recalculation is in progress")
 	}
+	requestedConfig := cfg
 	a.mu.RLock()
 	existing := a.store
 	samePath := existing != nil && a.cfg.DataPath == cfg.DataPath
@@ -247,6 +259,7 @@ func (a *app) configure(raw []byte) error {
 	}
 	oldStore, oldCancel := a.store, a.cancel
 	a.store, a.cfg = s, cfg
+	a.requestedConfig, a.configured = requestedConfig, true
 	a.pricingTaskMu.Lock()
 	a.lastAutoFitRepriceAt = lastAutoFit
 	a.lastPricedFit = cfg.LearnedFit

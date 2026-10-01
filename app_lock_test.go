@@ -43,3 +43,31 @@ func TestSlowAttributionWriterDoesNotHoldAppLock(t *testing.T) {
 		t.Fatal("fit application did not finish")
 	}
 }
+
+func TestIdenticalHostReconfigurationKeepsCapabilitiesDuringRepricing(t *testing.T) {
+	s, err := openStore(filepath.Join(t.TempDir(), "reconfigure.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	raw := []byte("data_path: " + s.path + "\npricing_mode: credits\n")
+	requested, err := parseConfig(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &app{store: s, cfg: requested, requestedConfig: requested, configured: true, pricingTask: &pricingRecalcTask{ID: "migration", Status: "running"}}
+	// A saved runtime basis may differ from the host's unchanged config.
+	a.cfg.PricingMode = pricingModeAPI
+	for _, status := range []string{"queued", "running", "rolling_back"} {
+		a.pricingTask.Status = status
+		if err := a.configure(raw); err != nil {
+			t.Fatalf("identical %s reconfigure failed: %v", status, err)
+		}
+		if a.store != s || a.cfg.PricingMode != pricingModeAPI || a.pricingTask.ID != "migration" {
+			t.Fatal("idempotent reconfigure changed active state")
+		}
+	}
+	if err := a.configure([]byte("data_path: " + s.path + "\npricing_mode: credits\nweight_fit_interval_minutes: 120\n")); err == nil {
+		t.Fatal("a real config change should wait for repricing")
+	}
+}
