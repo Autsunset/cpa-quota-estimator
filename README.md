@@ -69,7 +69,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 
 Choose `api`, `credits`, or `custom` in the dashboard. API and Credits anchor the selected model at its published rate and adjust each identifiable token component by `adj(model, component) / adj(anchor, component)`. Unidentified components keep their own official rates. Prior-locked adjustments equal 1. The price table displays calculated and official rates, status, and uncertainty separately for input, cached input, and output; Fast and long-context factors are compared separately. Custom mode offers input, cache-read, output, and cache-write USD rates for every catalog model, a Fast multiplier, and a long-context toggle and threshold. **Restore official prices** resets the custom draft. These values affect plugin estimates only, never upstream billing.
 
-`POST /pricing-settings` returns HTTP 202 with a task ID. Poll `GET /pricing-settings/task?id=<id>` for event/sample progress; another save receives 409 while a task runs. The in-memory pricing basis switches before the read snapshot, so new requests use it immediately. Historical rows are updated in batches; `recalculating` marks the temporary mixed state. On failure, the old basis and historical values are restored in batches. API aliases `legacy_api` and `current_api` map to `api`; `learned` maps to `credits`. Existing saved settings schedule a background batched migration on upgrade, without delaying plugin registration for repricing.
+`POST /pricing-settings` returns HTTP 202 with a task ID. Poll `GET /pricing-settings/task?id=<id>` for event/sample progress; another save receives 409 while a task runs. The in-memory pricing basis switches before the read snapshot, so new requests use it immediately. Historical rows are updated in batches; `recalculating` marks the temporary mixed state. On failure, the old basis and historical values are restored in batches. API aliases `legacy_api` and `current_api` map to `api`; `learned` maps to `credits`. Existing saved settings schedule a background batched migration on upgrade, without delaying plugin registration for repricing. Repeated identical host configuration is idempotent and preserves the running task and registered capabilities.
 
 `GET /pricing-settings` lists `api`, `credits`, and `custom` in `available_modes` alongside the active `pricing_mode`. `/prices` returns independent `component_adjustments` for `input`, `cache_read`, and `output`, with each component’s factor, interval, and calibration status. `/weights` exposes `component_diagnostics` with the model, Token type, and identification thresholds. The legacy row-level `adjustment` describes input only.
 
@@ -268,7 +268,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.18.0
+make package VERSION=0.18.1
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

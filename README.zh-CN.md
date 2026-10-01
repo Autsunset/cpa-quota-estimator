@@ -69,7 +69,7 @@
 
 仪表盘可选 `api`、`credits`、`custom`。API 和 Credits 令锚定模型保持公开单价，其他可辨识项按 `adj(模型, Token类型) / adj(锚定, Token类型)` 独立调整；不可辨识项保留自身官方单价。价格表逐项显示计算价、官方价、标定状态、差异和不确定性；Fast／长上下文另列计算与官方倍率。自定义口径可编辑每个模型的输入、缓存读取、输出、缓存写入美元价及 Fast 倍率、长上下文开关和阈值。“恢复官方价格”重置尚未保存的自定义草稿。以上只影响插件估值，不改变上游计费。
 
-`POST /pricing-settings` 立即返回 HTTP 202 和任务 ID；通过 `GET /pricing-settings/task?id=<id>` 查看请求／样本进度。任务进行中再次保存返回 409。任务读取快照前先切换内存口径，让新请求立刻使用目标价格；历史行按批次更新，`recalculating` 标明期间可能短暂混用新旧值。失败时按批恢复旧口径和历史值。旧接口名称 `legacy_api`、`current_api` 映射到 `api`，`learned` 映射到 `credits`；已有保存设置升级时后台分批迁移，不因重计价拖慢插件注册。
+`POST /pricing-settings` 立即返回 HTTP 202 和任务 ID；通过 `GET /pricing-settings/task?id=<id>` 查看请求／样本进度。任务进行中再次保存返回 409。任务读取快照前先切换内存口径，让新请求立刻使用目标价格；历史行按批次更新，`recalculating` 标明期间可能短暂混用新旧值。失败时按批恢复旧口径和历史值。旧接口名称 `legacy_api`、`current_api` 映射到 `api`，`learned` 映射到 `credits`；已有保存设置升级时后台分批迁移，不因重计价拖慢插件注册。CPA 重复下发相同配置时幂等返回，保留当前任务和已注册接口能力。
 
 `GET /pricing-settings` 除当前 `pricing_mode` 外，还通过 `available_modes` 列出 `api`、`credits`、`custom`。`/prices` 在 `component_adjustments` 中分别返回 `input`、`cache_read`、`output` 的倍率、区间和标定状态；`/weights` 在 `component_diagnostics` 中列出模型、Token 类型及辨识门槛。兼容字段 `adjustment` 仅描述输入项。
 
@@ -268,7 +268,7 @@ Fast 或长上下文倍率已标定时，用学到的倍率替代官方层级倍
 ```bash
 make test
 make build
-make package VERSION=0.18.0
+make package VERSION=0.18.1
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
