@@ -110,6 +110,11 @@ try {
   assert((await evaluate("$('#pricePreviewRows').children.length"))>=6,'price preview has model rows');
   assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'))"),true,'GPT-6.1 Sol is visible in price preview');
   assert.deepEqual(await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+']').dataset.calibrationStatus);})()"),['prior','calibrated','prior'],'only the calibrated component receives that status');
+  const priorPriceText = await evaluate("[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol')).querySelector('[data-price-field=input]').textContent");
+  assert(priorPriceText.includes('区间 [') && priorPriceText.includes('未标定'), 'uncalibrated prices retain a visible prior interval');
+  assert(!priorPriceText.includes('±0.0%'), 'an uncalibrated price must not claim zero uncertainty');
+  const referencePriceStatuses = await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-5.6-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+']').dataset.calibrationStatus);})()");
+  assert.deepEqual(referencePriceStatuses,['baseline','prior','prior'],'the input unit convention does not calibrate reference cache/output rates');
   assert.deepEqual(await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+'] b').textContent);})()"),['50 credits','4 credits','250 credits'],'a cache adjustment leaves input and output at official rates');
   assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-5.4'))"),false,'retired model hidden from price preview');
   assert(await evaluate("$('#account').getBoundingClientRect().width<=185 && $('#refresh').getBoundingClientRect().height===$('#wbSearchTrigger').getBoundingClientRect().height"),'toolbar control sizes');
@@ -122,6 +127,28 @@ try {
   await evaluate("$('#sync').click();true");
   await wait("$('#toolbarStatus').textContent.includes('已同步 1 个模型价格')",'pricing sync feedback');
   await screenshot('workbench-pricing-desktop');
+  const pooledRendering = await evaluate(`(() => {
+    renderWeightCard({available:true,segment_count:25,lag:2,fitted_at:1800000000,
+      fast:{source:'prior',value:2.5,low:0.94,high:6.66,prior_locked:true},
+      long_context:{source:'prior',value:1,low:0.38,high:2.66,prior_locked:true},
+      fast_long:{source:'provisional',value:2.856,low:1.4,high:5.8,identified:false,data_share:0.2},
+      models:[{model:'gpt-5.6-sol',input:{source:'anchor',value:1,low:1,high:1,prior_locked:true},cache:{source:'prior',value:0.1,low:0.038,high:0.266,prior_locked:true},output:{source:'prior',value:5,low:1.9,high:13.3,prior_locked:true}}],
+      pooled_models:[{model:'gpt-6.1-sol',estimate:{source:'pooled',value:1.4,low:1.2,high:1.6,identified:true},applied:false,
+        evidence:{validation_segments:5,prior_mae:0.2,candidate_mae:0.3,accepted:false},
+        composition:{input:{tokens:100,mean_share:0.2},cache:{tokens:1000,mean_share:0.5},output:{tokens:50,mean_share:0.3}}}],
+      guidance:[{model:'completed-model',action:'model_contrast',priority:100,completed:true},{model:'gpt-6.1-sol',action:'cache_contrast',priority:2,completed:false}]},{});
+    return {pooled:$('#weightPooled').textContent,weights:$('#weightRows').textContent,action:$('#weightAction').textContent,combined:$('#weightCombined').textContent,modifiers:$('#weightSummary').textContent,applied:$('#weightPooled [data-pooled-model]').dataset.applied};
+  })()`);
+  assert.equal(pooledRendering.applied,'false');
+  assert(pooledRendering.pooled.includes('尚未应用') && pooledRendering.pooled.includes('0.200 → 0.300'), 'failed validation remains visibly inactive');
+  assert(pooledRendering.weights.includes('基准约定，非实测标定') && pooledRendering.weights.includes('官方先验'), 'weight sources distinguish conventions and priors');
+  assert(pooledRendering.action.includes('gpt-6.1-sol') && pooledRendering.action.includes('缓存') && !pooledRendering.action.includes('completed-model'), 'guidance skips completed work');
+  assert(pooledRendering.combined.includes('2.86') && pooledRendering.combined.includes('暂估') && pooledRendering.combined.includes('不代表两个单项'), 'a combined provisional estimate is not presented as independent modifier calibration');
+  assert(pooledRendering.modifiers.includes('官方先验'), 'standalone modifiers retain their own prior labels');
+  await evaluate("$('#weightPooled').scrollIntoView({block:'center'});true");
+  await screenshot('pooled-validation-desktop');
+  await evaluate('renderWeightCard({},{});true');
+  assert.equal(await visible('weightCombined'),false,'clearing a fit also clears its combined-mode estimate');
   await evaluate("document.querySelector('input[name=pricingMode][value=custom]').click();true");
   assert.equal(await visible('customPriceEditor'),true);
   assert((await evaluate("$('#customPriceRows').children.length"))>=6,'custom editor has model rows');
@@ -191,7 +218,7 @@ try {
   await wait("document.documentElement.lang==='en' && $('#coverageExplanation').textContent.startsWith('Coverage unknown')",'English coverage strings');
   assert.equal(await evaluate("$('#pricingTitle').textContent"),'Pricing basis');
   assert.equal(await evaluate("document.querySelector('.price-preview h2').textContent"),'Price table');
-  assert.equal(await evaluate("document.querySelector('.pricing-choice small').textContent.startsWith('Start from current official API')"),true);
+  assert.equal(await evaluate("document.querySelector('.pricing-choice small').textContent.startsWith('Estimate from API rates')"),true);
   assert.equal(await evaluate("state.collection_coverage.mode"), 'unknown');
   await screenshot('coverage-unknown-mobile-en');
   await saveMode('cpa_only');
