@@ -10,7 +10,7 @@ import (
 )
 
 const pricingSettingsMetadataKey = "pricing_settings"
-const pricingFormulaMetadataKey = "pricing_formula_v0191_pooling"
+const pricingFormulaMetadataKey = "pricing_formula_v0192_pooling"
 
 type pricingSettings struct {
 	PricingMode          string                      `json:"pricing_mode"`
