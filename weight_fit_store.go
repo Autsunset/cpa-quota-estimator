@@ -55,6 +55,7 @@ func (s *store) refreshWeightFit(ctx context.Context, opts weightLearnerOptions)
 func (s *store) refreshWeightFitScheduled(ctx context.Context, opts weightLearnerOptions, previous weightBacktest, hasPrevious bool) (weightBacktest, error) {
 	now := time.Now().Unix()
 	if !hasPrevious || previous.GeneratedAt <= 0 || now-previous.GeneratedAt >= 24*3600 ||
+		previous.FittedWeights.EligibilityVersion != weightEligibilityVersion ||
 		previous.FittedWeights.RandomWalkSigma != opts.RandomWalkSigma || previous.FittedWeights.HalfLifeDays != opts.HalfLifeDays {
 		return s.refreshWeightFit(ctx, opts)
 	}

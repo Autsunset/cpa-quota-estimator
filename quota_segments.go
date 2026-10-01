@@ -78,13 +78,31 @@ type quotaSegment struct {
 	OtherFailedCount    int              `json:"other_failed_count"`
 }
 
-func (s quotaSegment) eligible() bool { return len(s.Flags) == 0 }
+// A long pause does not invalidate the complete-collection assumption used by
+// the learner. Segments already belong to one cycle/reset regime; retain the
+// gap flag for diagnostics while rejecting actual accounting ambiguities.
+func (s quotaSegment) eligible() bool {
+	for _, flag := range s.Flags {
+		if flag != "long_gap" {
+			return false
+		}
+	}
+	return true
+}
 
 func (s quotaSegment) eligibleWithInterrupted() bool {
 	if s.eligible() {
 		return true
 	}
-	return s.InterruptedCount > 0 && s.OtherFailedCount == 0 && len(s.Flags) == 1 && s.Flags[0] == "failed_request"
+	if s.InterruptedCount <= 0 || s.OtherFailedCount != 0 {
+		return false
+	}
+	for _, flag := range s.Flags {
+		if flag != "long_gap" && flag != "failed_request" {
+			return false
+		}
+	}
+	return true
 }
 
 func segmentKeysForEvent(e event, cycleID int64) []segmentKey {

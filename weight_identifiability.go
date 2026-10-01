@@ -56,7 +56,7 @@ func assessedModelNames(segments []quotaSegment, prices map[string]price) []stri
 			}
 		}
 	}
-	for _, model := range []string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-luna"} {
+	for _, model := range []string{"gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-luna"} {
 		if referenceFeatureRate(segmentFeature{Model: model, Type: "input"}, pricingModeCredits, prices) > 0 {
 			models[model] = true
 		}

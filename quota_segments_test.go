@@ -259,3 +259,27 @@ func TestHistoricalBackfillSplitsHiddenResetAndMergesMinuteJitter(t *testing.T) 
 		t.Fatalf("hidden reset segments=%#v", segments)
 	}
 }
+
+func TestLongGapRetainsSameCycleMixturesAndRejectsAmbiguousSegments(t *testing.T) {
+	events := []segmentEvent{
+		{ID: 1, RequestedAt: 100, Model: "gpt-5.6-sol", HasUsed: true, UsedPercent: 0, ResetAt: 100000},
+		{ID: 2, RequestedAt: 110, Model: "gpt-5.6-sol", HasUsed: true, UsedPercent: 0, ResetAt: 100000, InputTokens: 100000},
+		{ID: 3, RequestedAt: 10000, Model: "gpt-6.1-sol", HasUsed: true, UsedPercent: 1, ResetAt: 100000, InputTokens: 100000},
+	}
+	segments := buildQuotaSegments(segmentKey{Account: "a", Window: mainQuotaScope, CycleID: 1, ResetAt: 100000}, events, 0,
+		map[string]bool{"gpt-5.6-sol": true, "gpt-6.1-sol": true}, 272000, nil)
+	if len(segments) != 1 || !hasSegmentFlag(segments[0].Flags, "long_gap") || !segments[0].eligible() || len(segments[0].Features) != 2 {
+		t.Fatalf("same-cycle mixture should remain usable after a pause: %#v", segments)
+	}
+	for _, flag := range []string{"regime_change", "quota_drop", "quota_anomaly", "unknown_model", "failed_request", "lag_incomplete"} {
+		segment := segments[0]
+		segment.Flags = []string{"long_gap", flag}
+		if segment.eligible() {
+			t.Fatalf("gap bypassed %s exclusion", flag)
+		}
+	}
+	interrupted := quotaSegment{Flags: []string{"long_gap", "failed_request"}, InterruptedCount: 1}
+	if interrupted.eligible() || !interrupted.eligibleWithInterrupted() {
+		t.Fatal("interruptions should remain excluded by default and available to sensitivity analysis")
+	}
+}

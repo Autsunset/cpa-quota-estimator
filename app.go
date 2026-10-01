@@ -169,6 +169,9 @@ func fitNeedsRefresh(result weightBacktest, hasFit bool, cfg config) bool {
 	if !hasFit {
 		return true
 	}
+	if result.FittedWeights.EligibilityVersion != weightEligibilityVersion {
+		return true
+	}
 	if result.FittedWeights.RandomWalkSigma != cfg.WeightRandomWalkSigma || result.FittedWeights.HalfLifeDays != cfg.WeightHalfLifeDays {
 		return true
 	}

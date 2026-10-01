@@ -21,7 +21,7 @@ func TestScheduledFitReusesBacktestUntilDailyRefresh(t *testing.T) {
 		GeneratedAt:   time.Now().Unix() - 100,
 		SelectedLag:   1,
 		Scores:        []backtestScore{{Mode: "sentinel", MAE: 123}},
-		FittedWeights: weightFit{FittedAt: time.Now().Unix() - 100, RandomWalkSigma: opts.RandomWalkSigma, HalfLifeDays: opts.HalfLifeDays},
+		FittedWeights: weightFit{EligibilityVersion: weightEligibilityVersion, FittedAt: time.Now().Unix() - 100, RandomWalkSigma: opts.RandomWalkSigma, HalfLifeDays: opts.HalfLifeDays},
 	}
 	result, err := s.refreshWeightFitScheduled(context.Background(), opts, previous, true)
 	if err != nil {
@@ -37,5 +37,11 @@ func TestScheduledFitReusesBacktestUntilDailyRefresh(t *testing.T) {
 	}
 	if result.GeneratedAt == previous.GeneratedAt || len(result.Lags) != 3 {
 		t.Fatalf("daily backtest was skipped: %#v", result)
+	}
+	previous.GeneratedAt = time.Now().Unix() - 100
+	previous.FittedWeights.EligibilityVersion = 0
+	result, err = s.refreshWeightFitScheduled(context.Background(), opts, previous, true)
+	if err != nil || result.GeneratedAt == previous.GeneratedAt || len(result.Lags) != 3 || result.FittedWeights.EligibilityVersion != weightEligibilityVersion {
+		t.Fatalf("old eligibility rules must trigger a fresh backtest: %#v, %v", result, err)
 	}
 }

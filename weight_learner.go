@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	weightReferenceModel = "gpt-5.6-sol"
-	weightObservationSD  = 0.35
-	weightHuberDelta     = 0.6
+	weightReferenceModel     = "gpt-5.6-sol"
+	weightObservationSD      = 0.35
+	weightHuberDelta         = 0.6
+	weightEligibilityVersion = 1
 )
 
 type weightLearnerOptions struct {
@@ -77,26 +78,27 @@ type learnedModelWeights struct {
 }
 
 type weightFit struct {
-	Available        bool                        `json:"available"`
-	FittedAt         int64                       `json:"fitted_at"`
-	Lag              int                         `json:"lag"`
-	SegmentCount     int                         `json:"segment_count"`
-	EffectiveCount   float64                     `json:"effective_count"`
-	MeanAbsError     float64                     `json:"mean_abs_error"`
-	Objective        float64                     `json:"objective"`
-	Models           []learnedModelWeights       `json:"models"`
-	Fast             weightEstimate              `json:"fast"`
-	LongContext      weightEstimate              `json:"long_context"`
-	ParameterNames   []string                    `json:"parameter_names"`
-	LogParameters    []float64                   `json:"log_parameters"`
-	Covariance       [][]float64                 `json:"covariance"`
-	HalfLifeDays     float64                     `json:"half_life_days"`
-	RandomWalkSigma  float64                     `json:"random_walk_sigma"`
-	TypeDiagnostics  []identifiabilityDiagnostic `json:"type_diagnostics"`
-	ModelDiagnostics []identifiabilityDiagnostic `json:"model_diagnostics"`
-	CycleScales      []learnedCycleScale         `json:"cycle_scales"`
-	MaxEndEventID    int64                       `json:"max_end_event_id"`
-	Interrupted      weightEstimate              `json:"interrupted,omitempty"`
+	EligibilityVersion int                         `json:"eligibility_version"`
+	Available          bool                        `json:"available"`
+	FittedAt           int64                       `json:"fitted_at"`
+	Lag                int                         `json:"lag"`
+	SegmentCount       int                         `json:"segment_count"`
+	EffectiveCount     float64                     `json:"effective_count"`
+	MeanAbsError       float64                     `json:"mean_abs_error"`
+	Objective          float64                     `json:"objective"`
+	Models             []learnedModelWeights       `json:"models"`
+	Fast               weightEstimate              `json:"fast"`
+	LongContext        weightEstimate              `json:"long_context"`
+	ParameterNames     []string                    `json:"parameter_names"`
+	LogParameters      []float64                   `json:"log_parameters"`
+	Covariance         [][]float64                 `json:"covariance"`
+	HalfLifeDays       float64                     `json:"half_life_days"`
+	RandomWalkSigma    float64                     `json:"random_walk_sigma"`
+	TypeDiagnostics    []identifiabilityDiagnostic `json:"type_diagnostics"`
+	ModelDiagnostics   []identifiabilityDiagnostic `json:"model_diagnostics"`
+	CycleScales        []learnedCycleScale         `json:"cycle_scales"`
+	MaxEndEventID      int64                       `json:"max_end_event_id"`
+	Interrupted        weightEstimate              `json:"interrupted,omitempty"`
 }
 
 type randomWalkEdge struct {
@@ -546,7 +548,7 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 			segments = append(segments, segment)
 		}
 	}
-	fit := weightFit{FittedAt: now, SegmentCount: len(segments), HalfLifeDays: opts.HalfLifeDays, RandomWalkSigma: opts.RandomWalkSigma}
+	fit := weightFit{EligibilityVersion: weightEligibilityVersion, FittedAt: now, SegmentCount: len(segments), HalfLifeDays: opts.HalfLifeDays, RandomWalkSigma: opts.RandomWalkSigma}
 	for _, segment := range segments {
 		if segment.EndEventID > fit.MaxEndEventID {
 			fit.MaxEndEventID = segment.EndEventID

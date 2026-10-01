@@ -123,3 +123,31 @@ func TestStableTokenCompositionLocksTypeRatiosAndTracksCycleDrift(t *testing.T) 
 		}
 	}
 }
+
+func TestGPT61SolCanCalibrateFromPausedSameCycleModelMixtures(t *testing.T) {
+	const now = int64(1800000000)
+	var segments []quotaSegment
+	for i := 0; i < 40; i++ {
+		baseline, target := int64(1800000), int64(400000)
+		if i%2 == 1 {
+			baseline, target = 200000, 3600000
+		}
+		segments = append(segments, quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: 1, RegimeResetAt: now + 86400,
+			EndAt: now - int64(40-i)*10000, BoundaryWeight: 1, Flags: []string{"long_gap"},
+			DP:       float64(baseline)/1000000 + 1.4*.5*float64(target)/1000000,
+			Features: []segmentFeature{{Model: "gpt-5.6-sol", Type: "input", Tokens: baseline}, {Model: "gpt-6.1-sol", Type: "input", Tokens: target}}})
+	}
+	fit, err := fitQuotaWeights(segments, nil, now, defaultWeightLearnerOptions())
+	if err != nil || !fit.Available || fit.SegmentCount != len(segments) {
+		t.Fatalf("paused mixture fit failed: %#v, %v", fit, err)
+	}
+	for _, model := range fit.Models {
+		if model.Model == "gpt-6.1-sol" {
+			if model.Input.PriorLocked || math.Abs(model.Input.Value/.5-1.4) > .08 {
+				t.Fatalf("target multiplier not recovered: %#v", model)
+			}
+			return
+		}
+	}
+	t.Fatal("GPT-6.1 Sol missing from fit")
+}
