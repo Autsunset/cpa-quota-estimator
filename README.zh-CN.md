@@ -65,7 +65,7 @@
 - 默认保留 365 天数据，不存储请求正文或响应正文。
 - 可独立于 CPA Manager Plus（CPAMP）运行。
 
-审核方法、回归用例和实测误差见 [v0.19.0 标定审核记录](output/release-review-0.19.0/report.md)。
+审核方法、回归用例和实测误差见 [v0.19.1 标定审核记录](output/release-review-0.19.1/report.md)。
 
 ## 计价口径
 
@@ -270,7 +270,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.19.0
+make package VERSION=0.19.1
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。

@@ -65,7 +65,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 - Retains data for 365 days by default and never stores request or response bodies.
 - Runs independently of CPA Manager Plus (CPAMP).
 
-Review methodology, regression cases and measured errors: [v0.19.0 calibration review](output/release-review-0.19.0/report.md).
+Review methodology, regression cases and measured errors: [v0.19.1 calibration review](output/release-review-0.19.1/report.md).
 
 ## Pricing bases
 
@@ -270,7 +270,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.19.0
+make package VERSION=0.19.1
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
