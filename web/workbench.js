@@ -62,7 +62,7 @@ const wbCopy = {
   }
 };
 
-let workbenchView = matchMedia('(max-width: 760px)').matches ? 'accounts' : 'overview';
+let workbenchView = 'overview';
 let workbenchAccounts = [];
 let workbenchSelectedAccount = '';
 let workbenchLastLoaded = false;
@@ -236,8 +236,25 @@ function setupWorkbench() {
     });
   }
   setWorkbenchView(workbenchView, false);
+  setupMobileTables(shell);
   renderWorkbenchText();
   workbenchLoadStart('');
+}
+
+function setupMobileTables(shell) {
+  const labelTables = () => {
+    shell.querySelectorAll('.price-preview table,.custom-price-editor table,.usage-breakdown table,.model-allowances table,.weight-card table').forEach(table => {
+      table.classList.add('wb-mobile-table');
+      const labels = [...table.querySelectorAll('thead tr:first-child th')].map(cell => cell.textContent.trim());
+      table.querySelectorAll('tbody tr').forEach(row => {
+        [...row.cells].forEach((cell, index) => {
+          cell.dataset.label = labels[index] || '';
+        });
+      });
+    });
+  };
+  labelTables();
+  new MutationObserver(labelTables).observe(shell.querySelector('.wb-panels'), {childList: true, subtree: true});
 }
 
 function moveWorkbenchListFocus(event, selector) {
@@ -291,6 +308,13 @@ function setWorkbenchView(view, push = true) {
     const selected = tab.dataset.wbView === view;
     tab.setAttribute('aria-selected', String(selected));
     tab.tabIndex = selected ? 0 : -1;
+    if (selected) {
+      const tabs = $('#wbTabs');
+      if (tab.offsetLeft < tabs.scrollLeft) tabs.scrollLeft = tab.offsetLeft;
+      else if (tab.offsetLeft + tab.offsetWidth > tabs.scrollLeft + tabs.clientWidth) {
+        tabs.scrollLeft = tab.offsetLeft + tab.offsetWidth - tabs.clientWidth;
+      }
+    }
   });
   $('#wbEmpty').hidden = view === 'accounts' || Boolean(state && state.latest);
   $('#wbAllAccounts').setAttribute('aria-current', view === 'accounts' ? 'page' : 'false');
@@ -298,6 +322,7 @@ function setWorkbenchView(view, push = true) {
     history.pushState({cqeWorkbench: true, view: view, account: $('#account').value}, '');
   }
   if (push && previousView !== view) window.scrollTo({top: 0, behavior: 'instant'});
+  if (seriesState && view !== 'accounts') requestAnimationFrame(() => renderSeriesVisuals(seriesState));
 }
 
 function selectWorkbenchAccount(account) {

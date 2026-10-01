@@ -246,7 +246,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await evaluate("setWorkbenchView('accounts', false);true");
   assert.equal(await visible('wbSidebarError'),true,'mobile account list shows offline feedback');
-  assert(await evaluate("$('#refresh').getBoundingClientRect().width<=40 && !!$('#refresh').getAttribute('aria-label')"),'mobile reload control remains compact and named');
+  assert(await evaluate("$('#refresh').getBoundingClientRect().width===44 && !!$('#refresh').getAttribute('aria-label')"),'mobile reload control remains compact and named');
   await screenshot('workbench-mobile-offline');
   await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
   await wait("$('#wbFeedback').dataset.state==='good'",'online recovery');
@@ -273,6 +273,47 @@ try {
   await evaluate("setWorkbenchView('overview', false);true");
   await wait("getComputedStyle($('#wbSearchTrigger')).backgroundColor==='rgb(251, 252, 250)'",'light theme settled');
   await screenshot('workbench-overview-en');
+  for (const width of [320,375,390,430,768]) {
+    await send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:width<761});
+    for (const view of ['overview','usage','pricing','history','settings']) {
+      await evaluate(`setWorkbenchView('${view}', false);window.scrollTo(0,0);true`);
+      await pause(160);
+      assert.equal(await evaluate('innerWidth'),width,'viewport is not enlarged by overflowing content');
+      assert(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),width+'px '+view+' fits screen');
+      if (width<761) assert(await evaluate("[...$('#wbTabs').children].every(el=>{let r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.height>=44;})"),'all phone tabs are visible and touch sized');
+      if (width<761 && view==='pricing') {
+        assert(await evaluate("$('#pricePreviewRows').closest('table').scrollWidth<= $('#pricePreviewRows').closest('table').clientWidth+1"),'price cards do not need horizontal scrolling');
+        assert(await evaluate("[...$('#pricePreviewRows tr:first-child').cells].slice(1).every(cell=>cell.dataset.label.length>0)"),'price cards have field labels');
+      }
+      if (width<761 && view==='overview') {
+        assert(await evaluate("$('#paceCurve svg').viewBox.baseVal.width <= $('#paceCurve').clientWidth+1"),'pace chart uses available width');
+        assert(await evaluate("$('#paceCurve svg text').getBoundingClientRect().height>=9"),'mobile chart labels remain readable');
+      }
+    }
+    if (width===390) {
+      await evaluate("setWorkbenchView('overview', false);window.scrollTo(0,0);true");
+      await pause(160);
+      await screenshot('mobile-overview-readable');
+      const tab = await evaluate("(()=>{let el=$('[data-wb-view=pricing]'),r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()");
+      await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[tab]});
+      await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      await wait("$('#workbench').dataset.view==='pricing'",'touch opens pricing tab');
+      await screenshot('mobile-pricing-cards');
+      await evaluate("$('#pricePreviewRows').scrollIntoView({block:'start'});true");
+      await screenshot('mobile-price-details');
+    }
+  }
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await send('Page.navigate',{url:origin+'/mobile-host'});
+  await wait("document.querySelector('iframe')?.contentWindow.eval(\"typeof state!=='undefined' && state?.account && $('#workbench').dataset.loading!=='true'\")",'embedded phone loads account');
+  assert.equal(await evaluate("document.querySelector('iframe').contentWindow.eval(\"$('#workbench').dataset.view\")"),'overview','embedded phone opens account overview directly');
+  assert(await evaluate("document.querySelector('iframe').contentDocument.documentElement.scrollWidth<=390"),'embedded phone fits iframe');
+  await screenshot('mobile-embedded-overview');
+  await send('Emulation.setDeviceMetricsOverride',{width:1365,height:1100,deviceScaleFactor:1,mobile:false});
+  await send('Page.navigate',{url:origin});
+  await wait("typeof state!=='undefined' && state?.account && $('#wbFeedback').dataset.state==='good'",'return from embedded phone');
+  await select('language','en');
+  await wait("document.documentElement.lang==='en'",'restore English after embedded navigation');
   await send('Page.removeScriptToEvaluateOnNewDocument',{identifier:keyScript.identifier});
   await evaluate("localStorage.removeItem('cqe-persistent-key');sessionStorage.removeItem('cqe-key');localStorage.removeItem('cli-proxy-auth');localStorage.removeItem('managementKey');true");
   await send('Page.reload');

@@ -56,7 +56,9 @@ func TestCoverageBrowser(t *testing.T) {
 	}
 	seedCoverageUsage(t, s, "a-mixed", true, true)
 	seedCoverageUsage(t, s, "b-cpa", true, true)
-	if err=s.addDroppedUsageCount(context.Background(),2);err!=nil{t.Fatal(err)}
+	if err = s.addDroppedUsageCount(context.Background(), 2); err != nil {
+		t.Fatal(err)
+	}
 	a := &app{cfg: defaultConfig(), store: s}
 	catalog, err := loadPriceCatalog(context.Background(), s)
 	if err != nil {
@@ -85,6 +87,11 @@ func TestCoverageBrowser(t *testing.T) {
 		if r.URL.Path == "/v0/management/auth-files" {
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"files":[{"name":"a-mixed","provider":"codex","plan_type":"pro"},{"name":"b-cpa","provider":"codex","plan_type":"pro"},{"name":"waiting-cpa","provider":"codex","plan_type":"plus"}]}`)
+			return
+		}
+		if r.URL.Path == "/mobile-host" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			io.WriteString(w, `<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}iframe{border:0;width:100%;height:100dvh}</style><iframe src="/dashboard"></iframe>`)
 			return
 		}
 		if r.URL.Path == "/" || r.URL.Path == "/dashboard" {

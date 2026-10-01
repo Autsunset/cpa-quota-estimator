@@ -318,3 +318,77 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-contrast: more) {
   .wb-panel,.wb-account-item.is-selected,.wb-feedback[data-state] { border-color: var(--border-strong); }
 }
+
+@media (max-width: 760px) {
+  .wb-topbar { gap: 8px; padding: 0 12px; }
+  .wb-brand-name { min-width: 0; }
+  .wb-brand-name strong { max-width: 115px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wb-top-actions,.wb-global-controls { gap: 6px; }
+  .wb-global-controls button,.wb-global-controls select,.wb-search-trigger { height: 44px; }
+  .wb-search-trigger { width: 44px; min-width: 44px; }
+  .wb-global-controls #refresh { width: 44px; min-width: 44px; padding: 0; font-size: 0; }
+  .wb-global-controls #refresh::before { content: "↻"; font-size: 25px; }
+  .wb-main { padding: 12px 12px 32px; }
+  .wb-feedback { margin-bottom: 12px; }
+  .wb-back { min-height: 44px; margin-bottom: 2px; }
+  .wb-detail-header { gap: 10px; margin-bottom: 12px; }
+  .wb-detail-heading { width: 100%; }
+  .wb-detail-heading h1 { max-width: 100%; font-size: 22px; }
+  .wb-detail-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .wb-detail-controls #account,.wb-detail-controls #period { width: 100%; min-width: 0; height: 44px; }
+  .wb-tabs { position: sticky; top: 60px; z-index: 7; gap: 17px; margin: 0 -12px; padding: 0 12px; background: var(--bg); }
+  .wb-tabs button { min-height: 48px; font-size: 13px; }
+  .wb-panels { padding-top: 12px; }
+  .wb-panel { max-width: 100%; }
+  .wb-panel .charts,.wb-panel .details,.wb-panel .pace-grid,.wb-panel .weight-card-grid { grid-template-columns: minmax(0, 1fr); }
+  .wb-panel .chart,.wb-panel .pace-stats,.wb-panel .rows { min-width: 0; }
+  .wb-panel[data-wb-panel="overview"] .pace-stats,.wb-panel[data-wb-panel="overview"] .rows { padding: 0; }
+  .wb-panel .row { align-items: start; flex-direction: column; gap: 5px; }
+  .wb-panel .row b { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .wb-panel .legend { gap: 8px 12px; font-size: 11px; }
+  .wb-panel .section-head,.wb-panel-head,.wb-panel .spark-head { flex-wrap: wrap; gap: 12px; }
+  .wb-panel .chart-range { grid-template-columns: minmax(0, 1fr); }
+  .wb-panel .chart-range input,.wb-panel .chart-range button { grid-column: 1; }
+  .wb-panel .pricing-anchor label { display: grid; gap: 6px; }
+  .wb-panel .pricing-anchor select { width: 100%; min-width: 0; }
+  .wb-panel .calibration-controls { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .wb-panel .calibration-controls select,.wb-panel .calibration-controls input { width: 100%; max-width: none; min-width: 0; }
+  .wb-panel input:not([type="radio"]):not([type="checkbox"]),.wb-panel select,.wb-detail-controls select,
+  .wb-search-field input,.wb-command-head input,.loginbox input:not([type="checkbox"]) { font-size: 16px; }
+  .wb-panel button,.wb-panel select,.wb-panel input:not([type="radio"]):not([type="checkbox"]),
+  .wb-search-field,.wb-command-head button,.loginbox button { min-height: 44px; }
+  .wb-panel .price-preview-scroll,.wb-panel .custom-price-scroll { max-height: none; }
+  .wb-panel .wb-mobile-table { display: block; width: 100%; min-width: 0; }
+  .wb-mobile-table thead { display: none; }
+  .wb-mobile-table tbody { display: grid; gap: 12px; padding: 10px; }
+  .wb-mobile-table tr { display: block; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+  .wb-mobile-table td { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 2px 12px; padding: 9px 0; text-align: right; white-space: normal; overflow-wrap: anywhere; }
+  .wb-mobile-table td::before { content: attr(data-label); grid-column: 1; grid-row: 1 / span 5; text-align: left; color: var(--muted); font-size: 12px; }
+  .wb-mobile-table td > * { grid-column: 2; min-width: 0; }
+  .wb-mobile-table td:first-child { display: block; text-align: left; font-weight: 700; color: var(--ink-strong); }
+  .wb-mobile-table td:first-child::before { content: none; }
+  .wb-mobile-table td:last-child { border-bottom: 0; }
+  .wb-mobile-table input { min-width: 0; }
+  #paceCurve,#curve,#capacityCurve,#sparkCurve,#weeklyCurve,#sparkWeeklyCurve { overflow: visible; min-width: 0; }
+  #paceCurve svg,#curve svg,#capacityCurve svg,#sparkCurve svg,#weeklyCurve svg,#sparkWeeklyCurve svg {
+    display: block; width: 100%; min-width: 0; height: auto; margin-top: 12px;
+  }
+  .wb-command { max-height: calc(100dvh - 24px); margin-top: 12px; }
+  .wb-command-list { max-height: min(420px, calc(100dvh - 150px)); }
+  .wb-command-item { min-height: 48px; }
+  .login { padding: 16px; }
+  .loginbox { width: min(420px, 100%); }
+}
+@media (max-width: 360px) {
+  .wb-brand-name { display: none; }
+  .wb-detail-controls { grid-template-columns: minmax(0, 1fr); }
+  .wb-panel .grid { grid-template-columns: minmax(0, 1fr); }
+  .wb-panel .grid .card { border-right: 0; border-bottom: 1px solid var(--line); }
+  .wb-panel .grid .card:last-child { border-bottom: 0; }
+}
+.weight-model-diagnostics { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.weight-model-diagnostics p { margin: 5px 0; }
+@media (max-width: 760px) {
+  .wb-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; padding: 0 8px; overflow: visible; }
+  .wb-tabs button { min-width: 0; min-height: 56px; padding: 8px 3px; line-height: 1.3; font-size: 12px; white-space: normal; }
+}
