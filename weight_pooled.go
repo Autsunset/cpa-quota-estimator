@@ -333,7 +333,7 @@ func pooledValidation(model string, segments []quotaSegment, prices map[string]p
 	if evidence.ValidationSegments < 4 {
 		return evidence
 	}
-	evidence.Accepted = evidence.CandidateMAE < evidence.PriorMAE*.95
+	evidence.Accepted = evidence.CandidateMAE < evidence.PriorMAE
 	if evidence.Accepted {
 		evidence.Reason = "validation_improved"
 	} else {

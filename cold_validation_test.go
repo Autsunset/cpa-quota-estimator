@@ -45,3 +45,20 @@ func TestPooledValidationKeepsTimestampTiesOutOfTraining(t *testing.T) {
 		}
 	}
 }
+
+func TestPooledValidationAcceptsCandidateImprovingOutOfSampleError(t *testing.T) {
+	segments := pooledContrastSegments(24)
+	for i := range segments {
+		segments[i].Features = append(segments[i].Features, segmentFeature{
+			Model: weightReferenceModel, Type: "input", Tokens: 5000000,
+		})
+		segments[i].DP += 5.0
+	}
+	evidence := pooledValidation("gpt-6.1-sol", segments, nil, defaultWeightLearnerOptions())
+	if !evidence.Accepted || evidence.Reason != "validation_improved" {
+		t.Fatalf("expected accepted validation in mixed workload, got: %+v", evidence)
+	}
+	if evidence.CandidateMAE >= evidence.PriorMAE {
+		t.Fatalf("expected CandidateMAE < PriorMAE: %+v", evidence)
+	}
+}
