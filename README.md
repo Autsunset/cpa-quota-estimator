@@ -27,6 +27,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 
 - **All accounts in one view:** merge recorded accounts with the configured Codex OAuth inventory when available, including accounts awaiting their first sample and credentials that are disabled or unavailable. The table supports per-column filters, type-aware sorting, persisted resizing, and keyboard controls.
 - **A focused daily workspace:** search or compare accounts, open an account’s quota and forecast, then move to usage, model pricing, history, or settings without losing context. The account list orders sampled accounts by remaining quota and risk; zero-sample accounts explain the next step instead of displaying another account’s forecast.
+- **Faster loading:** show the selected account’s quota and charts before loading account comparisons, monthly reports, usage, and calibration details. Indexed history queries keep repeated cycle calculations from scanning the entire account.
 - **Independent quota scopes:** automatically separate a detected 5-hour Primary quota from its weekly Secondary quota for both the main Codex allowance and `gpt-5.3-codex-spark`, while keeping all Spark usage in a completely independent ledger.
 - **On phones:** open directly into the selected account, see all five tabs without horizontal scrolling and switch with touch controls, read charts at the screen width, and review model pricing and usage as labeled cards. History tables scroll within their own panel.
 - **Capacity in practical units:** estimate full-cycle and remaining capacity in Tokens and the selected pricing basis—official API USD rates, Codex Credits, or custom USD rates—with uncertainty ranges and confidence levels.
@@ -270,7 +271,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.19.3
+make package VERSION=0.19.4
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
