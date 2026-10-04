@@ -860,7 +860,7 @@ func TestLegacyDatabaseBackfillsQuotaCycles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = raw.Exec(`DROP INDEX idx_usage_cycle_time; DROP INDEX idx_quota_cycle_time; DROP TABLE quota_cycles; ALTER TABLE usage_events DROP COLUMN cycle_id; ALTER TABLE quota_samples DROP COLUMN cycle_id;`); err != nil {
+	if _, err = raw.Exec(`DROP INDEX idx_usage_cycle_time; DROP INDEX idx_usage_account_scope_cycle_reset; DROP INDEX idx_usage_cycle_totals; DROP INDEX idx_quota_cycle_time; DROP TABLE quota_cycles; ALTER TABLE usage_events DROP COLUMN cycle_id; ALTER TABLE quota_samples DROP COLUMN cycle_id;`); err != nil {
 		raw.Close()
 		t.Fatal(err)
 	}

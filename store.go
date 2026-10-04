@@ -179,6 +179,9 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if _, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_usage_cycle_time ON usage_events(cycle_id, requested_at); CREATE INDEX IF NOT EXISTS idx_usage_account_scope_time ON usage_events(account, quota_scope, requested_at); CREATE INDEX IF NOT EXISTS idx_quota_cycle_time ON quota_samples(cycle_id, sampled_at);`); err != nil {
 		return err
 	}
+	if err = s.ensureDashboardIndexes(); err != nil {
+		return err
+	}
 	if err = s.backfillCycles(); err != nil {
 		return err
 	}
@@ -196,6 +199,17 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 		return s.rebuildAllQuotaSegments(context.Background())
 	}
 	return nil
+}
+
+// Dashboard reads must not scan the entire account for each historical cycle.
+func (s *store) ensureDashboardIndexes() error {
+	_, err := s.db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_usage_account_scope_cycle_reset ON usage_events(account,quota_scope,cycle_id,reset_at);
+CREATE INDEX IF NOT EXISTS idx_usage_cycle_totals ON usage_events(cycle_id,quota_scope,requested_at,total_tokens,cost_usd);
+CREATE INDEX IF NOT EXISTS idx_usage_quota_observed ON usage_events(account,quota_scope,CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,id)
+WHERE failed=0 AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0;
+`)
+	return err
 }
 
 func (s *store) close() error { return s.db.Close() }

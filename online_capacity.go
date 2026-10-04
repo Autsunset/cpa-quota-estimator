@@ -122,7 +122,7 @@ func (s *store) accountOnlineScales(ctx context.Context, account string, cfg con
 	if cfg.LearnedFit != nil && cfg.LearnedFit.Available {
 		lag = cfg.LearnedFit.Lag
 	}
-	segments, err := s.quotaSegments(ctx, lag)
+	segments, err := s.queryQuotaSegments(ctx, "account=? AND window=? AND lag=? AND end_at<=?", account, mainQuotaScope, lag, cutoff)
 	if err != nil {
 		return nil, nil, err
 	}

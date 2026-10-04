@@ -616,12 +616,10 @@ func (s *store) cycles(ctx context.Context, account string, limit int) ([]quotaC
 	rows, err := s.db.QueryContext(ctx, `
 SELECT c.id,c.started_at,c.ended_at,c.reset_at,c.window_minutes,c.plan_type,c.close_reason,c.first_sample_at,c.last_sample_at,c.start_used_percent,c.end_used_percent,c.peak_used_percent,
 COALESCE(SUM(u.total_tokens),0),COALESCE(SUM(u.cost_usd),0),COUNT(u.id)
-FROM quota_cycles c
+FROM (SELECT * FROM quota_cycles WHERE account=? ORDER BY started_at DESC,id DESC LIMIT ?) c
 LEFT JOIN usage_events u ON u.cycle_id=c.id AND u.quota_scope='main'
-WHERE c.account=?
 GROUP BY c.id
-ORDER BY c.started_at DESC,c.id DESC
-LIMIT ?`, account, limit)
+ORDER BY c.started_at DESC,c.id DESC`, account, limit)
 	if err != nil {
 		return nil, err
 	}

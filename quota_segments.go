@@ -765,8 +765,12 @@ func (s *store) refreshSegmentsForEvent(ctx context.Context, tx *sql.Tx, e event
 }
 
 func (s *store) quotaSegments(ctx context.Context, lag int) ([]quotaSegment, error) {
+	return s.queryQuotaSegments(ctx, "lag=?", lag)
+}
+
+func (s *store) queryQuotaSegments(ctx context.Context, predicate string, args ...any) ([]quotaSegment, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,account,window,cycle_id,regime_reset_at,lag,start_event_id,end_event_id,feature_start_event_id,feature_end_event_id,
-		start_at,end_at,dp,boundary_weight,features_json,flags_json,interrupted_count,other_failed_count FROM quota_segments WHERE lag=? ORDER BY end_at,id`, lag)
+		start_at,end_at,dp,boundary_weight,features_json,flags_json,interrupted_count,other_failed_count FROM quota_segments WHERE `+predicate+` ORDER BY end_at,id`, args...)
 	if err != nil {
 		return nil, err
 	}
