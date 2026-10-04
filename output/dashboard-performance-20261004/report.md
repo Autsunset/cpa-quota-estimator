@@ -38,4 +38,10 @@ Weights, backtest, and prices remained below 1 ms each. Initial index creation a
 
 To repeat endpoint measurements on an existing, consistent backup with the appropriate schema, run `DASHBOARD_SNAPSHOT=/absolute/path/to/backup.sqlite go test -run '^TestDashboardSnapshotPerformance$' -count=3 -v .`. The test opens the backup read-only and does not run migrations. Optional `DASHBOARD_OUTPUT` saves response JSON locally for comparison.
 
-The source and local build are prepared as 0.19.4. Publishing a GitHub Release and upgrading the live plugin remain separate steps; the live plugin was still 0.19.3 during this review.
+## Release and live deployment
+
+[Release v0.19.4](https://github.com/Autsunset/cpa-quota-estimator/releases/tag/v0.19.4) was published on 2026-10-04. CI and all five platform builds passed; every archive matched `checksums.txt` and contained the required library at its root. The marketplace listing PR was confirmed merged, so no registry update was required.
+
+The live plugin was upgraded from 0.19.3 to 0.19.4 after an online database and binary backup. CPA restarted once; plugin registration, root HTTP health, all six additional dashboard endpoints, and the three new indexes were verified. New API remained healthy with its original start time.
+
+The live summary endpoint's median of three sequential local HTTP requests decreased from **4.6609 s to 1.4499 s (69% less)**. Before: 5.1697 / 4.4098 / 4.6609 s; after: 1.4848 / 1.4499 / 1.4453 s. This measures the deployed service under live traffic, including its HTTP/plugin bridge, and excludes the user's browser/network latency. It is not a complete browser page-load measurement.
