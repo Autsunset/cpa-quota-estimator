@@ -1630,6 +1630,7 @@ async function load() {
   workbenchLoadStart($('#account').value);
   try {
     let runningTask = await api('/pricing-settings/task').catch(() => null);
+    if (requestID !== loadSequence) return false;
     if (runningTask) renderPricingTask(runningTask);
     if (runningTask && ['queued','running','rolling_back'].includes(runningTask.status)) {
       watchPricingTask(runningTask);
@@ -1640,29 +1641,10 @@ async function load() {
     let period = $('#period').value;
     if (account) query.set('account', account);
     if (period) query.set('cycle_id', period);
-    let initial = await Promise.allSettled([
-      api('/overview'),
-      api('/summary' + (query.size ? '?' + query : '')),
-      loadConfiguredCodexAccounts()
-    ]);
+    let summary = await api('/summary' + (query.size ? '?' + query : ''));
     if (requestID !== loadSequence) return false;
-    if (initial[1].status === 'rejected') throw initial[1].reason;
-    let summary = initial[1].value;
     state = summary;
     $('#login').classList.remove('show');
-    let configuredAccounts = initial[2].status === 'fulfilled'
-      ? {available: true, accounts: initial[2].value}
-      : {available: false, accounts: []};
-    if (initial[0].status === 'fulfilled') {
-      renderOverview(initial[0].value, summary.account, configuredAccounts);
-    } else if (initial[0].reason && initial[0].reason.auth) {
-      throw initial[0].reason;
-    } else {
-      renderOverview({accounts: []}, summary.account, configuredAccounts);
-      $('#overviewCount').textContent = tr('overviewLoadFailed', {
-        message: initial[0].reason && initial[0].reason.message || tr('requestFailed')
-      });
-    }
     renderSummary(summary);
     let seriesQuery = new URLSearchParams({limit: '5000'});
     if (summary.account) seriesQuery.set('account', summary.account);
@@ -1679,38 +1661,63 @@ async function load() {
     if (showSparkQuota) monthlyQuery.set('include_spark', '1');
     let usageQuery = new URLSearchParams({days: $('#usageDays').value || '7'});
     if (summary.account) usageQuery.set('account', summary.account);
-    let results = await Promise.allSettled([
-      api('/series?' + seriesQuery),
+    // Prioritize the selected account. Historical reports must not delay its chart.
+    let series = await api('/series?' + seriesQuery);
+    if (requestID !== loadSequence) return false;
+    seriesState = series;
+    renderSeriesVisuals(series);
+    // Clear dependent account data before exposing the progressively loaded view.
+    $('#usageBreakdownRows').replaceChildren();
+    $('#usageBreakdownSummary').textContent = wb('loading');
+    for (const ids of [mainMonthlyIDs, weeklyMonthlyIDs, sparkMonthlyIDs, sparkWeeklyMonthlyIDs]) {
+      if (!$(ids.tokens)) continue;
+      renderMonthlySummary({}, ids, 'monthlyMethodNote');
+      $(ids.note).textContent = wb('loading');
+    }
+    renderGuidedCalibration(null, {}, summary.accounts || [], summary.account);
+    workbenchLoadReveal();
+    let [monthlyResult, usageResult, weightsResult, backtestResult, optionsResult, calibrationResult, pricesResult, overviewResult, configuredResult] = await Promise.allSettled([
       api('/monthly' + (monthlyQuery.size ? '?' + monthlyQuery : '')),
       api('/usage?' + usageQuery),
       api('/weights'),
       api('/weights/backtest'),
       api('/calibration/options'),
       api('/calibration?account=' + encodeURIComponent(calibrationSelectedAccount || summary.account || '')),
-      api('/prices')
+      api('/prices'),
+      api('/overview'),
+      loadConfiguredCodexAccounts()
     ]);
     if (requestID !== loadSequence) return false;
-    if (results[0].status === 'rejected') throw results[0].reason;
-    let series = results[0].value;
-    seriesState = series;
-    renderSeriesVisuals(series);
-    if (results[1].status === 'fulfilled') {
-      renderMonthly(results[1].value);
-    } else if (results[1].reason && results[1].reason.auth) {
-      throw results[1].reason;
+    let configuredAccounts = configuredResult.status === 'fulfilled'
+      ? {available: true, accounts: configuredResult.value}
+      : {available: false, accounts: []};
+    if (overviewResult.status === 'fulfilled') {
+      renderOverview(overviewResult.value, summary.account, configuredAccounts);
+    } else if (overviewResult.reason && overviewResult.reason.auth) {
+      throw overviewResult.reason;
     } else {
-      $('#monthlyNote').textContent = tr('loadFailed', {message: results[1].reason && results[1].reason.message || tr('requestFailed')});
+      renderOverview({accounts: []}, summary.account, configuredAccounts);
+      $('#overviewCount').textContent = tr('overviewLoadFailed', {
+        message: overviewResult.reason && overviewResult.reason.message || tr('requestFailed')
+      });
     }
-    if (results[2].status === 'fulfilled') {
-      renderUsageBreakdown(results[2].value);
-    } else if (results[2].reason && results[2].reason.auth) {
-      throw results[2].reason;
+    if (monthlyResult.status === 'fulfilled') {
+      renderMonthly(monthlyResult.value);
+    } else if (monthlyResult.reason && monthlyResult.reason.auth) {
+      throw monthlyResult.reason;
     } else {
-      $('#usageBreakdownSummary').textContent = tr('loadFailed', {message: results[2].reason && results[2].reason.message || tr('requestFailed')});
+      $('#monthlyNote').textContent = tr('loadFailed', {message: monthlyResult.reason && monthlyResult.reason.message || tr('requestFailed')});
+    }
+    if (usageResult.status === 'fulfilled') {
+      renderUsageBreakdown(usageResult.value);
+    } else if (usageResult.reason && usageResult.reason.auth) {
+      throw usageResult.reason;
+    } else {
+      $('#usageBreakdownSummary').textContent = tr('loadFailed', {message: usageResult.reason && usageResult.reason.message || tr('requestFailed')});
       $('#usageBreakdownRows').replaceChildren();
     }
-    if (results[3].status === 'fulfilled' && results[4].status === 'fulfilled') {
-      renderWeightCard(results[3].value, results[4].value);
+    if (weightsResult.status === 'fulfilled' && backtestResult.status === 'fulfilled') {
+      renderWeightCard(weightsResult.value, backtestResult.value);
     } else {
       $('#weightSummary').textContent = tr('weightsUnavailable');
       $('#weightTypeDiagnostic').textContent = '';
@@ -1721,10 +1728,10 @@ async function load() {
       $('#weightRows').replaceChildren();
       $('#weightBacktestRows').replaceChildren();
     }
-    renderGuidedCalibration(results[6].status === 'fulfilled' ? results[6].value : null,
-      results[5].status === 'fulfilled' ? results[5].value : {}, summary.accounts || [], summary.account);
-    if (results[7].status === 'fulfilled') {
-      priceCatalogState = results[7].value;
+    renderGuidedCalibration(calibrationResult.status === 'fulfilled' ? calibrationResult.value : null,
+      optionsResult.status === 'fulfilled' ? optionsResult.value : {}, summary.accounts || [], summary.account);
+    if (pricesResult.status === 'fulfilled') {
+      priceCatalogState = pricesResult.value;
       renderPricingSettings(summary.config,priceCatalogState);
       renderPricePreview(priceCatalogState);
     }

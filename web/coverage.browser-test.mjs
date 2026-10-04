@@ -67,7 +67,23 @@ try {
   await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride',{width:1365,height:1100,deviceScaleFactor:1,mobile:false});
   const keyScript = await send('Page.addScriptToEvaluateOnNewDocument',{source:"localStorage.setItem('cqe-persistent-key','local-browser-test');localStorage.setItem('cqe-language-mode','zh-CN');"});
+  const slowReportScript = await send('Page.addScriptToEvaluateOnNewDocument', {source: `
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      if (String(args[0]).includes('/monthly')) {
+        await new Promise(resolve => { window.releaseMonthlyReport = resolve; });
+      }
+      return originalFetch(...args);
+    };
+  `});
   await send('Page.navigate',{url:origin});
+  await wait("typeof state!=='undefined' && state?.account==='a-mixed' && seriesState && typeof window.releaseMonthlyReport==='function'", 'quota loads before slow monthly report');
+  assert.equal(await evaluate("$('#workbench').dataset.loading"), 'false', 'slow reports do not hide quota and charts');
+  assert.equal(await visible('used'), true, 'quota is visible while monthly report is pending');
+  assert.equal(await evaluate("$('#wbFeedback').dataset.state"), 'loading', 'remaining requests keep an updating indicator');
+  assert.equal(await evaluate("$('#monthTokens').textContent"), '—', 'pending report does not show stale account totals');
+  await evaluate('window.fetch = originalFetch; window.releaseMonthlyReport(); true');
+  await send('Page.removeScriptToEvaluateOnNewDocument', {identifier: slowReportScript.identifier});
   await wait("typeof state!=='undefined' && state?.account==='a-mixed' && seriesState && $('#fullTokens').textContent!=='—' && $('#monthTokens').textContent!=='—'", 'initial data');
   await screenshot('workbench-first-desktop');
   assert.equal(await evaluate("$('#coverageMode').value"),'cpa_only');

@@ -539,11 +539,17 @@ function workbenchPricingTaskStatus(task, percent) {
   }
 }
 
-function workbenchLoadEnd(success, error) {
+function workbenchLoadReveal() {
   const shell = $('#workbench');
   if (!shell) return;
   shell.dataset.loading = 'false';
   $('#wbLoading').hidden = true;
+}
+
+function workbenchLoadEnd(success, error) {
+  const shell = $('#workbench');
+  if (!shell) return;
+  workbenchLoadReveal();
   const offline = !navigator.onLine;
   $('#wbFeedback').dataset.state = success ? 'good' : offline ? 'offline' : 'error';
   $('#wbStateText').textContent = success ? wb('loaded') : offline ? wb('offline') : wb('error');
