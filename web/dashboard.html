@@ -310,6 +310,8 @@ const messages = {
     pricingPooledCandidateBrief: '未标定 · 综合估计待验证',
     pricingUncalibratedPure: '未标定 · 官方基准',
     pricingUncalibratedPureDetail: '未积累有效样本；完全沿用官方先验换算',
+    pricingObservedPrior: '未标定 · 已有样本',
+    pricingObservedPriorDetail: '已有有效用量样本，但尚不足以区分各项相对权重；保留官方先验并按所选输入基准换算。切换基准不会删除历史样本。',
     pricingPooledCellTitle: '该模型已根据真实用量初步标定综合倍率，输入/缓存/输出比例暂时保持官方结构；待各项独立样本充足后将自动转为独立标定。',
     pricingUncalibratedCellTitle: '当前周期尚无该模型的有效对比样本，所有 Token 单价完全采用官方先验换算。',
     pricingPooledCandidateTooltip: '已检测到综合估计候选，但时间交叉验证或对照条件尚未达到接纳阈值，暂未应用。',
@@ -650,6 +652,8 @@ const messages = {
     pricingPooledCandidateBrief: 'Uncalibrated · Candidate pending validation',
     pricingUncalibratedPure: 'Uncalibrated · Official baseline',
     pricingUncalibratedPureDetail: 'No valid samples; strictly using official prior rates',
+    pricingObservedPrior: 'Uncalibrated · Samples observed',
+    pricingObservedPriorDetail: 'Valid usage samples exist, but do not yet distinguish the relative component weights. Official priors are converted to the selected input baseline. Switching baselines does not delete history.',
     pricingPooledCellTitle: 'Overall model multiplier is preliminarily calibrated from real usage; input/cache/output ratios temporarily preserve official structure until independent samples accumulate.',
     pricingUncalibratedCellTitle: 'No valid contrast samples for this model yet; strictly converted from official prior rates.',
     pricingPooledCandidateTooltip: 'Candidate pooled multiplier detected, but out-of-sample validation or contrast requirements are not yet met; not applied.',
@@ -2866,9 +2870,9 @@ function renderPricePreview(data) {
         className = 'uncalibrated';
         tooltip = tr('pricingPooledCandidateTooltip');
       } else {
-        headerText += ' · ' + tr('pricingUncalibratedPure');
+        headerText += ' · ' + tr(item.observed ? 'pricingObservedPrior' : 'pricingUncalibratedPure');
         className = 'uncalibrated-pure';
-        tooltip = tr('pricingUncalibratedCellTitle');
+        tooltip = tr(item.observed ? 'pricingObservedPriorDetail' : 'pricingUncalibratedCellTitle');
       }
     }
     model.textContent = headerText;
@@ -2882,7 +2886,7 @@ function renderPricePreview(data) {
       model.append(pooled);
     } else if (calibratedCount === 0 && !item.adjustment?.baseline && activePricingMode() !== 'custom') {
       const uncalibratedNote = document.createElement('small');
-      uncalibratedNote.textContent = tr('pricingUncalibratedPureDetail');
+      uncalibratedNote.textContent = tr(item.observed ? 'pricingObservedPriorDetail' : 'pricingUncalibratedPureDetail');
       model.append(uncalibratedNote);
     }
     if (Number(item.fast_long?.value) > 0 && activePricingMode() !== 'custom') {
@@ -2936,7 +2940,7 @@ function renderPricePreview(data) {
         if (statusKey === 'pooled') {
           cell.title = tr('pricingPooledCellTitle');
         } else if (statusKey === 'prior') {
-          cell.title = tr('pricingUncalibratedCellTitle');
+          cell.title = tr(item.observed ? 'pricingObservedPriorDetail' : 'pricingUncalibratedCellTitle');
         }
       }
       cell.append(small);

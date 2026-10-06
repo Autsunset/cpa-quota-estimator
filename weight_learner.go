@@ -12,7 +12,7 @@ const (
 	weightReferenceModel     = "gpt-5.6-sol"
 	weightObservationSD      = 0.35
 	weightHuberDelta         = 0.6
-	weightEligibilityVersion = 5
+	weightEligibilityVersion = 6
 )
 
 type weightLearnerOptions struct {
@@ -927,7 +927,7 @@ func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []le
 			estimate := deriveFactorEstimate(m, x, covariance, []string{parameter}, base)
 			if model == weightReferenceModel && typ == "input" {
 				estimate = weightEstimate{Value: base, Low: base, High: base, Source: "anchor", PriorLocked: true}
-			} else if model == weightReferenceModel || !componentUnlocked[parameter] {
+			} else if !componentUnlocked[parameter] {
 				estimate = priorWeightEstimate(base, .5)
 			}
 			if pool, exists := m.pooledModels[model]; exists && pool.Applied && pool.Composition[typ].Tokens > 0 {

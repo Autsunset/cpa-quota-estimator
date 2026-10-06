@@ -19,7 +19,9 @@ func assessComponentIdentifiability(segments []quotaSegment, prices map[string]p
 	var diagnostics []identifiabilityDiagnostic
 	for _, model := range models {
 		for _, typ := range weightTokenTypes {
-			if model == weightReferenceModel {
+			// Only the reference input fixes the gauge; its cache/output
+			// ratios must remain learnable from composition contrasts.
+			if model == weightReferenceModel && typ == "input" {
 				continue
 			}
 			model, typ := model, typ
@@ -92,6 +94,13 @@ func assessComponentIdentifiability(segments []quotaSegment, prices map[string]p
 				continue
 			}
 			if other < n && opts.FixedModelFactors[diagnostics[other].Model] > 0 {
+				continue
+			}
+			// Reference diagnostics run first. A reference component that
+			// remains fixed at its prior is not a new fitted nuisance for
+			// other models; adding it would discard their existing evidence.
+			if other < n && diagnostics[target].Model != weightReferenceModel &&
+				diagnostics[other].Model == weightReferenceModel && !diagnostics[other].Unlocked {
 				continue
 			}
 			v := append([]float64(nil), column...)

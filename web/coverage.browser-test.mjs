@@ -131,6 +131,20 @@ try {
   assert(!priorPriceText.includes('±0.0%'), 'an uncalibrated price must not claim zero uncertainty');
   const referencePriceStatuses = await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-5.6-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+']').dataset.calibrationStatus);})()");
   assert.deepEqual(referencePriceStatuses,['baseline','prior','prior'],'the input unit convention does not calibrate reference cache/output rates');
+  const observedReference = await evaluate(`(() => {
+    const data = structuredClone(priceCatalogState);
+    const row = data.rows.find(item => item.model === 'gpt-5.6-sol');
+    row.observed = true;
+    row.adjustment.baseline = false;
+    row.component_adjustments.input.baseline = false;
+    renderPricePreview(data);
+    const rendered = [...$('#pricePreviewRows').children].find(row => row.firstElementChild.textContent.startsWith('gpt-5.6-sol'));
+    const text = rendered.firstElementChild.textContent + rendered.firstElementChild.title + rendered.querySelector('[data-price-field=cache_read]').title;
+    renderPricePreview(priceCatalogState);
+    return text;
+  })()`);
+  assert(observedReference.includes('已有样本') && observedReference.includes('切换基准不会删除历史样本'), 'former reference retains explicit sample evidence');
+  assert(!observedReference.includes('未积累有效样本'), 'observed but unidentified is not mislabeled as no samples');
   assert.deepEqual(await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+'] b').textContent);})()"),['50 credits','4 credits','250 credits'],'a cache adjustment leaves input and output at official rates');
   assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-5.4'))"),false,'retired model hidden from price preview');
   assert(await evaluate("$('#account').getBoundingClientRect().width<=185 && $('#refresh').getBoundingClientRect().height===$('#wbSearchTrigger').getBoundingClientRect().height"),'toolbar control sizes');

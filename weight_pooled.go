@@ -58,6 +58,9 @@ func assessPooledAndModifierContrasts(segments []quotaSegment, prices map[string
 	for _, d := range components {
 		if d.Unlocked {
 			independent[d.Model] = true
+			if d.Model == weightReferenceModel {
+				specs = append(specs, contrastColumn{d.Name, d.Model, d.TokenType})
+			}
 		}
 	}
 	for _, model := range assessedModelNames(segments, prices) {

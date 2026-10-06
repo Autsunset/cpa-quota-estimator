@@ -25,6 +25,7 @@ type modelPriceRow struct {
 	Model                  string                          `json:"model"`
 	Official               price                           `json:"official"`
 	OfficialListed         bool                            `json:"official_listed"`
+	Observed               bool                            `json:"observed"`
 	Calculated             price                           `json:"calculated"`
 	Adjustment             modelPriceAdjustment            `json:"adjustment"`
 	ComponentAdjustments   map[string]modelPriceAdjustment `json:"component_adjustments"`
@@ -184,6 +185,12 @@ func (c config) componentPriceAdjustment(p price, field string) modelPriceAdjust
 	result.High = mine.High / math.Max(anchorAdj.Low, 1e-12)
 	result.Source = mine.Source
 	result.Calibrated = mine.Calibrated && (anchorAdj.Calibrated || anchorAdj.Source == "anchor")
+	if mine.Source == "anchor" && anchorAdj.Calibrated {
+		// A fixed internal unit divided by a learned anchor still has an
+		// empirically calibrated relative rate, with denominator uncertainty.
+		result.Calibrated = true
+		result.Source = "independent"
+	}
 	if mine.Calibrated && anchorAdj.Calibrated && c.LearnedFit != nil {
 		typ := field
 		if typ == "cache_read" {
@@ -341,6 +348,12 @@ func (c config) priceRow(p price) modelPriceRow {
 		}
 	}
 	if mode != pricingModeCustom && c.LearnedFit != nil {
+		for _, model := range c.LearnedFit.ObservedModels {
+			if normalizeModel(model) == row.Model {
+				row.Observed = true
+				break
+			}
+		}
 		for _, pooled := range c.LearnedFit.PooledModels {
 			if pooled.Model == row.Model {
 				copy := pooled
