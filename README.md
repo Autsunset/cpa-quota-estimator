@@ -76,6 +76,8 @@ Choose `api`, `credits`, or `custom` in the dashboard. API and Credits convert e
 
 `GET /pricing-settings` lists `api`, `credits`, and `custom` in `available_modes`. `/prices` returns component factors, intervals, sources and independent-calibration flags in `component_adjustments`, the common input gauge in `anchor_adjustment`, and an optional `pooled` model estimate. `/weights` exposes `component_diagnostics`, `modifier_diagnostics`, `pooled_models`, optional combined `fast_long`, and passive `guidance`. Price rows expose actual applied modifier sources and uncertainty; `provisional` is distinct from independent calibration. Pooled evidence reports chronological training/validation counts, prior/candidate prediction errors and whether it was accepted; observed token composition is retained separately. Rejected candidates never become active values. The legacy row-level `adjustment` still describes input only.
 
+The learner fixes only GPT-5.6 Sol's input as its internal unit; its cache and output remain eligible for independent calibration. Selecting another display anchor preserves historical samples and converts the former reference input with the learned inverse-anchor uncertainty. `/prices` marks models present in eligible samples with `observed`; having samples does not guarantee that their component weights can be distinguished. The dashboard separates observed-but-unidentified models from models without eligible samples.
+
 ## Estimation
 
 For adjacent quota-growth samples in the same quota cycle:
@@ -271,7 +273,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.19.4
+make package VERSION=0.19.5
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

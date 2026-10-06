@@ -76,6 +76,8 @@
 
 `GET /pricing-settings` 通过 `available_modes` 列出 `api`、`credits`、`custom`。`/prices` 的 `component_adjustments` 返回各项倍率、区间、来源及独立标定状态，`anchor_adjustment` 返回共同输入锚，另可附带模型综合估计 `pooled`。`/weights` 返回 `component_diagnostics`、`modifier_diagnostics`、`pooled_models`、可选的组合估计 `fast_long` 和被动建议 `guidance`。价格行另标明实际应用倍率的来源和不确定性，`provisional` 暂估不等于独立标定。综合估计证据包含按时间划分的训练／验证段数、先验与候选的预测误差及是否接纳，另保留已观察的 Token 构成。被拒绝的候选不会作为生效值。兼容字段 `adjustment` 仍仅描述输入项。
 
+学习器仅固定 GPT-5.6 Sol 的输入作为内部单位，其缓存和输出仍可独立标定。切换展示基准会保留历史样本，并以新基准的逆向权重及其不确定性换算原基准输入。`/prices` 通过 `observed` 标记模型是否出现在有效样本中；有样本不代表能区分各项权重。仪表盘分别提示“已有样本但未能区分权重”和“尚无有效样本”。
+
 ## 估算方法
 
 对于同一额度周期内相邻的额度增长样本：
@@ -271,7 +273,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.19.4
+make package VERSION=0.19.5
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
