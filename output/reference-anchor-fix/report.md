@@ -26,3 +26,13 @@ On the snapshot, reference cache information was approximately 4.11 against the 
 An existing frozen-tail evaluation used the same 838 eligible segments and preselected lag 2 for old and new code. The last 168 segments were held out; model weights were fitted only on the preceding 670 segments. Learned mean absolute error is unchanged at 0.064803 quota percentage points; the published-Credits comparison is unchanged at 0.082598. The existing short-prefix cases of 10, 25, 50 and 100 observations are also numerically unchanged. These reused diagnostics check regressions, not general accuracy guarantees.
 
 Checks include the complete Go suite, race detection, browser regression coverage on desktop/mobile and both languages, JavaScript syntax, bilingual README/version consistency, Git whitespace checks, and the native shared-library build. Release artifacts and the live deployment are verified separately before declaring the server fixed.
+
+## Release And Deployment
+
+The v0.19.5 Release workflow and CI completed successfully. All five platform archives matched the published `checksums.txt` and contained exactly the required shared library at the archive root. Marketplace registration PR 78 was rechecked and is merged, so this ordinary version upgrade requires no registry PR.
+
+The deployed plugin is `/opt/proxy/cpa/plugins/linux/amd64/cpa-quota-estimator-v0.19.5.so`. The online backup of 156,454 usage events and the previous binary is retained under `/opt/proxy/cpa/backups/reference-anchor-v0.19.5-20261006T211032Z/`. The binary was replaced while CPA stayed running; CPA was then restarted once and the new plugin loaded and registered successfully.
+
+The initial historical refit took longer than the short validation window. Only the deployment validator was paused temporarily to let the healthy CPA finish; neither CPA nor New API was paused. The resulting fit is available with eligibility 6, 974 segments, GPT-5.6 Sol in observed models, and separate cache/output diagnostics. Its history-repricing task subsequently completed successfully for 156,466 usage events.
+
+The original Credits mode and GPT-5.6 Sol display anchor were preserved. SQLite integrity and nondecreasing raw event/sample counts were verified, along with HTTP health and the summary's version. New API remained healthy with its original container start time throughout. The live dashboard resource contains the new observed-sample rendering and bilingual messages.
