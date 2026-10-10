@@ -38,10 +38,41 @@ and their aggregate pricing value were preserved. Eight independent image
 requests were detached from main usage, and five misplaced samples were
 removed. SQLite integrity remained `ok`.
 
-Release and live deployment checks are recorded after completion.
-
 The complete Go suite, race detector, `go vet`, Linux amd64 shared-library
 build, embedded JavaScript syntax checks, Markdown lint, bilingual/version
 consistency checks, and Git whitespace checks passed. The browser integration
 suite passed desktop/mobile, both languages, loading/error/offline handling,
 coverage settings, and pricing-task checks with zero JavaScript exceptions.
+
+## Release And Deployment
+
+Release workflow 38060914960 and CI workflow 38060911708 succeeded.
+The regular v0.19.6 GitHub Release was published on October 10, 2026,
+with Linux amd64/arm64, macOS amd64/arm64, Windows amd64, and
+`checksums.txt`. All five downloaded archives passed SHA-256, root-library
+layout, and ZIP CRC checks. Marketplace registration PR 78 was rechecked
+and is merged; no registry update or replacement registration PR is needed.
+
+The deployed library is
+`/opt/proxy/cpa/plugins/linux/amd64/cpa-quota-estimator-v0.19.6.so`.
+The online backup, previous library, and configuration are retained under
+`/opt/proxy/cpa/backups/image-quota-v0.19.6-20261010T145707Z/`.
+Preparation and atomic replacement completed while CPA remained running.
+CPA was restarted once; the new version loaded and registered successfully.
+Rollback was not needed. New API remained healthy with its original
+October 9, 2026 container start time throughout.
+
+The deployment backup contains 165,312 raw requests. Comparison against
+the running database found zero missing or changed immutable raw fields.
+Eight independent image requests, totaling 22,675 Tokens, were isolated,
+and five misplaced main-quota samples were removed. The main cycle retains
+its seven-day schedule and no longer contains daily image-pool chart points.
+SQLite integrity remains `ok`, and the dropped-usage counter remains zero.
+
+The asynchronous refit completed with 1,016 eligible segments, lag 2,
+and eligibility version 6. The subsequent historical repricing task
+succeeded for 165,343 requests. That normal repricing updates selected-basis
+values after fitting; it is separate from the repair's preservation checks.
+Credits mode and the GPT-5.6 Sol display anchor were preserved. Final live
+HTTP, pricing-task, database, and service checks passed at 23:12 on
+October 10, 2026 (Asia/Shanghai).
