@@ -29,6 +29,7 @@ The dashboard answers the operational questions that raw quota percentages do no
 - **A focused daily workspace:** search or compare accounts, open an account’s quota and forecast, then move to usage, model pricing, history, or settings without losing context. The account list orders sampled accounts by remaining quota and risk; zero-sample accounts explain the next step instead of displaying another account’s forecast.
 - **Faster loading:** show the selected account’s quota and charts before loading account comparisons, monthly reports, usage, and calibration details. Indexed history queries keep repeated cycle calculations from scanning the entire account.
 - **Independent quota scopes:** automatically separate a detected 5-hour Primary quota from its weekly Secondary quota for both the main Codex allowance and `gpt-5.3-codex-spark`, while keeping all Spark usage in a completely independent ledger.
+- **Image-pool isolation:** keep independently identified image-generation quotas and usage out of main quota charts, accounting, calibration, and forecasts, without discarding their raw request records.
 - **On phones:** open directly into the selected account, see all five tabs without horizontal scrolling and switch with touch controls, read charts at the screen width, and review model pricing and usage as labeled cards. History tables scroll within their own panel.
 - **Capacity in practical units:** estimate full-cycle and remaining capacity in Tokens and the selected pricing basis—official API USD rates, Codex Credits, or custom USD rates—with uncertainty ranges and confidence levels.
 - **Actionable forecasts:** compare actual usage with a sustainable baseline, cumulative-average pace, and recent pace to estimate exhaustion time and whether a quota will survive until reset.
@@ -107,7 +108,7 @@ Quota percentages and reset times describe the entire upstream account quota poo
 Use **Collection coverage for this account** to select a mode and save it for the selected AuthID:
 
 | Mode | Dashboard choice | Capacity conversions |
-|---|---|---|
+| --- | --- | --- |
 | `cpa_only` | Assume all usage goes through CPA | Enabled under this explicit assumption; this is the default for unconfigured accounts and preserves existing estimates |
 | `mixed` | Mixed routes (CPA + direct, etc.) | Disabled because some usage is not collected |
 | `unknown` | Coverage unknown | Disabled until collection coverage is established |
@@ -129,6 +130,10 @@ An inferred early reset with a later schedule remains subject to correction by s
 Quota evidence is ordered by when its response headers were observed: request time plus TTFT for streaming requests, or total latency when TTFT is unavailable. Actual Tokens and monthly request attribution continue to use the original request timestamp. Sampling baselines are tracked per declared reset schedule, so a confirmed server-side rollback can lower the current percentage instead of remaining pinned to a temporary higher value. When a repeated alternate schedule later returns to the prior schedule, the API reports an `upstream_regime_reverted` anomaly; the dashboard preserves that interval in red, breaks estimation across both boundaries, and continues forecasting from trustworthy samples. Exact before/start/peak/recovery anchors are reconstructed from retained raw requests. The full-cycle chart draws one thin canonical spike instead of overplotting every dense anomalous sample, while the anomaly card includes a readable detail sparkline. Capacity history remains disconnected through the anomalous interval and resumes at the recovery boundary with the last trustworthy estimate, even when an older plugin version did not sample the lower restored percentages.
 
 Spark has model-specific quota scopes and reset schedules that are independent of the main Codex allowance. A detected 5-hour Spark Primary window remains the Spark 5-hour axis, while its weekly Secondary headers feed a separate `spark_weekly` axis; their percentages, reset cycles, and capacity estimates are never mixed, although both axes attribute actual Tokens and pricing value from the same Spark requests. Older Spark observations that expose only one weekly Primary window retain their single-window behavior. Spark requests are excluded from the main monthly actual Tokens, requests, pricing value, cycle ledger, charts, consumed-quota equivalent, and capacity estimates. If a Spark planned reset is corrected before the old boundary while usage continues to rise, the plugin updates the affected Spark axis instead of creating overlapping cycles or counting the same requests twice. The dashboard hides Spark quota by default; enable **Show Spark quota** at the top to display both detected axes below all main-quota content, each with its own quota, cumulative Token, and cumulative pricing-value curve plus a full monthly cycle table. The weekly curve always spans the complete declared seven-day cycle, with its start and expected reset shown explicitly above the chart. The plugin does not actively poll upstream quota, and the dashboard's **Refresh** button only reloads stored observations. If a scheduled Spark reset passes without another Spark request, the expired cycle is closed at its scheduled boundary and the current window/next reset are projected from the prior schedule. Current usage remains **Awaiting sample** until a successful Spark request returns fresh headers; two consistent successful observations are still required to confirm the new scheduled window.
+
+Image-generation responses whose `X-Codex-Active-Limit` is `imagegen` or starts with `imagegen_` belong to a separate `image` scope. They never overwrite the main reset schedule or enter its charts, actual usage, monthly totals, calibration, quota attribution, or capacity learning. This classification works even with raw-header capture disabled. If the active-limit header is absent, a `gpt-image-*` model or alias with an exactly 24-hour Primary window is also isolated. Historical image requests that report the normal `premium` pool or only a weekly window remain in the main scope; model names alone are not grounds for moving old usage.
+
+On upgrade, a one-time transactional repair reclassifies proven image-pool records, removes their misplaced main-chart samples, restores affected cycle schedules, and recomputes cumulative main usage. Derived segments and fits are rebuilt. Raw request IDs, timestamps, headers, Token counts, and pricing values are preserved; image records remain in SQLite with `quota_scope: "image"` and `cycle_id: 0`. A dedicated image-quota dashboard is not provided. Take an online SQLite backup before upgrading.
 
 Calendar-month totals use Asia/Shanghai boundaries:
 
@@ -224,7 +229,7 @@ For each selected primary cycle—and for the independent weekly cycle when dete
 All management routes are protected by CPA Management Key:
 
 | Method | Path | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/v0/management/cpa-quota-estimator/overview` | Current primary and detected weekly-quota overview for every recorded account |
 | GET | `/v0/management/cpa-quota-estimator/usage?account=<AuthID>&days=7` | Recent per-model usage for 1, 7, or 30 days, with official-rate credit references and account-wide quota growth |
 | GET | `/v0/management/cpa-quota-estimator/weights` | Latest learned model weights, intervals, factors, and diagnostics |
@@ -273,7 +278,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.19.5
+make package VERSION=0.19.6
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
