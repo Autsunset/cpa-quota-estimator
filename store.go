@@ -182,6 +182,9 @@ CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 	if err = s.ensureDashboardIndexes(); err != nil {
 		return err
 	}
+	if err = s.repairImageQuotaScopes(context.Background()); err != nil {
+		return err
+	}
 	if err = s.backfillCycles(); err != nil {
 		return err
 	}

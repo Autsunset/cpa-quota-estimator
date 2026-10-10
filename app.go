@@ -470,6 +470,7 @@ func (a *app) recordUsage(r usageRecord) error {
 	// Canonicalize to a minute so one quota cycle is not split into many.
 	reset = canonicalResetAt(reset)
 	window, _ := headerInt(r.ResponseHeaders, "X-Codex-Primary-Window-Minutes")
+	scope := quotaScopeForObservation(r.Model, r.Alias, header(r.ResponseHeaders, "X-Codex-Active-Limit"), window)
 	var usedPtr *float64
 	if hasUsed {
 		usedPtr = &used
@@ -483,7 +484,7 @@ func (a *app) recordUsage(r usageRecord) error {
 	secondaryReset, hasSecondaryReset := headerInt(r.ResponseHeaders, "X-Codex-Secondary-Reset-At")
 	secondaryWindow, hasSecondaryWindow := headerInt(r.ResponseHeaders, "X-Codex-Secondary-Window-Minutes")
 	var secondaryUsedPtr *float64
-	if isFiveHourWindow(window) && hasSecondaryUsed && hasSecondaryReset && hasSecondaryWindow && secondaryReset > 0 && isWeeklyWindow(secondaryWindow) {
+	if scope != imageQuotaScope && isFiveHourWindow(window) && hasSecondaryUsed && hasSecondaryReset && hasSecondaryWindow && secondaryReset > 0 && isWeeklyWindow(secondaryWindow) {
 		secondaryUsedPtr = &secondaryUsed
 		secondaryReset = canonicalResetAt(secondaryReset)
 	} else {
@@ -497,9 +498,9 @@ func (a *app) recordUsage(r usageRecord) error {
 	if account == "" {
 		account = "unknown"
 	}
-	e := event{RequestedAt: requested, ObservedAt: observed, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, SecondaryUsedPercent: secondaryUsedPtr, SecondaryResetAt: secondaryReset, SecondaryWindowMinutes: secondaryWindow, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type"), QuotaScope: quotaScopeForUsage(r.Model, r.Alias)}
+	e := event{RequestedAt: requested, ObservedAt: observed, Account: account, Provider: r.Provider, Model: r.Model, Alias: r.Alias, ServiceTier: r.ServiceTier, InputTokens: r.Detail.InputTokens, OutputTokens: r.Detail.OutputTokens, ReasoningTokens: r.Detail.ReasoningTokens, CacheReadTokens: max(r.Detail.CacheReadTokens, r.Detail.CachedTokens), CacheWriteTokens: r.Detail.CacheCreationTokens, TotalTokens: total, CostUSD: cost, Failed: r.Failed, StatusCode: r.Failure.StatusCode, UsedPercent: usedPtr, ResetAt: reset, WindowMinutes: window, SecondaryUsedPercent: secondaryUsedPtr, SecondaryResetAt: secondaryReset, SecondaryWindowMinutes: secondaryWindow, PlanType: header(r.ResponseHeaders, "X-Codex-Plan-Type"), QuotaScope: scope}
 	e.IngestID = newUsageIngestID()
-	if a.cfg.LearnedFit != nil && !r.Failed {
+	if a.cfg.LearnedFit != nil && !r.Failed && scope != imageQuotaScope {
 		e.LearnedFit = a.cfg.LearnedFit
 		e.LearnedQuotaPct = a.store.learnedQuotaAttributionLive(ctx, a.cfg.LearnedFit, account, e.QuotaScope, r.Model, r.ServiceTier, e.ResetAt, r.Detail, a.cfg.LongContextThreshold)
 		if secondaryUsedPtr != nil {

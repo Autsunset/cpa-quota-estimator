@@ -173,6 +173,9 @@ func learnedScale(fit *weightFit, account, window string, cycleID, resetAt int64
 }
 
 func learnedQuotaAttribution(fit *weightFit, account, window, model, serviceTier string, cycleID, resetAt int64, d usageDetail, longThreshold int64) *float64 {
+	if window == imageQuotaScope {
+		return nil
+	}
 	value, ok := learnedEquivalentForUsage(fit, model, d, serviceTier, longThreshold)
 	if !ok {
 		return nil
@@ -231,7 +234,7 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 		if !e.Failed {
 			update.Primary = learnedQuotaAttribution(fit, e.Account, e.Scope, e.Model, e.Tier, e.CycleID, e.ResetAt, detail, longThreshold)
 		}
-		if e.HasSecondary && !e.Failed {
+		if e.HasSecondary && !e.Failed && e.Scope != imageQuotaScope {
 			window := weeklyQuotaScope
 			if e.Scope == sparkQuotaScope {
 				window = sparkWeeklyQuotaScope

@@ -110,6 +110,9 @@ func (s *store) applyOnlineSegmentsForEndEvent(ctx context.Context, eventID int6
 }
 
 func (s *store) learnedQuotaAttributionLive(ctx context.Context, fit *weightFit, account, window, model, tier string, resetAt int64, d usageDetail, longThreshold int64) *float64 {
+	if window == imageQuotaScope {
+		return nil
+	}
 	value, ok := learnedEquivalentForUsage(fit, model, d, tier, longThreshold)
 	if !ok {
 		return nil

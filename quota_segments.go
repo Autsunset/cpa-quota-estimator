@@ -107,6 +107,9 @@ func (s quotaSegment) eligibleWithInterrupted() bool {
 
 func segmentKeysForEvent(e event, cycleID int64) []segmentKey {
 	scope := eventQuotaScope(e)
+	if scope == imageQuotaScope {
+		return nil
+	}
 	keys := make([]segmentKey, 0, 2)
 	if e.UsedPercent != nil && e.ResetAt > 0 && e.WindowMinutes > 0 {
 		key := segmentKey{Account: e.Account, Window: scope, CycleID: 0, ResetAt: e.ResetAt}
