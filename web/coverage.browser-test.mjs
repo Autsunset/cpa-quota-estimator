@@ -63,6 +63,53 @@ try {
     const result = await send('Page.captureScreenshot',{format:'png'});
     await fs.writeFile(root + '/' + name + '.png',Buffer.from(result.data,'base64'));
   };
+  const checkInverseAnchor = async english => {
+    const result = await evaluate(`(() => {
+      const data = structuredClone(priceCatalogState);
+      const reference = data.rows.find(item => item.model === 'gpt-5.6-sol');
+      const input = {source:'inverse_anchor',calibrated:true,baseline:false,factor:1.7709096,low:1.02,high:3.08};
+      reference.adjustment = {...input};
+      reference.component_adjustments = {
+        input,
+        cache_read:{source:'prior',calibrated:false,factor:input.factor,low:0.382,high:8.21},
+        output:{source:'prior',calibrated:false,factor:input.factor,low:0.382,high:8.21}
+      };
+      reference.anchor_adjustment = {source:'independent',calibrated:true};
+      reference.calculated = {...reference.calculated,input:177.09096,cache_read:17.7091,output:885.45482};
+      reference.observed = true;
+      delete reference.pooled;
+      const pooled = data.rows.find(item => item.model === 'gpt-6.1-sol');
+      pooled.adjustment = {source:'pooled',calibrated:false,baseline:false,factor:1.45,low:0.981,high:2.13};
+      pooled.component_adjustments = Object.fromEntries(['input','cache_read','output'].map(field => [field,{...pooled.adjustment}]));
+      pooled.pooled = {applied:true,estimate:{source:'pooled',identified:true,value:1.45,low:0.981,high:2.13}};
+      renderPricePreview(data);
+      const rowFor = model => [...$('#pricePreviewRows').children].find(row => row.firstElementChild.textContent.startsWith(model));
+      const row = rowFor(reference.model);
+      const result = {
+        header:row.firstElementChild.textContent,
+        input:row.querySelector('[data-price-field=input]').textContent,
+        statuses:['input','cache_read','output'].map(field => row.querySelector('[data-price-field='+field+']').dataset.calibrationStatus),
+        values:['input','cache_read','output'].map(field => row.querySelector('[data-price-field='+field+'] b').textContent),
+        pooledHeader:rowFor(pooled.model).firstElementChild.textContent,
+        pooledStatuses:['input','cache_read','output'].map(field => rowFor(pooled.model).querySelector('[data-price-field='+field+']').dataset.calibrationStatus)
+      };
+      reference.component_adjustments.cache_read = {source:'independent',calibrated:true,factor:1.6,low:1.4,high:1.8};
+      renderPricePreview(data);
+      result.partialHeader = rowFor(reference.model).firstElementChild.textContent;
+      result.cacheStatus = rowFor(reference.model).querySelector('[data-price-field=cache_read]').dataset.calibrationStatus;
+      renderPricePreview(priceCatalogState);
+      return result;
+    })()`);
+    assert.deepEqual(result.statuses,['inverse_anchor','prior','prior'],'inverse-anchor evidence cannot promote cache/output priors');
+    assert.deepEqual(result.values,['177.09096 credits','17.7091 credits','885.45482 credits'],'status correction preserves displayed prices');
+    assert(result.header.includes(english?'Anchor conversion':'锚定换算'));
+    assert(!result.header.includes('1/3'),'inverse input must not be counted as an independently measured component');
+    assert(result.input.includes(english?'not independently measured':'非独立实测'));
+    assert(result.partialHeader.includes('1/3') && !result.partialHeader.includes('2/3'),'genuine cache evidence is counted without the inverse input');
+    assert.equal(result.cacheStatus,'calibrated');
+    assert(result.pooledHeader.includes(english?'Preliminary':'初步标定'),'pooled calibration stays distinct from anchor conversion');
+    assert.deepEqual(result.pooledStatuses,['pooled','pooled','pooled']);
+  };
   await send('Page.enable');
   await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride',{width:1365,height:1100,deviceScaleFactor:1,mobile:false});
@@ -131,6 +178,7 @@ try {
   assert(!priorPriceText.includes('±0.0%'), 'an uncalibrated price must not claim zero uncertainty');
   const referencePriceStatuses = await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-5.6-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+']').dataset.calibrationStatus);})()");
   assert.deepEqual(referencePriceStatuses,['baseline','prior','prior'],'the input unit convention does not calibrate reference cache/output rates');
+  await checkInverseAnchor(false);
   const observedReference = await evaluate(`(() => {
     const data = structuredClone(priceCatalogState);
     const row = data.rows.find(item => item.model === 'gpt-5.6-sol');
@@ -162,12 +210,16 @@ try {
       fast:{source:'prior',value:2.5,low:0.94,high:6.66,prior_locked:true},
       long_context:{source:'prior',value:1,low:0.38,high:2.66,prior_locked:true},
       fast_long:{source:'provisional',value:2.856,low:1.4,high:5.8,identified:false,data_share:0.2},
-      models:[{model:'gpt-5.6-sol',input:{source:'anchor',value:1,low:1,high:1,prior_locked:true},cache:{source:'prior',value:0.1,low:0.038,high:0.266,prior_locked:true},output:{source:'prior',value:5,low:1.9,high:13.3,prior_locked:true}}],
+      models:[
+        {model:'gpt-5.6-sol',input:{source:'anchor',value:1,low:1,high:1,prior_locked:true},cache:{source:'prior',value:0.1,low:0.038,high:0.266,prior_locked:true},output:{source:'prior',value:5,low:1.9,high:13.3,prior_locked:true}},
+        {model:'gpt-6-astra',input:{source:'independent',identified:true,value:2.5,low:2,high:3},cache:{source:'prior',value:0.25,low:0.094,high:0.665,prior_locked:true},output:{source:'prior',value:12.5,low:4.7,high:33.3,prior_locked:true}},
+        {model:'gpt-6.1-sol',input:{source:'pooled',value:0.5,low:0.19,high:1.33,prior_locked:true}}
+      ],
       pooled_models:[{model:'gpt-6.1-sol',estimate:{source:'pooled',value:1.4,low:1.2,high:1.6,identified:true},applied:false,
         evidence:{validation_segments:5,prior_mae:0.2,candidate_mae:0.3,accepted:false},
         composition:{input:{tokens:100,mean_share:0.2},cache:{tokens:1000,mean_share:0.5},output:{tokens:50,mean_share:0.3}}}],
       guidance:[{model:'completed-model',action:'model_contrast',priority:100,completed:true},{model:'gpt-6.1-sol',action:'cache_contrast',priority:2,completed:false}]},{});
-    return {pooled:$('#weightPooled').textContent,weights:$('#weightRows').textContent,action:$('#weightAction').textContent,combined:$('#weightCombined').textContent,modifiers:$('#weightSummary').textContent,applied:$('#weightPooled [data-pooled-model]').dataset.applied};
+    return {pooled:$('#weightPooled').textContent,weights:$('#weightRows').textContent,action:$('#weightAction').textContent,combined:$('#weightCombined').textContent,modifiers:$('#weightSummary').textContent,applied:$('#weightPooled [data-pooled-model]').dataset.applied,reference:$('#weightPooled [data-fit-reference=true]').textContent,independent:$('#weightPooled [data-component-model="gpt-6-astra"]').textContent,duplicates:$('#weightPooled [data-component-model="gpt-6.1-sol"]')!==null};
   })()`);
   assert.equal(pooledRendering.applied,'false');
   assert(pooledRendering.pooled.includes('尚未应用') && pooledRendering.pooled.includes('0.200 → 0.300'), 'failed validation remains visibly inactive');
@@ -175,10 +227,39 @@ try {
   assert(pooledRendering.action.includes('gpt-6.1-sol') && pooledRendering.action.includes('缓存') && !pooledRendering.action.includes('completed-model'), 'guidance skips completed work');
   assert(pooledRendering.combined.includes('2.86') && pooledRendering.combined.includes('暂估') && pooledRendering.combined.includes('不代表两个单项'), 'a combined provisional estimate is not presented as independent modifier calibration');
   assert(pooledRendering.modifiers.includes('官方先验'), 'standalone modifiers retain their own prior labels');
+  assert(pooledRendering.reference.includes('gpt-5.6-sol') && pooledRendering.reference.includes('0/2') && pooledRendering.reference.includes('输入固定为 1'), 'internal reference is visible in expanded summaries without inventing evidence');
+  assert(pooledRendering.independent.includes('1/3') && pooledRendering.independent.includes('单项标定不等于模型综合倍率标定'), 'independent components are also visible outside the detail table');
+  assert.equal(pooledRendering.duplicates,false,'pooled models do not also get duplicate component summaries');
+  await evaluate("applyLanguage('en');true");
+  assert((await evaluate("$('#weightPooled [data-fit-reference=true]').textContent")).includes('Selected calibration reference'),'weight summaries update immediately when the language changes');
+  await evaluate("applyLanguage('zh-CN');true");
   await evaluate("$('#weightPooled').scrollIntoView({block:'center'});true");
   await screenshot('pooled-validation-desktop');
   await evaluate('renderWeightCard({},{});true');
   assert.equal(await visible('weightCombined'),false,'clearing a fit also clears its combined-mode estimate');
+  assert.equal(await evaluate("$('#weightPooled').childElementCount"),0,'clearing a fit also clears reference and component summaries');
+  const selectedReferenceRendering = await evaluate(`(() => {
+    renderWeightCard({available:true,reference_model:'gpt-6-astra',models:[
+      {model:'gpt-6-astra',input:{source:'anchor',value:1,low:1,high:1,prior_locked:true}},
+      {model:'gpt-5.6-sol',input:{source:'pooled',value:0.56,low:0.3,high:1,prior_locked:true}}
+    ],pooled_models:[{model:'gpt-5.6-sol',applied:true,estimate:{source:'pooled',value:1.4,low:1.2,high:1.6,identified:true},
+      composition:{input:{tokens:100,mean_share:0.5},cache:{tokens:100,mean_share:0.3},output:{tokens:20,mean_share:0.2}}}]},{});
+    const data = structuredClone(priceCatalogState);
+    data.settings.anchor_model = 'future-anchor';
+    data.rows.push({model:'future-anchor',official:{input:200},calculated:{input:200},adjustment:{baseline:true},
+      component_adjustments:{input:{source:'anchor',baseline:true,factor:1,low:1,high:1}}});
+    renderPricePreview(data);
+    const result = {reference:$('#weightPooled [data-fit-reference=true]').dataset.componentModel,
+      subtitle:$('#weightReferenceDescription').textContent,solPooled:!!$('#weightPooled [data-pooled-model="gpt-5.6-sol"]'),
+      future:[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('future-anchor'))};
+    renderPricePreview(priceCatalogState);
+    renderWeightCard({}, {});
+    return result;
+  })()`);
+  assert.equal(selectedReferenceRendering.reference,'gpt-6-astra','the selected model, not Sol, owns the input unit');
+  assert(selectedReferenceRendering.subtitle.includes('gpt-6-astra') && !selectedReferenceRendering.subtitle.includes('5.6'),'weight units follow reference metadata');
+  assert(selectedReferenceRendering.solPooled,'former reference is displayed as an ordinary pooled target');
+  assert(selectedReferenceRendering.future,'future selected models are not hidden by the common-model allowlist');
   await evaluate("document.querySelector('input[name=pricingMode][value=custom]').click();true");
   assert.equal(await visible('customPriceEditor'),true);
   assert((await evaluate("$('#customPriceRows').children.length"))>=6,'custom editor has model rows');
@@ -249,6 +330,7 @@ try {
   assert.equal(await evaluate("$('#pricingTitle').textContent"),'Pricing basis');
   assert.equal(await evaluate("document.querySelector('.price-preview h2').textContent"),'Price table');
   assert.equal(await evaluate("document.querySelector('.pricing-choice small').textContent.startsWith('Estimate from API rates')"),true);
+  await checkInverseAnchor(true);
   assert.equal(await evaluate("state.collection_coverage.mode"), 'unknown');
   await screenshot('coverage-unknown-mobile-en');
   await saveMode('cpa_only');
