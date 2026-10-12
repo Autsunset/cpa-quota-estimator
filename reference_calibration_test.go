@@ -26,8 +26,8 @@ func referenceSyntheticSegments(stable bool) []quotaSegment {
 		}
 		segments[i] = quotaSegment{Account: "synthetic", Window: mainQuotaScope, CycleID: 1, RegimeResetAt: now + 86400,
 			EndAt: now - int64(len(segments)-i)*30, BoundaryWeight: 1,
-			Features: []segmentFeature{{Model: weightReferenceModel, Type: "input", Tokens: input},
-				{Model: weightReferenceModel, Type: "cache", Tokens: cache}, {Model: weightReferenceModel, Type: "output", Tokens: output}},
+			Features: []segmentFeature{{Model: legacyWeightReferenceModel, Type: "input", Tokens: input},
+				{Model: legacyWeightReferenceModel, Type: "cache", Tokens: cache}, {Model: legacyWeightReferenceModel, Type: "output", Tokens: output}},
 			DP: .7 * (float64(input) + .16*float64(cache) + 7*float64(output)) / 1_000_000}
 	}
 	return segments
@@ -35,18 +35,18 @@ func referenceSyntheticSegments(stable bool) []quotaSegment {
 
 func TestReferenceModelLearnsCacheAndOutputWithoutMovingInputGauge(t *testing.T) {
 	for _, stable := range []bool{false, true} {
-		fit, err := fitQuotaWeights(referenceSyntheticSegments(stable), nil, 1800000000, defaultWeightLearnerOptions())
+		fit, err := fitQuotaWeights(referenceSyntheticSegments(stable), nil, 1800000000, legacyWeightLearnerOptions())
 		if err != nil || !fit.Available {
 			t.Fatalf("fit available=%t err=%v", fit.Available, err)
 		}
 		for _, name := range fit.ParameterNames {
-			if name == componentParameter(weightReferenceModel, "input") || name == pooledParameter(weightReferenceModel) {
+			if name == componentParameter(legacyWeightReferenceModel, "input") || name == pooledParameter(legacyWeightReferenceModel) {
 				t.Fatalf("reference input gauge became a free parameter: %s", name)
 			}
 		}
 		var found bool
 		for _, row := range fit.Models {
-			if row.Model != weightReferenceModel {
+			if row.Model != legacyWeightReferenceModel {
 				continue
 			}
 			found = true
@@ -76,14 +76,14 @@ func TestFormerReferenceInputUsesCalibratedInverseAnchor(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.LearnedFit = testAnchorFit()
 	cfg.LearnedFit.Models[0].Input = weightEstimate{Source: "anchor", Value: 1, Low: 1, High: 1, PriorLocked: true}
-	cfg.LearnedFit.ObservedModels = []string{weightReferenceModel}
-	p, _ := officialGPT6Price(weightReferenceModel)
+	cfg.LearnedFit.ObservedModels = []string{legacyWeightReferenceModel}
+	p, _ := officialGPT6Price(legacyWeightReferenceModel)
 	for _, mode := range []string{pricingModeAPI, pricingModeCredits} {
 		cfg.PricingMode = mode
 		cfg.AnchorModel = "gpt-6-astra"
 		row := cfg.priceRow(p)
 		adj := row.ComponentAdjustments["input"]
-		if !adj.Calibrated || adj.Baseline || adj.Source != "independent" || !row.Observed ||
+		if !adj.Calibrated || adj.Baseline || adj.Source != "inverse_anchor" || !row.Observed ||
 			math.Abs(adj.Factor-1/1.2) > 1e-9 || math.Abs(adj.Low-1/1.44) > 1e-9 || math.Abs(adj.High-1/.96) > 1e-9 {
 			t.Fatalf("inverse anchor=%#v observed=%t", adj, row.Observed)
 		}
@@ -91,7 +91,7 @@ func TestFormerReferenceInputUsesCalibratedInverseAnchor(t *testing.T) {
 		if math.Abs(row.Calculated.Input/official.Input-1/1.2) > 1e-9 {
 			t.Fatalf("former reference input=%g official=%g", row.Calculated.Input, official.Input)
 		}
-		cfg.AnchorModel = weightReferenceModel
+		cfg.AnchorModel = legacyWeightReferenceModel
 		if adj := cfg.priceRow(p).ComponentAdjustments["input"]; !adj.Baseline || adj.Calibrated || adj.Factor != 1 {
 			t.Fatalf("restored baseline=%#v", adj)
 		}
@@ -102,18 +102,54 @@ func TestFormerReferenceInputUsesCalibratedInverseAnchor(t *testing.T) {
 	}
 }
 
+func TestInverseAnchorDoesNotTurnReferencePriorsIntoComponentEvidence(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.AnchorModel = "gpt-6-astra"
+	cfg.LearnedFit = testAnchorFit()
+	cfg.LearnedFit.Models[0] = learnedModelWeights{
+		Model:  legacyWeightReferenceModel,
+		Input:  weightEstimate{Source: "anchor", Value: 1, Low: 1, High: 1, PriorLocked: true},
+		Cache:  priorWeightEstimate(.1, .5),
+		Output: priorWeightEstimate(5, .5),
+	}
+	cfg.LearnedFit.ObservedModels = []string{legacyWeightReferenceModel}
+	p, _ := officialGPT6Price(legacyWeightReferenceModel)
+	for _, mode := range []string{pricingModeAPI, pricingModeCredits} {
+		cfg.PricingMode = mode
+		row := cfg.priceRow(p)
+		if row.PooledEstimate != nil || row.Adjustment.Source != "inverse_anchor" || !row.Adjustment.Calibrated {
+			t.Fatalf("inverse anchor must not become pooled or independent evidence: %+v", row)
+		}
+		for _, field := range []string{"input", "cache_read", "output"} {
+			adj := row.ComponentAdjustments[field]
+			if math.Abs(adj.Factor-1/1.2) > 1e-9 {
+				t.Fatalf("%s no longer shares the anchor conversion: %+v", field, adj)
+			}
+			if field != "input" && (adj.Calibrated || adj.Source != "prior" || adj.Low >= row.Adjustment.Low || adj.High <= row.Adjustment.High) {
+				t.Fatalf("%s prior was promoted or lost shape uncertainty: %+v", field, adj)
+			}
+		}
+	}
+	cfg.LearnedFit.Models[0].Cache = weightEstimate{Value: .16, Low: .14, High: .18, Identified: true, Source: "independent"}
+	row := cfg.priceRow(p)
+	if adj := row.ComponentAdjustments["cache_read"]; !adj.Calibrated || adj.Source != "independent" ||
+		math.Abs(adj.Factor-1.6/1.2) > 1e-9 {
+		t.Fatalf("genuine cache evidence was hidden by inverse-anchor status: %+v", adj)
+	}
+}
+
 func TestReferenceCacheOnlyEvidenceLeavesOutputAtPrior(t *testing.T) {
 	segments := referenceSyntheticSegments(false)
 	for i := range segments {
 		segments[i].Features = segments[i].Features[:2]
 		segments[i].DP = .7 * (float64(segments[i].Features[0].Tokens) + .16*float64(segments[i].Features[1].Tokens)) / 1_000_000
 	}
-	fit, err := fitQuotaWeights(segments, nil, 1800000000, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, 1800000000, legacyWeightLearnerOptions())
 	if err != nil || !fit.Available {
 		t.Fatalf("fit available=%t err=%v", fit.Available, err)
 	}
 	for _, row := range fit.Models {
-		if row.Model == weightReferenceModel {
+		if row.Model == legacyWeightReferenceModel {
 			if !supportedWeight(row.Cache) || math.Abs(row.Cache.Value/.16-1) > .08 || !row.Output.PriorLocked || row.Output.Identified || row.Input.Source != "anchor" {
 				t.Fatalf("reference cache evidence leaked into input/output: %+v", row)
 			}
@@ -148,18 +184,18 @@ func TestReferenceCalibrationSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fit, err := fitQuotaWeights(segments, prices, time.Now().Unix(), defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, prices, time.Now().Unix(), legacyWeightLearnerOptions())
 	if err != nil || !fit.Available {
 		t.Fatalf("snapshot fit available=%t err=%v", fit.Available, err)
 	}
 	for _, row := range fit.Models {
-		if row.Model == weightReferenceModel {
+		if row.Model == legacyWeightReferenceModel {
 			raw, _ := json.Marshal(row)
 			t.Logf("reference=%s", raw)
 		}
 	}
 	for _, d := range fit.ComponentDiagnostics {
-		if d.Model == weightReferenceModel {
+		if d.Model == legacyWeightReferenceModel {
 			t.Logf("reference diagnostic=%+v", d)
 		}
 	}
@@ -175,16 +211,15 @@ func TestReferenceCalibrationSnapshot(t *testing.T) {
 	}
 }
 
-func TestSwitchingAnchorPreservesReferenceSamplesAndFit(t *testing.T) {
+func TestSwitchingAnchorPreservesSamplesAndRefitsSelectedReference(t *testing.T) {
 	s, a := pricingFixture(t)
 	defer s.close()
 	a.cfg.LearnedFit = testAnchorFit()
 	a.cfg.LearnedFit.Models[0].Input = weightEstimate{Source: "anchor", Value: 1, Low: 1, High: 1, PriorLocked: true}
-	a.cfg.LearnedFit.ObservedModels = []string{weightReferenceModel}
+	a.cfg.LearnedFit.ObservedModels = []string{legacyWeightReferenceModel}
 	astra, _ := officialGPT6Price("gpt-6-astra")
 	a.cfg.PriceCatalog[astra.Model] = astra
-	original := a.cfg.LearnedFit
-	for _, anchor := range []string{"gpt-6-astra", weightReferenceModel, "gpt-6-astra"} {
+	for _, anchor := range []string{"gpt-6-astra", legacyWeightReferenceModel, "gpt-6-astra"} {
 		body, _ := json.Marshal(map[string]string{"anchor_model": anchor, "pricing_mode": pricingModeCredits})
 		response := a.handleManagement(managementRequest{Method: "POST", Path: "/pricing-settings", Body: body})
 		if response.StatusCode != 202 {
@@ -198,19 +233,24 @@ func TestSwitchingAnchorPreservesReferenceSamplesAndFit(t *testing.T) {
 			t.Fatalf("anchor switch task=%+v", task)
 		}
 		var events, samples int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM usage_events WHERE model=?`, weightReferenceModel).Scan(&events); err != nil {
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM usage_events WHERE model=?`, legacyWeightReferenceModel).Scan(&events); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM quota_samples`).Scan(&samples); err != nil {
 			t.Fatal(err)
 		}
-		if events != 6 || samples != 8 || a.cfg.LearnedFit != original {
-			t.Fatalf("anchor switch lost evidence: events=%d samples=%d retained_fit=%t", events, samples, a.cfg.LearnedFit == original)
+		if events != 6 || samples != 8 {
+			t.Fatalf("anchor switch lost raw evidence: events=%d samples=%d", events, samples)
 		}
-		p := a.cfg.PriceCatalog[weightReferenceModel]
+		fit, ok, err := s.latestWeightFitForReference(context.Background(), anchor)
+		if err != nil || !ok || fit.FittedWeights.ReferenceModel != anchor ||
+			a.cfg.LearnedFit == nil || a.cfg.LearnedFit.ReferenceModel != anchor {
+			t.Fatalf("selected reference was not fitted: fit=%+v ok=%t err=%v", fit.FittedWeights, ok, err)
+		}
+		p := a.cfg.PriceCatalog[legacyWeightReferenceModel]
 		row := a.cfg.priceRow(p)
-		if !row.Observed || (anchor != weightReferenceModel && !row.Adjustment.Calibrated) {
-			t.Fatalf("former reference loses sample/calibration status: %+v", row)
+		if anchor != legacyWeightReferenceModel && row.Adjustment.Source == "inverse_anchor" {
+			t.Fatalf("former reference retains a hardcoded special status: %+v", row)
 		}
 	}
 }

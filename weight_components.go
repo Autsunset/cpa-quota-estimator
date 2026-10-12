@@ -15,13 +15,14 @@ func componentParameter(model, typ string) string {
 // cycle capacities, then all other token components and speed/context effects.
 // This prevents a cache-heavy model from identifying its input/output rates.
 func assessComponentIdentifiability(segments []quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions) []identifiabilityDiagnostic {
-	models := append([]string{weightReferenceModel}, assessedModelNames(segments, prices)...)
+	opts = weightOptionsWithDefaults(opts)
+	models := append([]string{opts.ReferenceModel}, assessedModelNames(segments, prices, opts.ReferenceModel)...)
 	var diagnostics []identifiabilityDiagnostic
 	for _, model := range models {
 		for _, typ := range weightTokenTypes {
 			// Only the reference input fixes the gauge; its cache/output
 			// ratios must remain learnable from composition contrasts.
-			if model == weightReferenceModel && typ == "input" {
+			if model == opts.ReferenceModel && typ == "input" {
 				continue
 			}
 			model, typ := model, typ
@@ -42,9 +43,9 @@ func assessComponentIdentifiability(segments []quotaSegment, prices map[string]p
 	}
 	cycleIndices := make(map[string][]int)
 	ratios := make(map[string][]float64)
-	denominator := referenceSolRate(pricingModeCredits, prices)
+	denominator := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
 	for i, s := range segments {
-		total := referenceEquivalent(s, pricingModeCredits, prices)
+		total := referenceEquivalent(s, pricingModeCredits, prices, opts.ReferenceModel)
 		if total <= 0 || denominator <= 0 {
 			continue
 		}
@@ -60,7 +61,7 @@ func assessComponentIdentifiability(segments []quotaSegment, prices map[string]p
 		for j, i := range rows {
 			s := segments[i]
 			rootWeight := math.Sqrt(segmentFitWeight(s, now, opts.HalfLifeDays))
-			nuisance[j] = rootWeight * scale * referenceEquivalent(s, pricingModeCredits, prices)
+			nuisance[j] = rootWeight * scale * referenceEquivalent(s, pricingModeCredits, prices, opts.ReferenceModel)
 			norm += nuisance[j] * nuisance[j]
 			for _, f := range s.Features {
 				value := rootWeight * scale * float64(f.Tokens) / 1_000_000 * referenceFeatureRate(f, pricingModeCredits, prices) / denominator
@@ -99,8 +100,8 @@ func assessComponentIdentifiability(segments []quotaSegment, prices map[string]p
 			// Reference diagnostics run first. A reference component that
 			// remains fixed at its prior is not a new fitted nuisance for
 			// other models; adding it would discard their existing evidence.
-			if other < n && diagnostics[target].Model != weightReferenceModel &&
-				diagnostics[other].Model == weightReferenceModel && !diagnostics[other].Unlocked {
+			if other < n && diagnostics[target].Model != opts.ReferenceModel &&
+				diagnostics[other].Model == opts.ReferenceModel && !diagnostics[other].Unlocked {
 				continue
 			}
 			v := append([]float64(nil), column...)

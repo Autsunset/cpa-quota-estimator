@@ -35,7 +35,7 @@ func TestPricingModeMigrationAndSavedAnchor(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.loadPricingSettings(ctx, defaultConfig().pricingSettings())
-	if err != nil || got.AnchorModel != "gpt-5.6-sol" {
+	if err != nil || got.AnchorModel != defaultConfig().AnchorModel {
 		t.Fatalf("default anchor=%#v err=%v", got, err)
 	}
 }

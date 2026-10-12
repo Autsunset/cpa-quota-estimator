@@ -12,6 +12,7 @@ type customModelPrice struct {
 	CacheWrite float64 `json:"cache_write"`
 }
 
+// Calibrated includes inverse-anchor ratios; Source distinguishes independent measurements.
 type modelPriceAdjustment struct {
 	Source     string  `json:"source"`
 	Factor     float64 `json:"factor"`
@@ -105,7 +106,11 @@ func (c config) adjustmentForComponent(model, field string) modelPriceAdjustment
 		return result
 	}
 	model = normalizeModel(model)
-	if model == weightReferenceModel && field == "input" {
+	reference := c.anchorModel()
+	if c.LearnedFit != nil {
+		reference = fitReferenceModel(c.LearnedFit)
+	}
+	if model == reference && field == "input" {
 		result = unchangedPriceAdjustment()
 		result.Source = "anchor"
 		return result
@@ -114,7 +119,10 @@ func (c config) adjustmentForComponent(model, field string) modelPriceAdjustment
 		return result
 	}
 	p, ok := referencePrice(model, pricingModeCredits, c.PriceCatalog)
-	ref, found := referencePrice(weightReferenceModel, pricingModeCredits, c.PriceCatalog)
+	ref, found := referencePrice(reference, pricingModeCredits, c.PriceCatalog)
+	if c.LearnedFit.referenceCredits() > 0 {
+		ref.Input, found = c.LearnedFit.referenceCredits(), true
+	}
 	if !ok || !found || ref.Input <= 0 {
 		return result
 	}
@@ -167,10 +175,7 @@ func (c config) componentPriceAdjustment(p price, field string) modelPriceAdjust
 		return result
 	}
 	model := normalizeModel(p.Model)
-	anchor := normalizeModel(c.AnchorModel)
-	if anchor == "" {
-		anchor = weightReferenceModel
-	}
+	anchor := c.anchorModel()
 	if model == anchor && field == "input" {
 		result.Baseline = true
 		result.Source = "anchor"
@@ -187,9 +192,9 @@ func (c config) componentPriceAdjustment(p price, field string) modelPriceAdjust
 	result.Calibrated = mine.Calibrated && (anchorAdj.Calibrated || anchorAdj.Source == "anchor")
 	if mine.Source == "anchor" && anchorAdj.Calibrated {
 		// A fixed internal unit divided by a learned anchor still has an
-		// empirically calibrated relative rate, with denominator uncertainty.
+		// empirically supported ratio, not an independent input measurement.
 		result.Calibrated = true
-		result.Source = "independent"
+		result.Source = "inverse_anchor"
 	}
 	if mine.Calibrated && anchorAdj.Calibrated && c.LearnedFit != nil {
 		typ := field
@@ -322,10 +327,7 @@ func (c config) priceRow(p price) modelPriceRow {
 		UncertaintyPercent:     math.Max(math.Abs(adjustment.Factor-adjustment.Low), math.Abs(adjustment.High-adjustment.Factor)) / math.Max(adjustment.Factor, 1e-12) * 100,
 		OfficialFastMultiplier: c.officialFastMultiplier(p), FastMultiplier: c.effectiveFastMultiplier(p),
 		OfficialLongMultiplier: 1, LongMultiplier: c.effectiveLongMultiplier()}
-	anchor := normalizeModel(c.AnchorModel)
-	if anchor == "" {
-		anchor = weightReferenceModel
-	}
+	anchor := c.anchorModel()
 	row.AnchorAdjustment = c.adjustmentForComponent(anchor, "input")
 	row.FastSource, row.LongSource = "official", "official"
 	if mode != pricingModeCustom && c.LearnedFit != nil && c.LearnedFit.Available {

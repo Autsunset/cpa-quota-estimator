@@ -13,6 +13,10 @@ type fisherCycleSums struct {
 
 func weightOptionsWithDefaults(opts weightLearnerOptions) weightLearnerOptions {
 	defaults := defaultWeightLearnerOptions()
+	opts.ReferenceModel = normalizeModel(opts.ReferenceModel)
+	if opts.ReferenceModel == "" {
+		opts.ReferenceModel = defaults.ReferenceModel
+	}
 	if opts.HalfLifeDays <= 0 {
 		opts.HalfLifeDays = defaults.HalfLifeDays
 	}
@@ -46,18 +50,19 @@ func weightOptionsWithDefaults(opts weightLearnerOptions) weightLearnerOptions {
 	return opts
 }
 
-func assessedModelNames(segments []quotaSegment, prices map[string]price) []string {
+func assessedModelNames(segments []quotaSegment, prices map[string]price, reference string) []string {
 	models := map[string]bool{}
 	for _, segment := range segments {
 		for _, feature := range segment.Features {
 			model := normalizeModel(feature.Model)
-			if model != weightReferenceModel && referenceFeatureRate(feature, pricingModeCredits, prices) > 0 {
+			if model != reference && referenceFeatureRate(feature, pricingModeCredits, prices) > 0 {
 				models[model] = true
 			}
 		}
 	}
-	for _, model := range []string{"gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-luna"} {
-		if referenceFeatureRate(segmentFeature{Model: model, Type: "input"}, pricingModeCredits, prices) > 0 {
+	for model := range prices {
+		model = normalizeModel(model)
+		if model != reference && referenceFeatureRate(segmentFeature{Model: model, Type: "input"}, pricingModeCredits, prices) > 0 {
 			models[model] = true
 		}
 	}
@@ -71,10 +76,11 @@ func assessedModelNames(segments []quotaSegment, prices map[string]price) []stri
 
 func assessWeightParameter(segments []quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions,
 	name string, match func(segmentFeature) bool, minShareSD, minFisher float64) identifiabilityDiagnostic {
+	opts = weightOptionsWithDefaults(opts)
 	result := identifiabilityDiagnostic{Name: name, MinShareSD: minShareSD, MinFisher: minFisher}
 	cycles := make(map[string]*fisherCycleSums)
 	for _, segment := range segments {
-		denominator := referenceSolRate(pricingModeCredits, prices)
+		denominator := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
 		if denominator <= 0 {
 			continue
 		}
@@ -106,7 +112,7 @@ func assessWeightParameter(segments []quotaSegment, prices map[string]price, now
 				continue
 			}
 			var total, target float64
-			denominator := referenceSolRate(pricingModeCredits, prices)
+			denominator := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
 			for _, feature := range segment.Features {
 				value := float64(feature.Tokens) / 1_000_000 * referenceFeatureRate(feature, pricingModeCredits, prices) / denominator
 				total += value
@@ -171,7 +177,7 @@ func assessWeightIdentifiability(segments []quotaSegment, prices map[string]pric
 		types[i].Unlocked = types[i].Unlocked && types[i].CycleRatioRange >= threshold
 	}
 	models := make([]identifiabilityDiagnostic, 0)
-	for _, model := range assessedModelNames(segments, prices) {
+	for _, model := range assessedModelNames(segments, prices, opts.ReferenceModel) {
 		modelCopy := model
 		models = append(models, assessWeightParameter(segments, prices, now, opts, "model:"+model,
 			func(f segmentFeature) bool { return normalizeModel(f.Model) == modelCopy }, opts.ModelShareMinSD, opts.ModelMinFisher))

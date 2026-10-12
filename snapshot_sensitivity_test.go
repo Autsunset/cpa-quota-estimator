@@ -91,7 +91,7 @@ func TestSnapshotSensitivity(t *testing.T) {
 	var strict []quotaSegment
 	targets := map[string]bool{"gpt-5.6-sol": true, "gpt-6-astra": true, "gpt-6-sol": true}
 	for _, segment := range segments {
-		if !segment.eligible() || segment.DP <= 0 || referenceEquivalent(segment, pricingModeCredits, prices) <= 0 {
+		if !segment.eligible() || segment.DP <= 0 || legacyReferenceEquivalent(segment, pricingModeCredits, prices) <= 0 {
 			continue
 		}
 		eligible = append(eligible, segment)
@@ -102,13 +102,13 @@ func TestSnapshotSensitivity(t *testing.T) {
 		allTarget := true
 		for _, feature := range segment.Features {
 			if targets[normalizeModel(feature.Model)] {
-				targetValue += float64(feature.Tokens) / 1_000_000 * referenceFeatureRate(feature, pricingModeCredits, prices) / referenceSolRate(pricingModeCredits, prices)
+				targetValue += float64(feature.Tokens) / 1_000_000 * referenceFeatureRate(feature, pricingModeCredits, prices) / legacyReferenceInputRate(pricingModeCredits, prices)
 			}
 			if !targets[normalizeModel(feature.Model)] {
 				allTarget = false
 			}
 		}
-		if targetValue/referenceEquivalent(segment, pricingModeCredits, prices) >= .95 {
+		if targetValue/legacyReferenceEquivalent(segment, pricingModeCredits, prices) >= .95 {
 			restricted = append(restricted, segment)
 		}
 		if allTarget {
@@ -120,7 +120,7 @@ func TestSnapshotSensitivity(t *testing.T) {
 	sortSegmentsChronologically(strict)
 	t.Logf("all eligible=%d restricted cycle7-11=%d strict=%d", len(eligible), len(restricted), len(strict))
 	result := snapshotSensitivityResult{}
-	strictFit, strictErr := fitQuotaWeights(strict, prices, now, defaultWeightLearnerOptions())
+	strictFit, strictErr := fitQuotaWeights(strict, prices, now, legacyWeightLearnerOptions())
 	if strictErr != nil {
 		t.Fatal(strictErr)
 	}
@@ -139,7 +139,7 @@ func TestSnapshotSensitivity(t *testing.T) {
 		}
 	}
 	for _, sigma := range []float64{.15, .35, .7} {
-		opts := defaultWeightLearnerOptions()
+		opts := legacyWeightLearnerOptions()
 		opts.RandomWalkSigma = sigma
 		scores, scoreErr := prequentialScores(eligible, prices, opts)
 		if scoreErr != nil {
@@ -167,7 +167,7 @@ func TestSnapshotSensitivity(t *testing.T) {
 		result.Astra = append(result.Astra, astra)
 	}
 	for _, factor := range []float64{1, 1.4} {
-		opts := defaultWeightLearnerOptions()
+		opts := legacyWeightLearnerOptions()
 		opts.FixedModelFactors = map[string]float64{"gpt-6-astra": factor}
 		fit, fitErr := fitQuotaWeights(restricted, prices, now, opts)
 		if fitErr != nil {
@@ -200,7 +200,7 @@ func TestSnapshotSensitivity(t *testing.T) {
 		}
 		result.StrictHypotheses = append(result.StrictHypotheses, strictHypothesis)
 	}
-	result.Interrupted, err = runInterruptedSensitivity(segments, prices, now, defaultWeightLearnerOptions())
+	result.Interrupted, err = runInterruptedSensitivity(segments, prices, now, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

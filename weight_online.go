@@ -4,8 +4,25 @@ import (
 	"context"
 	"database/sql"
 	"math"
+	"strconv"
 	"time"
 )
+
+const onlineWeightBasisKey = "online_weight_basis"
+
+func (fit weightFit) weightBasis() string {
+	return fitReferenceModel(&fit) + "|" + strconv.FormatFloat(fit.referenceCredits(), 'g', -1, 64)
+}
+
+func (s *store) onlineWeightBasisMatches(ctx context.Context, fit *weightFit) (bool, error) {
+	var basis string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, onlineWeightBasisKey).Scan(&basis)
+	if err == sql.ErrNoRows {
+		basis = (weightFit{}).weightBasis()
+		err = nil
+	}
+	return fit != nil && basis == fit.weightBasis(), err
+}
 
 func logPrecisionFromEstimate(estimate weightEstimate) float64 {
 	if estimate.Low <= 0 || estimate.High <= estimate.Low {
@@ -27,6 +44,23 @@ func (s *store) seedOnlineCycleScales(ctx context.Context, fit *weightFit) error
 		return err
 	}
 	defer tx.Rollback()
+	var oldBasis string
+	err = tx.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, onlineWeightBasisKey).Scan(&oldBasis)
+	if err == sql.ErrNoRows {
+		oldBasis = (weightFit{}).weightBasis()
+	} else if err != nil {
+		return err
+	}
+	// Online scales have units. Never combine a new reference with old scales.
+	if oldBasis != fit.weightBasis() {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM online_cycle_scales`); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, onlineWeightBasisKey, fit.weightBasis()); err != nil {
+		return err
+	}
 	for _, cycle := range fit.CycleScales {
 		if cycle.Scale.Value <= 0 {
 			continue
@@ -51,6 +85,9 @@ func (s *store) seedOnlineCycleScales(ctx context.Context, fit *weightFit) error
 func (s *store) applyOnlineSegmentsForEndEvent(ctx context.Context, eventID int64, fit *weightFit) error {
 	if fit == nil || !fit.Available {
 		return nil
+	}
+	if matches, err := s.onlineWeightBasisMatches(ctx, fit); err != nil || !matches {
+		return err
 	}
 	segments, err := s.quotaSegments(ctx, fit.Lag)
 	if err != nil {
@@ -117,6 +154,9 @@ func (s *store) learnedQuotaAttributionLive(ctx context.Context, fit *weightFit,
 	if !ok {
 		return nil
 	}
+	if matches, err := s.onlineWeightBasisMatches(ctx, fit); err != nil || !matches {
+		return learnedQuotaAttribution(fit, account, window, model, tier, 0, resetAt, d, longThreshold)
+	}
 	var logScale float64
 	var err error
 	if resetAt > 0 {
@@ -141,6 +181,9 @@ func (s *store) overlayOnlineCycleScales(ctx context.Context, fit weightFit) (we
 	if !fit.Available {
 		return fit, nil
 	}
+	if matches, err := s.onlineWeightBasisMatches(ctx, &fit); err != nil || !matches {
+		return fit, err
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT account,window,cycle_id,regime_reset_at,log_scale,precision FROM online_cycle_scales`)
 	if err != nil {
 		return fit, err
@@ -158,7 +201,8 @@ func (s *store) overlayOnlineCycleScales(ctx context.Context, fit weightFit) (we
 			std = math.Sqrt(1 / precision)
 		}
 		scale := weightEstimate{Value: math.Exp(logScale), Low: math.Exp(logScale - 1.96*std), High: math.Exp(logScale + 1.96*std)}
-		credits := weightEstimate{Value: 100 / scale.Value, Low: 100 / scale.High, High: 100 / scale.Low}
+		unit := fit.referenceCredits()
+		credits := weightEstimate{Value: unit / scale.Value, Low: unit / scale.High, High: unit / scale.Low}
 		found := false
 		for i := range fit.CycleScales {
 			cycle := &fit.CycleScales[i]

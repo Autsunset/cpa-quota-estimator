@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/url"
 	"time"
@@ -114,7 +115,7 @@ func defaultConfig() config {
 		PriceSourceURL:           "https://models.dev/catalog.json",
 		PriceSyncIntervalMinutes: 1440,
 		PricingMode:              pricingModeCredits,
-		AnchorModel:              "gpt-5.6-sol",
+		AnchorModel:              "gpt-6-astra",
 		CustomFastMultiplier:     2,
 		CustomLongContext:        true,
 		CustomLongThreshold:      272000,
@@ -124,6 +125,29 @@ func defaultConfig() config {
 		WeightRandomWalkSigma:    .35,
 		WeightFitIntervalMinutes: 60,
 	}
+}
+
+func (c config) anchorModel() string {
+	if model := normalizeModel(c.AnchorModel); model != "" {
+		return model
+	}
+	return defaultConfig().AnchorModel
+}
+
+func (c config) weightLearnerOptions() weightLearnerOptions {
+	opts := defaultWeightLearnerOptions()
+	opts.ReferenceModel = c.anchorModel()
+	opts.HalfLifeDays = c.WeightHalfLifeDays
+	opts.RandomWalkSigma = c.WeightRandomWalkSigma
+	return weightOptionsWithDefaults(opts)
+}
+
+func (c config) fitMatchesReference(fit *weightFit) bool {
+	if fit == nil || fitReferenceModel(fit) != c.anchorModel() {
+		return false
+	}
+	rate := referenceInputRate(pricingModeCredits, c.PriceCatalog, c.anchorModel())
+	return rate > 0 && math.Abs(fit.referenceCredits()/rate-1) < 1e-9
 }
 
 type price struct {

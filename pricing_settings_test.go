@@ -38,6 +38,7 @@ func pricingFixture(t *testing.T) (*store, *app) {
 		}
 	}
 	cfg := defaultConfig()
+	cfg.AnchorModel = legacyWeightReferenceModel
 	cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 4, CacheRead: .4, Output: 20, CacheWrite: 5}}
 	return s, &app{cfg: cfg, store: s}
 }

@@ -60,6 +60,7 @@ func TestCoverageBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &app{cfg: defaultConfig(), store: s}
+	a.cfg.AnchorModel = legacyWeightReferenceModel
 	catalog, err := loadPriceCatalog(context.Background(), s)
 	if err != nil {
 		t.Fatal(err)

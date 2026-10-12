@@ -14,12 +14,12 @@ func TestReviewerAnchorIsOneUnitConversionForWholeWorkload(t *testing.T) {
 	cfg.LearnedFit.Models[1].Cache = weightEstimate{Value: .2, Low: .18, High: .22, Identified: true}
 	cfg.LearnedFit.Models[1].Output = weightEstimate{Value: 20, Low: 18, High: 22, Identified: true}
 	cfg.PriceCatalog = map[string]price{
-		weightReferenceModel: {Model: weightReferenceModel, Input: 4, CacheRead: .4, Output: 20, CacheWrite: 5},
-		"gpt-6-astra":        {Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50, CacheWrite: 12.5},
-		"gpt-6-sol":          {Model: "gpt-6-sol", Input: 2, CacheRead: .2, Output: 10, CacheWrite: 2.5},
+		legacyWeightReferenceModel: {Model: legacyWeightReferenceModel, Input: 4, CacheRead: .4, Output: 20, CacheWrite: 5},
+		"gpt-6-astra":              {Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50, CacheWrite: 12.5},
+		"gpt-6-sol":                {Model: "gpt-6-sol", Input: 2, CacheRead: .2, Output: 10, CacheWrite: 2.5},
 	}
 	before := map[string]price{}
-	cfg.AnchorModel = weightReferenceModel
+	cfg.AnchorModel = legacyWeightReferenceModel
 	for model, p := range cfg.PriceCatalog {
 		before[model], _ = cfg.effectiveModelPrice(p)
 	}
@@ -68,7 +68,7 @@ func TestReviewerStoredFitAndRuntimePredictionAgree(t *testing.T) {
 			segments[i].CycleID = int64(1 + i/5)
 			segments[i].DP *= 1 + .15*float64(i/5)
 		}
-		fit, err := fitQuotaWeights(segments, nil, 1800000000, defaultWeightLearnerOptions())
+		fit, err := fitQuotaWeights(segments, nil, 1800000000, legacyWeightLearnerOptions())
 		if err != nil || !fit.Available {
 			t.Fatalf("count=%d: fit available=%v err=%v", count, fit.Available, err)
 		}
@@ -191,7 +191,7 @@ func TestReviewerChronologicalEvidenceControlsPooledApplication(t *testing.T) {
 				}
 			}
 		}
-		fit, err := fitQuotaWeights(segments, nil, 1800000100, defaultWeightLearnerOptions())
+		fit, err := fitQuotaWeights(segments, nil, 1800000100, legacyWeightLearnerOptions())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -219,9 +219,9 @@ func TestReviewerCombinedModifierNeverLeaksIntoStandaloneModes(t *testing.T) {
 		if combined {
 			tokens, dp = 400000, 1.2
 		}
-		segments = append(segments, quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: 1, RegimeResetAt: 1900000000, EndAt: 1800000000 + int64(i), DP: dp, BoundaryWeight: 1, Features: []segmentFeature{{Model: weightReferenceModel, Type: "input", Tokens: tokens, Fast: combined, Long: combined}}})
+		segments = append(segments, quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: 1, RegimeResetAt: 1900000000, EndAt: 1800000000 + int64(i), DP: dp, BoundaryWeight: 1, Features: []segmentFeature{{Model: legacyWeightReferenceModel, Type: "input", Tokens: tokens, Fast: combined, Long: combined}}})
 	}
-	fit, err := fitQuotaWeights(segments, nil, 1800000100, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, 1800000100, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestReviewerCombinedModifierNeverLeaksIntoStandaloneModes(t *testing.T) {
 	}{
 		{"standard", "", 100000, .1}, {"fast only", "fast", 100000, .25}, {"long only", "", 400000, .4}, {"both", "fast", 400000, .4 * fit.FastLong.Value},
 	} {
-		got, ok := learnedEquivalentForUsage(&fit, weightReferenceModel, usageDetail{InputTokens: tc.tokens}, tc.tier, 272000)
+		got, ok := learnedEquivalentForUsage(&fit, legacyWeightReferenceModel, usageDetail{InputTokens: tc.tokens}, tc.tier, 272000)
 		if !ok || math.Abs(got-tc.want) > 1e-8 {
 			t.Errorf("%s quota equivalent=%g want=%g", tc.name, got, tc.want)
 		}
@@ -246,7 +246,7 @@ func TestReviewerCombinedModifierNeverLeaksIntoStandaloneModes(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.LearnedFit = &fit
 	cfg.PricingMode = pricingModeCredits
-	p := price{Model: weightReferenceModel}
+	p := price{Model: legacyWeightReferenceModel}
 	if got := calculateCost(p, usageDetail{InputTokens: 400000}, "fast", cfg); math.Abs(got-40*fit.FastLong.Value) > 1e-7 {
 		t.Errorf("combined valuation=%g want=%g", got, 40*fit.FastLong.Value)
 	}
@@ -258,17 +258,17 @@ func TestReviewerCombinedModifierNeverLeaksIntoStandaloneModes(t *testing.T) {
 func TestReviewerCorrelatedModeTotalsDoNotProveACombinedRequestRate(t *testing.T) {
 	var segments []quotaSegment
 	for i := 0; i < 20; i++ {
-		features := []segmentFeature{{Model: weightReferenceModel, Type: "input", Tokens: 1000000}}
+		features := []segmentFeature{{Model: legacyWeightReferenceModel, Type: "input", Tokens: 1000000}}
 		dp := 1.0
 		if i%2 == 1 {
-			features = []segmentFeature{{Model: weightReferenceModel, Type: "input", Tokens: 1000000, Fast: true}, {Model: weightReferenceModel, Type: "input", Tokens: 1000000, Long: true}, {Model: weightReferenceModel, Type: "input", Tokens: 1000000, Fast: true, Long: true}}
+			features = []segmentFeature{{Model: legacyWeightReferenceModel, Type: "input", Tokens: 1000000, Fast: true}, {Model: legacyWeightReferenceModel, Type: "input", Tokens: 1000000, Long: true}, {Model: legacyWeightReferenceModel, Type: "input", Tokens: 1000000, Fast: true, Long: true}}
 			// Fixed totals correlate perfectly even though three distinct modes occur.
 			// Actual factors are F=3,L=1.2; the true combined mode is 3.6, not 4.3.
 			dp = 3 + 1.2 + 3.6
 		}
 		segments = append(segments, quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: 1, RegimeResetAt: 1900000000, EndAt: 1800000000 + int64(i), DP: dp, BoundaryWeight: 1, Features: features})
 	}
-	fit, err := fitQuotaWeights(segments, nil, 1800000100, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, 1800000100, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -84,7 +84,7 @@ func pluginRegistration() any {
 				{"Name": "data_path", "Type": "string", "Description": "SQLite 数据库路径"},
 				{"Name": "sample_interval_minutes", "Type": "integer", "Description": "额度未变化时的最小采样间隔"},
 				{"Name": "pricing_mode", "Type": "enum", "EnumValues": []string{pricingModeAPI, pricingModeCredits, pricingModeCustom}, "Description": "计价口径：官方 API 美元价格、Codex Credits 或自定义美元价格"},
-				{"Name": "anchor_model", "Type": "string", "Description": "API/Credits 计价锚定模型，默认 gpt-5.6-sol"},
+				{"Name": "anchor_model", "Type": "string", "Description": "计价和标定共用的输入基准模型，可随时切换"},
 				{"Name": "capture_codex_headers", "Type": "boolean", "Description": "原样记录 X-Codex-* 响应头，默认关闭"},
 				{"Name": "weight_half_life_days", "Type": "number", "Description": "学习器时间衰减半衰期，默认 21 天"},
 				{"Name": "weight_random_walk_sigma", "Type": "number", "Description": "周期间 log 尺度随机游走标准差，默认 0.35"},
@@ -148,7 +148,7 @@ func parseConfig(raw []byte) (config, error) {
 	cfg.PricingMode = normalizePricingMode(cfg.PricingMode)
 	cfg.PricingMigration = rawMode != "" && rawMode != cfg.PricingMode
 	if cfg.AnchorModel == "" {
-		cfg.AnchorModel = "gpt-5.6-sol"
+		cfg.AnchorModel = defaultConfig().AnchorModel
 	}
 	if cfg.LongContextThreshold <= 0 {
 		cfg.LongContextThreshold = 272000
@@ -173,6 +173,9 @@ func fitNeedsRefresh(result weightBacktest, hasFit bool, cfg config) bool {
 		return true
 	}
 	if result.FittedWeights.EligibilityVersion != weightEligibilityVersion {
+		return true
+	}
+	if !cfg.fitMatchesReference(&result.FittedWeights) {
 		return true
 	}
 	if result.FittedWeights.RandomWalkSigma != cfg.WeightRandomWalkSigma || result.FittedWeights.HalfLifeDays != cfg.WeightHalfLifeDays {
@@ -231,14 +234,14 @@ func (a *app) configure(raw []byte) error {
 		return err
 	}
 	cfg = cfg.withPricingSettings(settings)
-	fitResult, hasFit, err := s.latestWeightFit(context.Background())
+	fitResult, hasFit, err := s.latestWeightFitForReference(context.Background(), cfg.anchorModel())
 	if err != nil {
 		if opened {
 			s.close()
 		}
 		return err
 	}
-	if hasFit && fitResult.FittedWeights.Available && fitResult.FittedWeights.EligibilityVersion == weightEligibilityVersion {
+	if hasFit && cfg.fitMatchesReference(&fitResult.FittedWeights) && fitResult.FittedWeights.EligibilityVersion == weightEligibilityVersion {
 		cfg.LearnedFit = &fitResult.FittedWeights
 		_ = s.seedOnlineCycleScales(context.Background(), cfg.LearnedFit)
 	}
@@ -335,18 +338,28 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 }
 
 func (a *app) refreshWeightsIfNeeded(ctx context.Context, s *store, cfg config) {
+	a.mu.RLock()
+	if a.store != s {
+		a.mu.RUnlock()
+		return
+	}
+	cfg = a.cfg
+	a.mu.RUnlock()
+	if active, _ := a.pricingTaskActive(); active {
+		return
+	}
 	var newestSegment int64
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(end_at),0) FROM quota_segments`).Scan(&newestSegment); err != nil {
 		return
 	}
-	previous, hasPrevious, err := s.latestWeightFit(ctx)
+	previous, hasPrevious, err := s.latestWeightFitForReference(ctx, cfg.anchorModel())
 	if err != nil {
 		return
 	}
 	if hasPrevious && newestSegment <= previous.FittedWeights.FittedAt && !fitNeedsRefresh(previous, hasPrevious, cfg) && time.Now().Unix()-previous.GeneratedAt < 24*3600 {
 		return
 	}
-	fitResult, err := s.refreshWeightFitScheduled(ctx, weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80, RandomWalkSigma: cfg.WeightRandomWalkSigma}, previous, hasPrevious)
+	fitResult, err := s.refreshWeightFitScheduled(ctx, cfg.weightLearnerOptions(), previous, hasPrevious)
 	if err != nil || !fitResult.FittedWeights.Available || ctx.Err() != nil {
 		return
 	}
@@ -355,14 +368,21 @@ func (a *app) refreshWeightsIfNeeded(ctx context.Context, s *store, cfg config) 
 
 func (a *app) applyFittedWeights(ctx context.Context, s *store, fit *weightFit) {
 	a.mu.Lock()
-	if a.store != s || ctx.Err() != nil {
+	if a.store != s || ctx.Err() != nil || !a.cfg.fitMatchesReference(fit) {
+		a.mu.Unlock()
+		return
+	}
+	if active, _ := a.pricingTaskActive(); active {
+		a.mu.Unlock()
+		return
+	}
+	if err := s.seedOnlineCycleScales(ctx, fit); err != nil {
 		a.mu.Unlock()
 		return
 	}
 	a.cfg.LearnedFit = fit
 	cfg := a.cfg
 	a.mu.Unlock()
-	_ = s.seedOnlineCycleScales(ctx, fit)
 	writer := a.attributionWriter
 	if writer == nil {
 		writer = func(ctx context.Context, s *store, fit *weightFit, threshold int64) (int64, error) {
@@ -542,7 +562,7 @@ func (a *app) recordUsage(r usageRecord) error {
 func (a *app) runGuidedCalibrationRefit(s *store, cfg config, account string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	result, err := s.refreshWeightFit(ctx, weightLearnerOptions{HalfLifeDays: cfg.WeightHalfLifeDays, MaxIterations: 80, RandomWalkSigma: cfg.WeightRandomWalkSigma})
+	result, err := s.refreshWeightFit(ctx, cfg.weightLearnerOptions())
 	if err == nil && !result.FittedWeights.Available {
 		err = fmt.Errorf("weight fit unavailable")
 	}

@@ -62,7 +62,7 @@ func guidanceFromFit(fit weightFit) []calibrationGuidance {
 				break
 			}
 		}
-		action := "cache_contrast"
+		action := "input_contrast"
 		if d.TokenType == "cache" {
 			action = "cache_contrast"
 		}

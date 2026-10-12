@@ -32,7 +32,7 @@ type reviewReport struct {
 
 func reviewForecast(train, tail []quotaSegment, prices map[string]price) ([]backtestScore, error) {
 	reviewTrace = nil
-	opts := defaultWeightLearnerOptions()
+	opts := legacyWeightLearnerOptions()
 	now := train[len(train)-1].EndAt
 	fit, err := fitQuotaWeights(train, prices, now, opts)
 	if err != nil {
@@ -47,7 +47,7 @@ func reviewForecast(train, tail []quotaSegment, prices map[string]price) ([]back
 	a, b := scoreAccumulator{}, scoreAccumulator{}
 	for _, s := range tail {
 		w := segmentFitWeight(s, s.EndAt, opts.HalfLifeDays)
-		eq := referenceEquivalent(s, pricingModeCredits, prices)
+		eq := legacyReferenceEquivalent(s, pricingModeCredits, prices)
 		rs := official.forSegment(s)
 		referencePrediction := math.Exp(rs.LogValue) * eq
 		a.add(referencePrediction, s.DP)
@@ -107,7 +107,7 @@ func TestReviewerFrozenTail(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, q := range rows {
-			if q.Window == mainQuotaScope && q.eligible() && q.DP > 0 && referenceEquivalent(q, pricingModeCredits, prices) > 0 {
+			if q.Window == mainQuotaScope && q.eligible() && q.DP > 0 && legacyReferenceEquivalent(q, pricingModeCredits, prices) > 0 {
 				byLag[lag] = append(byLag[lag], q)
 			}
 		}

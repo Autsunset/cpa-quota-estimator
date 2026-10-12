@@ -54,7 +54,7 @@ func TestReviewerEarlyDevelopment(t *testing.T) {
 	}
 	eligible := []quotaSegment{}
 	for _, q := range rows {
-		if q.Window == mainQuotaScope && q.eligible() && q.DP > 0 && referenceEquivalent(q, pricingModeCredits, prices) > 0 {
+		if q.Window == mainQuotaScope && q.eligible() && q.DP > 0 && legacyReferenceEquivalent(q, pricingModeCredits, prices) > 0 {
 			eligible = append(eligible, q)
 		}
 	}

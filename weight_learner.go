@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -9,13 +10,14 @@ import (
 )
 
 const (
-	weightReferenceModel     = "gpt-5.6-sol"
-	weightObservationSD      = 0.35
-	weightHuberDelta         = 0.6
-	weightEligibilityVersion = 6
+	legacyWeightReferenceModel = "gpt-5.6-sol"
+	weightObservationSD        = 0.35
+	weightHuberDelta           = 0.6
+	weightEligibilityVersion   = 7
 )
 
 type weightLearnerOptions struct {
+	ReferenceModel            string
 	DisablePooled             bool
 	PooledDiagnosticOnly      bool
 	ApprovedPooledModels      map[string]bool
@@ -36,7 +38,7 @@ type weightLearnerOptions struct {
 }
 
 func defaultWeightLearnerOptions() weightLearnerOptions {
-	return weightLearnerOptions{HalfLifeDays: 21, MaxIterations: 80, RandomWalkSigma: .35,
+	return weightLearnerOptions{ReferenceModel: defaultConfig().AnchorModel, HalfLifeDays: 21, MaxIterations: 80, RandomWalkSigma: .35,
 		CacheShareMinSD: .08, OutputShareMinSD: .02, TypeMinFisher: 20,
 		ModelShareMinSD: .05, ModelMinFisher: 10,
 		CacheCycleRatioMinRange: .10, OutputCycleRatioMinRange: .02}
@@ -87,33 +89,35 @@ type learnedModelWeights struct {
 }
 
 type weightFit struct {
-	EligibilityVersion   int                         `json:"eligibility_version"`
-	Available            bool                        `json:"available"`
-	FittedAt             int64                       `json:"fitted_at"`
-	Lag                  int                         `json:"lag"`
-	SegmentCount         int                         `json:"segment_count"`
-	EffectiveCount       float64                     `json:"effective_count"`
-	MeanAbsError         float64                     `json:"mean_abs_error"`
-	Objective            float64                     `json:"objective"`
-	Models               []learnedModelWeights       `json:"models"`
-	Fast                 weightEstimate              `json:"fast"`
-	LongContext          weightEstimate              `json:"long_context"`
-	FastLong             *weightEstimate             `json:"fast_long,omitempty"`
-	ParameterNames       []string                    `json:"parameter_names"`
-	LogParameters        []float64                   `json:"log_parameters"`
-	Covariance           [][]float64                 `json:"covariance"`
-	HalfLifeDays         float64                     `json:"half_life_days"`
-	RandomWalkSigma      float64                     `json:"random_walk_sigma"`
-	TypeDiagnostics      []identifiabilityDiagnostic `json:"type_diagnostics"`
-	ComponentDiagnostics []identifiabilityDiagnostic `json:"component_diagnostics"`
-	PooledModels         []pooledModelEstimate       `json:"pooled_models"`
-	ModifierDiagnostics  []identifiabilityDiagnostic `json:"modifier_diagnostics"`
-	Guidance             []calibrationGuidance       `json:"guidance"`
-	ObservedModels       []string                    `json:"observed_models"`
-	ModelDiagnostics     []identifiabilityDiagnostic `json:"model_diagnostics"`
-	CycleScales          []learnedCycleScale         `json:"cycle_scales"`
-	MaxEndEventID        int64                       `json:"max_end_event_id"`
-	Interrupted          weightEstimate              `json:"interrupted,omitempty"`
+	ReferenceModel        string                      `json:"reference_model,omitempty"`
+	ReferenceInputCredits float64                     `json:"reference_input_credits,omitempty"`
+	EligibilityVersion    int                         `json:"eligibility_version"`
+	Available             bool                        `json:"available"`
+	FittedAt              int64                       `json:"fitted_at"`
+	Lag                   int                         `json:"lag"`
+	SegmentCount          int                         `json:"segment_count"`
+	EffectiveCount        float64                     `json:"effective_count"`
+	MeanAbsError          float64                     `json:"mean_abs_error"`
+	Objective             float64                     `json:"objective"`
+	Models                []learnedModelWeights       `json:"models"`
+	Fast                  weightEstimate              `json:"fast"`
+	LongContext           weightEstimate              `json:"long_context"`
+	FastLong              *weightEstimate             `json:"fast_long,omitempty"`
+	ParameterNames        []string                    `json:"parameter_names"`
+	LogParameters         []float64                   `json:"log_parameters"`
+	Covariance            [][]float64                 `json:"covariance"`
+	HalfLifeDays          float64                     `json:"half_life_days"`
+	RandomWalkSigma       float64                     `json:"random_walk_sigma"`
+	TypeDiagnostics       []identifiabilityDiagnostic `json:"type_diagnostics"`
+	ComponentDiagnostics  []identifiabilityDiagnostic `json:"component_diagnostics"`
+	PooledModels          []pooledModelEstimate       `json:"pooled_models"`
+	ModifierDiagnostics   []identifiabilityDiagnostic `json:"modifier_diagnostics"`
+	Guidance              []calibrationGuidance       `json:"guidance"`
+	ObservedModels        []string                    `json:"observed_models"`
+	ModelDiagnostics      []identifiabilityDiagnostic `json:"model_diagnostics"`
+	CycleScales           []learnedCycleScale         `json:"cycle_scales"`
+	MaxEndEventID         int64                       `json:"max_end_event_id"`
+	Interrupted           weightEstimate              `json:"interrupted,omitempty"`
 }
 
 type randomWalkEdge struct {
@@ -132,6 +136,7 @@ type learningCycle struct {
 }
 
 type weightModel struct {
+	referenceModel       string
 	names                []string
 	index                map[string]int
 	priorMean            []float64
@@ -202,16 +207,35 @@ func referenceFeatureRate(feature segmentFeature, mode string, prices map[string
 	return rate
 }
 
-func referenceSolRate(mode string, prices map[string]price) float64 {
-	p, ok := referencePrice(weightReferenceModel, mode, prices)
+// Missing reference metadata belongs to persisted fits from before v0.20.
+func fitReferenceModel(fit *weightFit) string {
+	if fit != nil && normalizeModel(fit.ReferenceModel) != "" {
+		return normalizeModel(fit.ReferenceModel)
+	}
+	return legacyWeightReferenceModel
+}
+
+func (fit weightFit) referenceCredits() float64 {
+	if fit.ReferenceInputCredits > 0 {
+		return fit.ReferenceInputCredits
+	}
+	if fitReferenceModel(&fit) == legacyWeightReferenceModel {
+		// The old serialization used a 100-credit unit without storing it.
+		return 100
+	}
+	return referenceInputRate(pricingModeCredits, nil, fitReferenceModel(&fit))
+}
+
+func referenceInputRate(mode string, prices map[string]price, reference string) float64 {
+	p, ok := referencePrice(reference, mode, prices)
 	if !ok {
 		return 0
 	}
 	return p.Input
 }
 
-func referenceEquivalent(segment quotaSegment, mode string, prices map[string]price) float64 {
-	denominator := referenceSolRate(mode, prices)
+func referenceEquivalent(segment quotaSegment, mode string, prices map[string]price, reference string) float64 {
+	denominator := referenceInputRate(mode, prices, reference)
 	if denominator <= 0 {
 		return 0
 	}
@@ -271,7 +295,7 @@ func newWeightModel(segments []quotaSegment, prices map[string]price, now int64,
 			}
 		}
 	}
-	m := weightModel{index: make(map[string]int), prices: prices, cycles: cycles, referenceMode: pricingModeCredits, fixedModels: opts.FixedModelFactors,
+	m := weightModel{referenceModel: opts.ReferenceModel, index: make(map[string]int), prices: prices, cycles: cycles, referenceMode: pricingModeCredits, fixedModels: opts.FixedModelFactors,
 		typeDiagnostics: typeDiagnostics, modelDiagnostics: modelDiagnostics, componentDiagnostics: componentDiagnostics, includeInterrupted: opts.IncludeInterrupted,
 		pooledDiagnostics: pooledDiagnostics, modifierDiagnostics: modifierDiagnostics, pooledModels: make(map[string]pooledModelEstimate)}
 	add := func(name string, mean, sigma float64) {
@@ -288,7 +312,7 @@ func newWeightModel(segments []quotaSegment, prices map[string]price, now int64,
 			if modelCycle(segment) != cycle.Key {
 				continue
 			}
-			value := referenceEquivalent(segment, pricingModeCredits, prices)
+			value := referenceEquivalent(segment, pricingModeCredits, prices, opts.ReferenceModel)
 			if value > 0 && segment.DP > 0 {
 				ratios = append(ratios, segment.DP/value)
 			}
@@ -360,7 +384,7 @@ func (m weightModel) predict(segment quotaSegment, x []float64) (float64, []floa
 	if mode == "" {
 		mode = pricingModeCredits
 	}
-	denominator := referenceSolRate(mode, m.prices)
+	denominator := referenceInputRate(mode, m.prices, m.referenceModel)
 	if denominator <= 0 {
 		return 0, grad
 	}
@@ -607,11 +631,15 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 		if opts.IncludeInterrupted {
 			eligible = segment.eligibleWithInterrupted()
 		}
-		if eligible && segment.DP > 0 && referenceEquivalent(segment, pricingModeCredits, prices) > 0 {
+		if eligible && segment.DP > 0 && referenceEquivalent(segment, pricingModeCredits, prices, opts.ReferenceModel) > 0 {
 			segments = append(segments, segment)
 		}
 	}
-	fit := weightFit{EligibilityVersion: weightEligibilityVersion, FittedAt: now, SegmentCount: len(segments), HalfLifeDays: opts.HalfLifeDays, RandomWalkSigma: opts.RandomWalkSigma}
+	referenceCredits := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
+	if referenceCredits <= 0 {
+		return weightFit{}, fmt.Errorf("reference model %q has no positive input price", opts.ReferenceModel)
+	}
+	fit := weightFit{ReferenceModel: opts.ReferenceModel, ReferenceInputCredits: referenceCredits, EligibilityVersion: weightEligibilityVersion, FittedAt: now, SegmentCount: len(segments), HalfLifeDays: opts.HalfLifeDays, RandomWalkSigma: opts.RandomWalkSigma}
 	observed := make(map[string]bool)
 	for _, segment := range segments {
 		for _, feature := range segment.Features {
@@ -901,7 +929,7 @@ func appliedWeight(estimate weightEstimate) bool {
 }
 
 func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []learnedModelWeights {
-	models := map[string]bool{weightReferenceModel: true}
+	models := map[string]bool{m.referenceModel: true}
 	componentUnlocked := make(map[string]bool)
 	for _, diagnostic := range m.modelDiagnostics {
 		models[strings.TrimPrefix(diagnostic.Name, "model:")] = true
@@ -914,7 +942,7 @@ func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []le
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	denominator := referenceSolRate(pricingModeCredits, m.prices)
+	denominator := referenceInputRate(pricingModeCredits, m.prices, m.referenceModel)
 	result := make([]learnedModelWeights, 0, len(names))
 	for _, model := range names {
 		row := learnedModelWeights{Model: model}
@@ -925,7 +953,7 @@ func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []le
 			}
 			parameter := componentParameter(model, typ)
 			estimate := deriveFactorEstimate(m, x, covariance, []string{parameter}, base)
-			if model == weightReferenceModel && typ == "input" {
+			if model == m.referenceModel && typ == "input" {
 				estimate = weightEstimate{Value: base, Low: base, High: base, Source: "anchor", PriorLocked: true}
 			} else if !componentUnlocked[parameter] {
 				estimate = priorWeightEstimate(base, .5)
@@ -947,7 +975,7 @@ func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []le
 				estimate.DataShare = 0
 				estimate.Source = "fixed"
 			}
-			if model != weightReferenceModel && !componentUnlocked[parameter] {
+			if model != m.referenceModel && !componentUnlocked[parameter] {
 				estimate.PriorLocked = true
 				estimate.Identified = false
 				estimate.DataShare = 0
@@ -970,7 +998,8 @@ func deriveCycleScales(m weightModel, x []float64, covariance [][]float64) []lea
 	result := make([]learnedCycleScale, 0, len(m.cycles))
 	for _, cycle := range m.cycles {
 		estimate := deriveFactorEstimate(m, x, covariance, []string{"scale:" + cycle.Key}, 1)
-		inverse := weightEstimate{Value: 100 / estimate.Value, Low: 100 / estimate.High, High: 100 / estimate.Low,
+		credits := referenceInputRate(pricingModeCredits, m.prices, m.referenceModel)
+		inverse := weightEstimate{Value: credits / estimate.Value, Low: credits / estimate.High, High: credits / estimate.Low,
 			Identified: estimate.Identified, DataShare: estimate.DataShare, Correlated: estimate.Correlated}
 		result = append(result, learnedCycleScale{Account: cycle.Account, Window: cycle.Window, CycleID: cycle.CycleID,
 			RegimeResetAt: cycle.RegimeResetAt, StartedAt: cycle.StartedAt, Scale: estimate, CreditsPerPercent: inverse})
@@ -982,7 +1011,7 @@ func (fit weightFit) predict(segment quotaSegment, prices map[string]price) floa
 	if !fit.Available {
 		return 0
 	}
-	m := weightModel{index: make(map[string]int), names: fit.ParameterNames, prices: prices}
+	m := weightModel{referenceModel: fitReferenceModel(&fit), index: make(map[string]int), names: fit.ParameterNames, prices: prices}
 	m.pooledModels = make(map[string]pooledModelEstimate)
 	for _, pool := range fit.PooledModels {
 		m.pooledModels[pool.Model] = pool

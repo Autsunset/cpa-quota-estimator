@@ -25,7 +25,7 @@ func componentSyntheticSegments(count int, stable bool) []quotaSegment {
 			output *= multiplier
 		}
 		segment := quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: 1, RegimeResetAt: now + 86400, EndAt: now - int64(count-i)*30, BoundaryWeight: 1,
-			Features: []segmentFeature{{Model: weightReferenceModel, Type: "input", Tokens: baseline}, {Model: "gpt-6.1-sol", Type: "input", Tokens: input}, {Model: "gpt-6.1-sol", Type: "cache", Tokens: cache}, {Model: "gpt-6.1-sol", Type: "output", Tokens: output}}}
+			Features: []segmentFeature{{Model: legacyWeightReferenceModel, Type: "input", Tokens: baseline}, {Model: "gpt-6.1-sol", Type: "input", Tokens: input}, {Model: "gpt-6.1-sol", Type: "cache", Tokens: cache}, {Model: "gpt-6.1-sol", Type: "output", Tokens: output}}}
 		segment.DP = .7 * (float64(baseline) + .5*1.1*float64(input) + .025*.65*float64(cache) + 2.5*1.5*float64(output)) / 1_000_000
 		segments = append(segments, segment)
 	}
@@ -33,7 +33,7 @@ func componentSyntheticSegments(count int, stable bool) []quotaSegment {
 }
 
 func TestComponentCalibrationRecoversDifferentInputCacheAndOutput(t *testing.T) {
-	fit, err := fitQuotaWeights(componentSyntheticSegments(300, false), nil, 1800000000, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(componentSyntheticSegments(300, false), nil, 1800000000, legacyWeightLearnerOptions())
 	if err != nil || !fit.Available {
 		t.Fatalf("fit=%#v err=%v", fit, err)
 	}
@@ -55,7 +55,7 @@ func TestComponentCalibrationRecoversDifferentInputCacheAndOutput(t *testing.T) 
 }
 
 func TestStableCompositionCannotPretendToCalibrateSeparateRates(t *testing.T) {
-	fit, err := fitQuotaWeights(componentSyntheticSegments(300, true), nil, 1800000000, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(componentSyntheticSegments(300, true), nil, 1800000000, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +73,7 @@ func TestStableCompositionCannotPretendToCalibrateSeparateRates(t *testing.T) {
 
 func TestCacheOnlyCalibrationDoesNotChangeInputOrOutputPrices(t *testing.T) {
 	cfg := defaultConfig()
+	cfg.AnchorModel = legacyWeightReferenceModel
 	cfg.LearnedFit = &weightFit{Available: true, Models: []learnedModelWeights{{Model: "gpt-6.1-sol", Input: weightEstimate{Value: .9, PriorLocked: true}, Cache: weightEstimate{Value: .04, Low: .035, High: .045, Identified: true}, Output: weightEstimate{Value: 4, PriorLocked: true}}}}
 	p, _ := officialGPT6Price("gpt-6.1-sol")
 	for _, mode := range []string{pricingModeAPI, pricingModeCredits} {
@@ -101,10 +102,10 @@ func TestCacheSamplesUnlockOnlyTheCacheParameter(t *testing.T) {
 	for i := range segments {
 		baseline := segments[i].Features[0].Tokens
 		cache := segments[i].Features[2].Tokens
-		segments[i].Features = []segmentFeature{{Model: weightReferenceModel, Type: "input", Tokens: baseline}, {Model: "gpt-6.1-sol", Type: "cache", Tokens: cache}}
+		segments[i].Features = []segmentFeature{{Model: legacyWeightReferenceModel, Type: "input", Tokens: baseline}, {Model: "gpt-6.1-sol", Type: "cache", Tokens: cache}}
 		segments[i].DP = .7 * (float64(baseline) + .04*float64(cache)) / 1_000_000
 	}
-	fit, err := fitQuotaWeights(segments, nil, 1800000000, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, 1800000000, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

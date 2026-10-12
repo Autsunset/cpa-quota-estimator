@@ -262,7 +262,7 @@ func calibrationWeight(fit *weightFit, model string) *weightEstimate {
 }
 
 func hasUncalibratedComponent(row learnedModelWeights) bool {
-	if row.Model == weightReferenceModel {
+	if row.Input.Source == "anchor" {
 		return false
 	}
 	for _, estimate := range []weightEstimate{row.Input, row.Cache, row.Output} {
@@ -279,7 +279,7 @@ func calibrationTargetEligible(fit *weightFit, model string) bool {
 	}
 	for _, row := range fit.Models {
 		if row.Model == normalizeModel(model) {
-			return row.Model == "gpt-6-astra" || hasUncalibratedComponent(row)
+			return hasUncalibratedComponent(row)
 		}
 	}
 	return false

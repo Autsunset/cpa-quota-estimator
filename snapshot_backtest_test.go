@@ -59,7 +59,7 @@ func TestSnapshotRollingBacktest(t *testing.T) {
 	if err = s.db.QueryRow(`SELECT COALESCE(MAX(requested_at),0) FROM usage_events`).Scan(&now); err != nil {
 		t.Fatal(err)
 	}
-	result, err := rollingBacktest(byLag, prices, now, defaultWeightLearnerOptions())
+	result, err := rollingBacktest(byLag, prices, now, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestSnapshotRollingBacktest(t *testing.T) {
 		t.Logf("lag=%d eligible=%d flagged=%d scores=%+v", lag.Lag, lag.EligibleSegments, lag.FlaggedSegments, lag.Scores)
 	}
 	t.Logf("selected=%d ambiguous=%t fit=%d", result.SelectedLag, result.LagAmbiguous, result.FittedWeights.SegmentCount)
-	saved, err := s.refreshWeightFit(ctx, defaultWeightLearnerOptions())
+	saved, err := s.refreshWeightFit(ctx, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

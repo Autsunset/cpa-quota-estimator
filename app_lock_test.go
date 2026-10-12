@@ -21,7 +21,7 @@ func TestSlowAttributionWriterDoesNotHoldAppLock(t *testing.T) {
 		<-release
 		return 0, nil
 	}
-	fit := &weightFit{Available: true}
+	fit := &weightFit{ReferenceModel: a.cfg.anchorModel(), ReferenceInputCredits: 250, Available: true}
 	done := make(chan struct{})
 	go func() { a.applyFittedWeights(context.Background(), s, fit); close(done) }()
 	select {

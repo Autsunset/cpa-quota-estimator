@@ -53,17 +53,18 @@ func contrastMatches(column contrastColumn, f segmentFeature) bool {
 // Conditional contrasts use one coefficient per model total, never its three
 // proportional columns as simultaneous nuisance parameters for that total.
 func assessPooledAndModifierContrasts(segments []quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions, components []identifiabilityDiagnostic) ([]identifiabilityDiagnostic, []identifiabilityDiagnostic) {
+	opts = weightOptionsWithDefaults(opts)
 	var specs []contrastColumn
 	independent := map[string]bool{}
 	for _, d := range components {
 		if d.Unlocked {
 			independent[d.Model] = true
-			if d.Model == weightReferenceModel {
+			if d.Model == opts.ReferenceModel {
 				specs = append(specs, contrastColumn{d.Name, d.Model, d.TokenType})
 			}
 		}
 	}
-	for _, model := range assessedModelNames(segments, prices) {
+	for _, model := range assessedModelNames(segments, prices, opts.ReferenceModel) {
 		if independent[model] {
 			for _, d := range components {
 				if d.Model == model && d.Unlocked {
@@ -77,7 +78,7 @@ func assessPooledAndModifierContrasts(segments []quotaSegment, prices map[string
 	specs = append(specs, contrastColumn{"fast", "", "fast"}, contrastColumn{"long", "", "long"}, contrastColumn{"fast_long", "", "fast_long"})
 	columns := make([][]float64, len(specs))
 	diagnostics := make([]identifiabilityDiagnostic, len(specs))
-	denominator := referenceSolRate(pricingModeCredits, prices)
+	denominator := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
 	for index, spec := range specs {
 		columns[index] = make([]float64, len(segments))
 		diagnostics[index] = assessWeightParameter(segments, prices, now, opts, spec.name, func(f segmentFeature) bool { return contrastMatches(spec, f) }, opts.ModelShareMinSD, opts.ModelMinFisher)
@@ -91,7 +92,7 @@ func assessPooledAndModifierContrasts(segments []quotaSegment, prices map[string
 		var ratios []float64
 		for _, index := range rows {
 			s := segments[index]
-			total := referenceEquivalent(s, pricingModeCredits, prices)
+			total := referenceEquivalent(s, pricingModeCredits, prices, opts.ReferenceModel)
 			if total > 0 {
 				ratios = append(ratios, s.DP/total)
 			}
@@ -102,7 +103,7 @@ func assessPooledAndModifierContrasts(segments []quotaSegment, prices map[string
 		for j, index := range rows {
 			s := segments[index]
 			root := math.Sqrt(segmentFitWeight(s, now, opts.HalfLifeDays))
-			nuisance[j] = root * scale * referenceEquivalent(s, pricingModeCredits, prices)
+			nuisance[j] = root * scale * referenceEquivalent(s, pricingModeCredits, prices, opts.ReferenceModel)
 			norm += nuisance[j] * nuisance[j]
 			for _, f := range s.Features {
 				value := root * scale * float64(f.Tokens) / 1_000_000 * referenceFeatureRate(f, pricingModeCredits, prices) / denominator

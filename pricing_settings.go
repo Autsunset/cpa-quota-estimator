@@ -52,7 +52,7 @@ func (c config) withPricingSettings(settings pricingSettings) config {
 	c.PricingMode = normalizePricingMode(settings.PricingMode)
 	c.AnchorModel = normalizeModel(settings.AnchorModel)
 	if c.AnchorModel == "" {
-		c.AnchorModel = "gpt-5.6-sol"
+		c.AnchorModel = defaultConfig().AnchorModel
 	}
 	c.CustomPrices = settings.CustomPrices
 	c.CustomFastMultiplier = settings.CustomFastMultiplier
@@ -71,7 +71,7 @@ func normalizePricingSettings(settings pricingSettings) (pricingSettings, error)
 	settings.PricingMode = normalizePricingMode(settings.PricingMode)
 	settings.AnchorModel = normalizeModel(settings.AnchorModel)
 	if settings.AnchorModel == "" {
-		settings.AnchorModel = "gpt-5.6-sol"
+		settings.AnchorModel = defaultConfig().AnchorModel
 	}
 	if settings.CustomFastMultiplier <= 0 {
 		settings.CustomFastMultiplier = 2

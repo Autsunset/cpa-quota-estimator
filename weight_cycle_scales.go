@@ -10,7 +10,7 @@ import (
 func newReferenceWeightModel(segments []quotaSegment, prices map[string]price, mode string, opts weightLearnerOptions) weightModel {
 	opts = weightOptionsWithDefaults(opts)
 	cycles := collectLearningCycles(segments)
-	m := weightModel{index: make(map[string]int), prices: prices, referenceMode: mode, cycles: cycles}
+	m := weightModel{referenceModel: opts.ReferenceModel, index: make(map[string]int), prices: prices, referenceMode: mode, cycles: cycles}
 	previousGroup := ""
 	previousIndex := -1
 	for _, cycle := range cycles {
@@ -19,7 +19,7 @@ func newReferenceWeightModel(segments []quotaSegment, prices map[string]price, m
 			if modelCycle(segment) != cycle.Key {
 				continue
 			}
-			value := referenceEquivalent(segment, mode, prices)
+			value := referenceEquivalent(segment, mode, prices, opts.ReferenceModel)
 			if value > 0 && segment.DP > 0 {
 				ratios = append(ratios, segment.DP/value)
 			}
@@ -49,7 +49,7 @@ func newReferenceWeightModel(segments []quotaSegment, prices map[string]price, m
 
 func fitReferenceCycleScales(segments []quotaSegment, prices map[string]price, mode string, now int64, opts weightLearnerOptions) (weightFit, error) {
 	opts = weightOptionsWithDefaults(opts)
-	fit := weightFit{FittedAt: now, SegmentCount: len(segments), RandomWalkSigma: opts.RandomWalkSigma}
+	fit := weightFit{ReferenceModel: opts.ReferenceModel, ReferenceInputCredits: referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel), FittedAt: now, SegmentCount: len(segments), RandomWalkSigma: opts.RandomWalkSigma}
 	if len(segments) < 5 {
 		return fit, nil
 	}

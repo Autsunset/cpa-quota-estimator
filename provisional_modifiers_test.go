@@ -8,7 +8,7 @@ import (
 func separateModifierSegments(count int) []quotaSegment {
 	var result []quotaSegment
 	for i := 0; i < count; i++ {
-		feature := segmentFeature{Model: weightReferenceModel, Type: "input", Tokens: 100000}
+		feature := segmentFeature{Model: legacyWeightReferenceModel, Type: "input", Tokens: 100000}
 		dp := .1
 		if i%3 == 1 {
 			feature.Fast = true
@@ -27,7 +27,7 @@ func separateModifierSegments(count int) []quotaSegment {
 func TestWeakModifierEvidenceUsesExplicitPriorShrinkageAndGrowsSmoothly(t *testing.T) {
 	var first, last weightFit
 	for _, n := range []int{9, 90, 900} {
-		fit, err := fitQuotaWeights(separateModifierSegments(n), nil, 1800001000, defaultWeightLearnerOptions())
+		fit, err := fitQuotaWeights(separateModifierSegments(n), nil, 1800001000, legacyWeightLearnerOptions())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -61,7 +61,7 @@ func TestAllFastWithoutWithinCycleContrastRetainsExactQuotaPrior(t *testing.T) {
 		segments[i].Features[0].Tokens = 100000
 		segments[i].DP = .3
 	}
-	fit, err := fitQuotaWeights(segments, nil, 1800001000, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, 1800001000, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

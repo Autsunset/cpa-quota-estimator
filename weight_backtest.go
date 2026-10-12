@@ -83,9 +83,10 @@ func sortSegmentsChronologically(segments []quotaSegment) {
 }
 
 func runInterruptedSensitivity(all []quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions) (interruptionSensitivity, error) {
+	opts = weightOptionsWithDefaults(opts)
 	segments := make([]quotaSegment, 0, len(all))
 	for _, segment := range all {
-		if segment.eligibleWithInterrupted() && segment.DP > 0 && referenceEquivalent(segment, pricingModeCredits, prices) > 0 {
+		if segment.eligibleWithInterrupted() && segment.DP > 0 && referenceEquivalent(segment, pricingModeCredits, prices, opts.ReferenceModel) > 0 {
 			segments = append(segments, segment)
 		}
 	}
@@ -143,6 +144,7 @@ func (a scoreAccumulator) result(mode string) backtestScore {
 }
 
 func prequentialScores(eligible []quotaSegment, prices map[string]price, opts weightLearnerOptions) ([]backtestScore, error) {
+	opts = weightOptionsWithDefaults(opts)
 	const modelDiagnostic = "weights_model"
 	modes := []string{pricingModeAPI, pricingModeCredits, modelDiagnostic}
 	accumulators := make(map[string]*scoreAccumulator)
@@ -188,7 +190,7 @@ func prequentialScores(eligible []quotaSegment, prices map[string]price, opts we
 		segment := eligible[index]
 		weight := segmentFitWeight(segment, segment.EndAt, opts.HalfLifeDays)
 		for _, mode := range modes[:2] {
-			equivalent := referenceEquivalent(segment, mode, prices)
+			equivalent := referenceEquivalent(segment, mode, prices, opts.ReferenceModel)
 			if equivalent <= 0 {
 				continue
 			}
@@ -219,6 +221,7 @@ func prequentialScores(eligible []quotaSegment, prices map[string]price, opts we
 }
 
 func rollingBacktest(byLag map[int][]quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions) (weightBacktest, error) {
+	opts = weightOptionsWithDefaults(opts)
 	result := weightBacktest{GeneratedAt: now, Lags: []backtestLagResult{}, Scores: []backtestScore{}}
 	bestMAE := math.Inf(1)
 	secondMAE := math.Inf(1)
@@ -228,7 +231,7 @@ func rollingBacktest(byLag map[int][]quotaSegment, prices map[string]price, now 
 	for lag := 0; lag <= 2; lag++ {
 		seen := make(map[segmentIdentity]bool)
 		for _, segment := range byLag[lag] {
-			if segment.eligible() && segment.DP > 0 && referenceEquivalent(segment, pricingModeCredits, prices) > 0 {
+			if segment.eligible() && segment.DP > 0 && referenceEquivalent(segment, pricingModeCredits, prices, opts.ReferenceModel) > 0 {
 				seen[identityOf(segment)] = true
 			}
 		}

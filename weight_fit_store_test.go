@@ -16,7 +16,7 @@ func TestScheduledFitReusesBacktestUntilDailyRefresh(t *testing.T) {
 	if err = seedPrices(context.Background(), s); err != nil {
 		t.Fatal(err)
 	}
-	opts := defaultWeightLearnerOptions()
+	opts := legacyWeightLearnerOptions()
 	previous := weightBacktest{
 		GeneratedAt:   time.Now().Unix() - 100,
 		SelectedLag:   1,

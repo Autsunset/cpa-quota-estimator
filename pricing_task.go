@@ -75,23 +75,46 @@ func (a *app) runPricingTask(s *store, settings pricingSettings, cfg, previousCf
 		update(func(task *pricingRecalcTask) { task.Status = "rolling_back" })
 		a.mu.Lock()
 		if a.store == s {
+			if previousCfg.LearnedFit != nil {
+				restoreCtx, done := context.WithTimeout(context.Background(), 30*time.Second)
+				_ = s.seedOnlineCycleScales(restoreCtx, previousCfg.LearnedFit)
+				done()
+			}
 			a.cfg = previousCfg
 		}
 		a.mu.Unlock()
 	}
-	count, err := s.recalculatePricingBatches(ctx, settings, cfg, previousCfg, func(progress pricingRecalcProgress) error {
-		update(func(task *pricingRecalcTask) { task.Progress = progress })
-		if a.pricingProgressHook != nil {
-			return a.pricingProgressHook(progress)
+	var count int64
+	var err error
+	if !cfg.fitMatchesReference(cfg.LearnedFit) ||
+		cfg.LearnedFit.EligibilityVersion != weightEligibilityVersion {
+		update(func(task *pricingRecalcTask) { task.Progress.Stage = "fitting" })
+		var result weightBacktest
+		result, err = s.refreshWeightFit(ctx, cfg.weightLearnerOptions())
+		if err == nil {
+			cfg.LearnedFit = &result.FittedWeights
+			a.mu.Lock()
+			if a.store != s || a.cfg.anchorModel() != cfg.anchorModel() {
+				err = fmt.Errorf("plugin reference changed while fitting")
+			} else if err = s.seedOnlineCycleScales(ctx, cfg.LearnedFit); err == nil {
+				a.cfg.LearnedFit = cfg.LearnedFit
+			}
+			a.mu.Unlock()
 		}
-		return nil
-	}, rollbackCfg)
+	}
+	if err == nil {
+		count, err = s.recalculatePricingBatches(ctx, settings, cfg, previousCfg, func(progress pricingRecalcProgress) error {
+			update(func(task *pricingRecalcTask) { task.Progress = progress })
+			if a.pricingProgressHook != nil {
+				return a.pricingProgressHook(progress)
+			}
+			return nil
+		}, rollbackCfg)
+	}
 	if err != nil {
-		a.mu.Lock()
-		if a.store == s {
-			a.cfg = previousCfg
-		}
-		a.mu.Unlock()
+		rollbackCfg()
+	} else if cfg.LearnedFit != nil {
+		_, _ = s.updateWeightAttributions(ctx, cfg.LearnedFit, cfg.LongContextThreshold)
 	}
 	go func() {
 		checkpointCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

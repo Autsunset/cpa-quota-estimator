@@ -6,18 +6,24 @@ import (
 )
 
 func testAnchorFit() *weightFit {
-	return &weightFit{EligibilityVersion: weightEligibilityVersion, Available: true, Models: []learnedModelWeights{
+	return &weightFit{ReferenceModel: legacyWeightReferenceModel, ReferenceInputCredits: 100, EligibilityVersion: weightEligibilityVersion, Available: true, Models: []learnedModelWeights{
 		{Model: "gpt-5.6-sol", Input: weightEstimate{Value: 1, Low: 1, High: 1, Identified: true}, Cache: weightEstimate{Value: .1, Low: .1, High: .1, Identified: true}, Output: weightEstimate{Value: 5, Low: 5, High: 5, Identified: true}},
 		{Model: "gpt-6-astra", Input: weightEstimate{Value: 3, Low: 2.4, High: 3.6, Identified: true}, Cache: weightEstimate{Value: .3, Low: .24, High: .36, Identified: true}, Output: weightEstimate{Value: 15, Low: 12, High: 18, Identified: true}},
 		{Model: "gpt-6-sol", Input: weightEstimate{Value: .5, Low: .5, High: .5, PriorLocked: true}},
 	}}
 }
 
+func legacyPricingConfig() config {
+	cfg := defaultConfig()
+	cfg.AnchorModel = legacyWeightReferenceModel
+	return cfg
+}
+
 func TestAnchoredPricesUseOfficialShapeAndRelativeAdjustment(t *testing.T) {
 	ref := price{Model: "gpt-5.6-sol", Input: 4, CacheRead: .4, Output: 20, CacheWrite: 5}
 	astra := price{Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50, CacheWrite: 12.5}
 	sol := price{Model: "gpt-6-sol", Input: 2, CacheRead: .2, Output: 10, CacheWrite: 2.5}
-	cfg := defaultConfig()
+	cfg := legacyPricingConfig()
 	cfg.PricingMode = pricingModeAPI
 	cfg.AnchorModel = "gpt-5.6-sol"
 	cfg.LearnedFit = testAnchorFit()
@@ -59,7 +65,7 @@ func TestAnchoredPricesUseOfficialShapeAndRelativeAdjustment(t *testing.T) {
 
 func TestCustomPricesIgnoreLearnerAndAnchor(t *testing.T) {
 	astra := price{Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50, CacheWrite: 12.5, LongInput: 20, LongRead: 2, LongOutput: 75, LongWrite: 25}
-	cfg := defaultConfig()
+	cfg := legacyPricingConfig()
 	cfg.PricingMode = pricingModeCustom
 	cfg.LearnedFit = testAnchorFit()
 	cfg.CustomFastMultiplier = 3
@@ -80,7 +86,7 @@ func TestCustomPricesIgnoreLearnerAndAnchor(t *testing.T) {
 
 func TestFastAndLongShowLearnedAgainstOfficial(t *testing.T) {
 	p, _ := officialGPT6Price("gpt-6-astra")
-	cfg := defaultConfig()
+	cfg := legacyPricingConfig()
 	cfg.PricingMode = pricingModeAPI
 	cfg.LearnedFit = testAnchorFit()
 	cfg.LearnedFit.Fast = weightEstimate{Value: 3, Low: 2.5, High: 3.5, Identified: true}
@@ -110,7 +116,7 @@ func TestLongContextUsesLearnedOrOfficialTier(t *testing.T) {
 		{"credits_locked", pricingModeCredits, true, (700_000*300 + 200_000*30 + 100_000*0 + 50_000*1500) / 1_000_000, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := defaultConfig()
+			cfg := legacyPricingConfig()
 			cfg.PricingMode = tc.mode
 			cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 4}, p.Model: p}
 			cfg.LearnedFit = testAnchorFit()
@@ -131,7 +137,7 @@ func TestFastUsesLearnedOrOfficialMultiplierWithoutStacking(t *testing.T) {
 	p, _ := officialGPT6Price("gpt-6-astra")
 	for _, mode := range []string{pricingModeAPI, pricingModeCredits} {
 		for _, locked := range []bool{false, true} {
-			cfg := defaultConfig()
+			cfg := legacyPricingConfig()
 			cfg.PricingMode = mode
 			cfg.LongContextThreshold = 2_000_000
 			cfg.PriceCatalog = map[string]price{"gpt-5.6-sol": {Model: "gpt-5.6-sol", Input: 4}, p.Model: p}
@@ -151,7 +157,7 @@ func TestFastUsesLearnedOrOfficialMultiplierWithoutStacking(t *testing.T) {
 }
 
 func TestUnlistedCreditsPriceIsMarkedAsEstimate(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := legacyPricingConfig()
 	row := cfg.priceRow(price{Model: "gpt-unlisted", Input: 3, CacheRead: .3, Output: 15, CacheWrite: 4})
 	if row.OfficialListed || row.Official.Input != 75 || row.Official.CacheWrite != 0 {
 		t.Fatalf("fallback row=%#v", row)
@@ -159,7 +165,7 @@ func TestUnlistedCreditsPriceIsMarkedAsEstimate(t *testing.T) {
 }
 
 func TestAdjustmentKeepsCreditLearningUnitsWhenAPICatalogChanges(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := legacyPricingConfig()
 	cfg.PricingMode = pricingModeAPI
 	cfg.LearnedFit = testAnchorFit()
 	astra := price{Model: "gpt-6-astra", Input: 10, CacheRead: 1, Output: 50}

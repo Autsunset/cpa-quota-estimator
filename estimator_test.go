@@ -18,7 +18,7 @@ func TestPublicReleaseDefaults(t *testing.T) {
 	if cfg.HistoryDays != 365 {
 		t.Fatalf("history days = %d, want 365", cfg.HistoryDays)
 	}
-	if cfg.AnchorModel != "gpt-5.6-sol" || cfg.CustomFastMultiplier != 2 || !cfg.CustomLongContext {
+	if cfg.AnchorModel != "gpt-6-astra" || cfg.CustomFastMultiplier != 2 || !cfg.CustomLongContext {
 		t.Fatalf("pricing defaults=%#v", cfg)
 	}
 	if bytes.Contains(dashboardHTML, []byte(`id="applyFastPricing"`)) {

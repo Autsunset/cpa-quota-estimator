@@ -7,6 +7,20 @@ import (
 	"testing"
 )
 
+func legacyWeightLearnerOptions() weightLearnerOptions {
+	opts := defaultWeightLearnerOptions()
+	opts.ReferenceModel = legacyWeightReferenceModel
+	return opts
+}
+
+func legacyReferenceInputRate(mode string, prices map[string]price) float64 {
+	return referenceInputRate(mode, prices, legacyWeightReferenceModel)
+}
+
+func legacyReferenceEquivalent(segment quotaSegment, mode string, prices map[string]price) float64 {
+	return referenceEquivalent(segment, mode, prices, legacyWeightReferenceModel)
+}
+
 func TestWeightLearnerRecoversKnownSyntheticWeights(t *testing.T) {
 	const now = int64(1_800_000_000)
 	random := rand.New(rand.NewSource(20260923))
@@ -22,13 +36,13 @@ func TestWeightLearnerRecoversKnownSyntheticWeights(t *testing.T) {
 			EndAt: now - int64(1600-i)*60, DP: 1, BoundaryWeight: 1, Features: []segmentFeature{}}
 		for j := 0; j < 1+random.Intn(3); j++ {
 			feature := segmentFeature{Model: models[random.Intn(len(models))], Type: types[random.Intn(len(types))], Fast: random.Intn(2) == 1, Long: random.Intn(2) == 1}
-			rate := referenceFeatureRate(feature, pricingModeCredits, nil) / referenceSolRate(pricingModeCredits, nil)
+			rate := referenceFeatureRate(feature, pricingModeCredits, nil) / legacyReferenceInputRate(pricingModeCredits, nil)
 			feature.Tokens = int64(float64(300000+random.Intn(1700000)) / rate)
 			segment.Features = append(segment.Features, feature)
 		}
 		segments[i] = segment
 	}
-	opts := defaultWeightLearnerOptions()
+	opts := legacyWeightLearnerOptions()
 	opts.CacheShareMinSD, opts.OutputShareMinSD, opts.TypeMinFisher = .001, .001, .001
 	opts.ModelShareMinSD, opts.ModelMinFisher = .001, .001
 	opts.CacheCycleRatioMinRange, opts.OutputCycleRatioMinRange = .001, .001
@@ -98,11 +112,11 @@ func TestStableTokenCompositionLocksTypeRatiosAndTracksCycleDrift(t *testing.T) 
 					{Model: "gpt-5.6-sol", Type: "output", Tokens: 1_500 * factor},
 				},
 			}
-			segment.DP = scale * referenceEquivalent(segment, pricingModeCredits, nil)
+			segment.DP = scale * legacyReferenceEquivalent(segment, pricingModeCredits, nil)
 			segments = append(segments, segment)
 		}
 	}
-	fit, err := fitQuotaWeights(segments, nil, now, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, now, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +148,7 @@ func TestGPT61SolCanCalibrateFromPausedSameCycleModelMixtures(t *testing.T) {
 			DP:       float64(baseline)/1000000 + 1.4*.5*float64(target)/1000000,
 			Features: []segmentFeature{{Model: "gpt-5.6-sol", Type: "input", Tokens: baseline}, {Model: "gpt-6.1-sol", Type: "input", Tokens: target}}})
 	}
-	fit, err := fitQuotaWeights(segments, nil, now, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, now, legacyWeightLearnerOptions())
 	if err != nil || !fit.Available || fit.SegmentCount != len(segments) {
 		t.Fatalf("paused mixture fit failed: %#v, %v", fit, err)
 	}

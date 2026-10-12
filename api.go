@@ -131,11 +131,11 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if !strings.EqualFold(req.Method, "GET") {
 			return textResponse(405, "method not allowed")
 		}
-		result, ok, err := a.store.latestWeightFit(ctx)
+		result, ok, err := a.store.latestWeightFitForReference(ctx, a.cfg.anchorModel())
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
-		if !ok {
+		if !ok || result.FittedWeights.EligibilityVersion != weightEligibilityVersion || !a.cfg.fitMatchesReference(&result.FittedWeights) {
 			return jsonResponse(200, weightBacktest{Lags: []backtestLagResult{}, Scores: []backtestScore{}})
 		}
 		return jsonResponse(200, result)
@@ -150,15 +150,18 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				if hasUncalibratedComponent(row) {
 					locked = append(locked, row.Model)
 				}
-				if hasUncalibratedComponent(row) || row.Model == "gpt-6-astra" {
+				if hasUncalibratedComponent(row) {
 					targets = append(targets, row.Model)
 				}
 			}
 		}
-		return jsonResponse(200, map[string]any{"models": models, "locked_models": locked, "target_models": targets})
+		return jsonResponse(200, map[string]any{"reference_model": a.cfg.anchorModel(), "models": models, "locked_models": locked, "target_models": targets})
 	case strings.HasSuffix(req.Path, "/calibration/start"):
 		if !strings.EqualFold(req.Method, "POST") {
 			return textResponse(405, "method not allowed")
+		}
+		if active, _ := a.pricingTaskActive(); active {
+			return textResponse(409, "wait for reference fitting and pricing recalculation to finish")
 		}
 		var body struct {
 			Account       string  `json:"account"`
@@ -228,15 +231,15 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		if !strings.EqualFold(req.Method, "GET") {
 			return textResponse(405, "method not allowed")
 		}
-		result, ok, err := a.store.latestWeightFit(ctx)
+		result, ok, err := a.store.latestWeightFitForReference(ctx, a.cfg.anchorModel())
 		if err != nil {
 			return textResponse(500, err.Error())
 		}
 		if !ok {
-			return jsonResponse(200, weightFit{Models: []learnedModelWeights{}})
+			return jsonResponse(200, weightFit{ReferenceModel: a.cfg.anchorModel(), Models: []learnedModelWeights{}})
 		}
-		if result.FittedWeights.EligibilityVersion != weightEligibilityVersion {
-			return jsonResponse(200, weightFit{EligibilityVersion: weightEligibilityVersion, Models: []learnedModelWeights{}})
+		if result.FittedWeights.EligibilityVersion != weightEligibilityVersion || !a.cfg.fitMatchesReference(&result.FittedWeights) {
+			return jsonResponse(200, weightFit{ReferenceModel: a.cfg.anchorModel(), EligibilityVersion: weightEligibilityVersion, Models: []learnedModelWeights{}})
 		}
 		current, err := a.store.overlayOnlineCycleScales(ctx, result.FittedWeights)
 		if err != nil {

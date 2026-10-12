@@ -10,8 +10,18 @@ import (
 )
 
 func (s *store) latestWeightFit(ctx context.Context) (weightBacktest, bool, error) {
+	return s.latestWeightFitForReference(ctx, "")
+}
+
+func (s *store) latestWeightFitForReference(ctx context.Context, reference string) (weightBacktest, bool, error) {
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT backtest_json FROM weight_fits ORDER BY id DESC LIMIT 1`).Scan(&raw)
+	query := `SELECT backtest_json FROM weight_fits`
+	var args []any
+	if reference != "" {
+		query += ` WHERE COALESCE(NULLIF(json_extract(fit_json,'$.reference_model'),''),?)=?`
+		args = []any{legacyWeightReferenceModel, normalizeModel(reference)}
+	}
+	err := s.db.QueryRowContext(ctx, query+` ORDER BY id DESC LIMIT 1`, args...).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return weightBacktest{}, false, nil
 	}
@@ -53,9 +63,11 @@ func (s *store) refreshWeightFit(ctx context.Context, opts weightLearnerOptions)
 // The hourly path reuses the latest selected lag and scores. A full rolling
 // backtest is still run daily and whenever calibration explicitly requests it.
 func (s *store) refreshWeightFitScheduled(ctx context.Context, opts weightLearnerOptions, previous weightBacktest, hasPrevious bool) (weightBacktest, error) {
+	opts = weightOptionsWithDefaults(opts)
 	now := time.Now().Unix()
 	if !hasPrevious || previous.GeneratedAt <= 0 || now-previous.GeneratedAt >= 24*3600 ||
 		previous.FittedWeights.EligibilityVersion != weightEligibilityVersion ||
+		fitReferenceModel(&previous.FittedWeights) != opts.ReferenceModel ||
 		previous.FittedWeights.RandomWalkSigma != opts.RandomWalkSigma || previous.FittedWeights.HalfLifeDays != opts.HalfLifeDays {
 		return s.refreshWeightFit(ctx, opts)
 	}
@@ -70,6 +82,10 @@ func (s *store) refreshWeightFitScheduled(ctx context.Context, opts weightLearne
 	prices := make(map[string]price, len(priceRows))
 	for _, p := range priceRows {
 		prices[normalizeModel(p.Model)] = p
+	}
+	rate := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
+	if rate <= 0 || math.Abs(previous.FittedWeights.referenceCredits()/rate-1) > 1e-9 {
+		return s.refreshWeightFit(ctx, opts)
 	}
 	fit, err := fitQuotaWeights(segments, prices, now, opts)
 	if err != nil {
@@ -256,6 +272,20 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 		tx, txErr := s.db.BeginTx(ctx, nil)
 		if txErr != nil {
 			return int64(start), txErr
+		}
+		if fit != nil && fit.Available {
+			var basis string
+			basisErr := tx.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, onlineWeightBasisKey).Scan(&basis)
+			if basisErr == sql.ErrNoRows {
+				basis = (weightFit{}).weightBasis()
+			} else if basisErr != nil {
+				tx.Rollback()
+				return int64(start), basisErr
+			}
+			if basis != fit.weightBasis() {
+				tx.Rollback()
+				return int64(start), context.Canceled
+			}
 		}
 		stmt, prepErr := tx.PrepareContext(ctx, `UPDATE usage_events SET learned_quota_pct=?,learned_secondary_pct=? WHERE id=?`)
 		if prepErr != nil {

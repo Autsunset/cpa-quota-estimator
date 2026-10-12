@@ -4,15 +4,15 @@ import "testing"
 
 func TestReviewColdModelValidationIgnoresUnrelatedOldHistory(t *testing.T) {
 	recent := pooledContrastSegments(24)
-	base, err := fitQuotaWeights(recent, nil, 1800000100, defaultWeightLearnerOptions())
+	base, err := fitQuotaWeights(recent, nil, 1800000100, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
 	history := []quotaSegment{}
 	for i := 0; i < 180; i++ {
-		history = append(history, quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: int64(10 + i/60), RegimeResetAt: int64(1799900000 + i/60*10000), StartAt: 1799900000 + int64(i), EndAt: 1799900000 + int64(i), DP: 1, BoundaryWeight: 1, Features: []segmentFeature{{Model: weightReferenceModel, Type: "input", Tokens: 1000000}}})
+		history = append(history, quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: int64(10 + i/60), RegimeResetAt: int64(1799900000 + i/60*10000), StartAt: 1799900000 + int64(i), EndAt: 1799900000 + int64(i), DP: 1, BoundaryWeight: 1, Features: []segmentFeature{{Model: legacyWeightReferenceModel, Type: "input", Tokens: 1000000}}})
 	}
-	full, err := fitQuotaWeights(append(history, recent...), nil, 1800000100, defaultWeightLearnerOptions())
+	full, err := fitQuotaWeights(append(history, recent...), nil, 1800000100, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,12 +34,12 @@ func TestPooledValidationKeepsTimestampTiesOutOfTraining(t *testing.T) {
 	// a background observation at that same time must both remain in validation.
 	cutoff := segments[17].EndAt
 	segments[15].EndAt, segments[16].EndAt = cutoff, cutoff
-	evidence := pooledValidation("gpt-6.1-sol", segments, nil, defaultWeightLearnerOptions())
+	evidence := pooledValidation("gpt-6.1-sol", segments, nil, legacyWeightLearnerOptions())
 	if evidence.TrainingSegments != 15 || evidence.ValidationSegments != 5 || !evidence.Accepted {
 		t.Fatalf("timestamp group leaked into training: %+v", evidence)
 	}
 	for _, n := range []int{8, 18} {
-		short := pooledValidation("gpt-6.1-sol", pooledContrastSegments(n), nil, defaultWeightLearnerOptions())
+		short := pooledValidation("gpt-6.1-sol", pooledContrastSegments(n), nil, legacyWeightLearnerOptions())
 		if short.Accepted {
 			t.Fatalf("too few target validation observations were accepted: %+v", short)
 		}
@@ -50,11 +50,11 @@ func TestPooledValidationAcceptsCandidateImprovingOutOfSampleError(t *testing.T)
 	segments := pooledContrastSegments(24)
 	for i := range segments {
 		segments[i].Features = append(segments[i].Features, segmentFeature{
-			Model: weightReferenceModel, Type: "input", Tokens: 5000000,
+			Model: legacyWeightReferenceModel, Type: "input", Tokens: 5000000,
 		})
 		segments[i].DP += 5.0
 	}
-	evidence := pooledValidation("gpt-6.1-sol", segments, nil, defaultWeightLearnerOptions())
+	evidence := pooledValidation("gpt-6.1-sol", segments, nil, legacyWeightLearnerOptions())
 	if !evidence.Accepted || evidence.Reason != "validation_improved" {
 		t.Fatalf("expected accepted validation in mixed workload, got: %+v", evidence)
 	}

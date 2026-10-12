@@ -8,7 +8,7 @@ import (
 func pooledContrastSegments(count int) []quotaSegment {
 	var segments []quotaSegment
 	for i := 0; i < count; i++ {
-		model, tokens, dp := weightReferenceModel, int64(2000000), 2.0
+		model, tokens, dp := legacyWeightReferenceModel, int64(2000000), 2.0
 		var features []segmentFeature
 		if i%2 == 0 {
 			features = []segmentFeature{{Model: model, Type: "input", Tokens: tokens}}
@@ -23,7 +23,7 @@ func pooledContrastSegments(count int) []quotaSegment {
 }
 
 func TestFewContrastsRecoverPooledCompositionWithoutIndependentPrices(t *testing.T) {
-	opts := defaultWeightLearnerOptions()
+	opts := legacyWeightLearnerOptions()
 	opts.PooledDiagnosticOnly = true
 	fit, err := fitQuotaWeights(pooledContrastSegments(12), nil, 1800000100, opts)
 	if err != nil {
@@ -58,7 +58,7 @@ func TestApprovedPoolingIsAdditiveAndDoesNotExtrapolateUnseenComponents(t *testi
 			segments[i].DP = 1.4
 		}
 	}
-	opts := defaultWeightLearnerOptions()
+	opts := legacyWeightLearnerOptions()
 	opts.SkipPooledValidation = true
 	opts.ApprovedPooledModels = map[string]bool{"gpt-6.1-sol": true}
 	fit, err := fitQuotaWeights(segments, nil, 1800000100, opts)
@@ -113,13 +113,13 @@ func TestFixedMixedModesCannotPretendToIdentifyFastLongCombination(t *testing.T)
 	var segments []quotaSegment
 	for i := 0; i < 30; i++ {
 		baseline := int64(300000 + i%5*100000)
-		features := []segmentFeature{{Model: weightReferenceModel, Type: "input", Tokens: baseline},
-			{Model: weightReferenceModel, Type: "input", Tokens: 100000, Fast: true},
-			{Model: weightReferenceModel, Type: "input", Tokens: 100000, Long: true},
-			{Model: weightReferenceModel, Type: "input", Tokens: 100000, Fast: true, Long: true}}
+		features := []segmentFeature{{Model: legacyWeightReferenceModel, Type: "input", Tokens: baseline},
+			{Model: legacyWeightReferenceModel, Type: "input", Tokens: 100000, Fast: true},
+			{Model: legacyWeightReferenceModel, Type: "input", Tokens: 100000, Long: true},
+			{Model: legacyWeightReferenceModel, Type: "input", Tokens: 100000, Fast: true, Long: true}}
 		segments = append(segments, quotaSegment{Account: "a", Window: mainQuotaScope, CycleID: 1, RegimeResetAt: 1900000000, EndAt: 1800000000 + int64(i), DP: float64(baseline)/1e6 + .3 + .15 + .45, BoundaryWeight: 1, Features: features})
 	}
-	fit, err := fitQuotaWeights(segments, nil, 1800000100, defaultWeightLearnerOptions())
+	fit, err := fitQuotaWeights(segments, nil, 1800000100, legacyWeightLearnerOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
