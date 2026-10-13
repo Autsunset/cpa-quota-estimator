@@ -614,27 +614,69 @@ func (s *store) cycles(ctx context.Context, account string, limit int) ([]quotaC
 		limit = 60
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT c.id,c.started_at,c.ended_at,c.reset_at,c.window_minutes,c.plan_type,c.close_reason,c.first_sample_at,c.last_sample_at,c.start_used_percent,c.end_used_percent,c.peak_used_percent,
-COALESCE(SUM(u.total_tokens),0),COALESCE(SUM(u.cost_usd),0),COUNT(u.id)
+SELECT c.id,c.started_at,c.ended_at,COALESCE(q.reset_at,c.reset_at),COALESCE(q.window_minutes,c.window_minutes),c.plan_type,c.close_reason,c.first_sample_at,c.last_sample_at,c.start_used_percent,c.end_used_percent,c.peak_used_percent,
+COALESCE(SUM(u.total_tokens),0),COALESCE(SUM(u.cost_usd),0),COUNT(u.id),
+c.reset_at,c.window_minutes,COALESCE(q.sampled_at,0),COALESCE(q.used_percent,0)
 FROM (SELECT * FROM quota_cycles WHERE account=? ORDER BY started_at DESC,id DESC LIMIT ?) c
+LEFT JOIN quota_samples q ON q.id=(SELECT id FROM quota_samples
+	WHERE cycle_id=c.id AND c.ended_at>0 AND sampled_at<c.ended_at ORDER BY sampled_at DESC,id DESC LIMIT 1)
 LEFT JOIN usage_events u ON u.cycle_id=c.id AND u.quota_scope='main'
 GROUP BY c.id
 ORDER BY c.started_at DESC,c.id DESC`, account, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var cycles []quotaCycle
+	type historicalRegimeCandidate struct {
+		index    int
+		original quotaCycle
+		sample   quotaPoint
+	}
+	var candidates []historicalRegimeCandidate
 	for rows.Next() {
 		var cycle quotaCycle
-		if err = rows.Scan(&cycle.ID, &cycle.StartedAt, &cycle.EndedAt, &cycle.ResetAt, &cycle.WindowMinutes, &cycle.PlanType, &cycle.CloseReason, &cycle.FirstSampleAt, &cycle.LastSampleAt, &cycle.StartPercent, &cycle.EndPercent, &cycle.PeakPercent, &cycle.ActualTokens, &cycle.ActualCostUSD, &cycle.Requests); err != nil {
+		var originalReset, originalWindow int64
+		var sample quotaPoint
+		if err = rows.Scan(&cycle.ID, &cycle.StartedAt, &cycle.EndedAt, &cycle.ResetAt, &cycle.WindowMinutes, &cycle.PlanType, &cycle.CloseReason, &cycle.FirstSampleAt, &cycle.LastSampleAt, &cycle.StartPercent, &cycle.EndPercent, &cycle.PeakPercent, &cycle.ActualTokens, &cycle.ActualCostUSD, &cycle.Requests,
+			&originalReset, &originalWindow, &sample.Time, &sample.UsedPercent); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		cycle.Current = cycle.EndedAt == 0
 		cycle.ObservedComplete = cycle.FirstSampleAt > 0 && cycle.FirstSampleAt <= cycle.StartedAt+15*60 && cycle.StartPercent <= resetLowPercent
+		if sample.Time > 0 && (absInt64(cycle.ResetAt-originalReset) > segmentResetSlack || cycle.WindowMinutes != originalWindow) {
+			original := cycle
+			original.ResetAt, original.WindowMinutes = originalReset, originalWindow
+			sample.ResetAt, sample.WindowMinutes = cycle.ResetAt, cycle.WindowMinutes
+			candidates = append(candidates, historicalRegimeCandidate{len(cycles), original, sample})
+		}
 		cycles = append(cycles, cycle)
 	}
-	return cycles, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range candidates {
+		anomalies, err := s.quotaRegimeAnomalies(ctx, candidate.original.ID)
+		if err != nil {
+			return nil, err
+		}
+		reset, window, _ := trustedHistoricalRegime(candidate.original, candidate.sample, anomalies)
+		cycles[candidate.index].ResetAt, cycles[candidate.index].WindowMinutes = reset, window
+	}
+	return cycles, nil
+}
+
+func trustedHistoricalRegime(cycle quotaCycle, sample quotaPoint, anomalies []quotaRegimeAnomaly) (int64, int64, float64) {
+	for _, anomaly := range anomalies {
+		if sample.Time >= anomaly.StartedAt && sample.Time < anomaly.EndedAt &&
+			absInt64(sample.ResetAt-anomaly.AnomalousResetAt) <= segmentResetSlack {
+			// Older samplers can omit a confirmed lower recovery reading.
+			return anomaly.RestoredResetAt, cycle.WindowMinutes, anomaly.RestoredUsedPercent
+		}
+	}
+	return sample.ResetAt, sample.WindowMinutes, sample.UsedPercent
 }
 
 func (s *store) pointsForCycle(ctx context.Context, account string, cycleID int64, limit int) ([]quotaPoint, string, error) {
@@ -642,12 +684,23 @@ func (s *store) pointsForCycle(ctx context.Context, account string, cycleID int6
 		limit = 2000
 	}
 	var cycle quotaCycle
-	err := s.db.QueryRowContext(ctx, `SELECT id,started_at,ended_at,reset_at,window_minutes,plan_type FROM quota_cycles WHERE id=? AND account=?`, cycleID, account).
-		Scan(&cycle.ID, &cycle.StartedAt, &cycle.EndedAt, &cycle.ResetAt, &cycle.WindowMinutes, &cycle.PlanType)
+	var originalReset, originalWindow int64
+	var trustedAt int64
+	var trustedUsed float64
+	err := s.db.QueryRowContext(ctx, `SELECT c.id,c.started_at,c.ended_at,
+		COALESCE(q.reset_at,c.reset_at),COALESCE(q.window_minutes,c.window_minutes),c.plan_type,
+		COALESCE(q.sampled_at,0),COALESCE(q.used_percent,0),c.reset_at,c.window_minutes
+		FROM quota_cycles c
+		LEFT JOIN quota_samples q ON q.id=(SELECT id FROM quota_samples
+			WHERE cycle_id=c.id AND c.ended_at>0 AND sampled_at<c.ended_at ORDER BY sampled_at DESC,id DESC LIMIT 1)
+		WHERE c.id=? AND c.account=?`, cycleID, account).
+		Scan(&cycle.ID, &cycle.StartedAt, &cycle.EndedAt, &cycle.ResetAt, &cycle.WindowMinutes, &cycle.PlanType, &trustedAt, &trustedUsed, &originalReset, &originalWindow)
 	if err != nil {
 		return nil, "", err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT sampled_at,used_percent,reset_at,window_minutes,window_tokens,window_cost_usd,requests FROM quota_samples WHERE cycle_id=? ORDER BY sampled_at ASC LIMIT ?`, cycleID, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT sampled_at,used_percent,reset_at,window_minutes,window_tokens,window_cost_usd,requests
+		FROM quota_samples WHERE cycle_id=? AND (?=0 OR sampled_at<?) ORDER BY sampled_at ASC LIMIT ?`,
+		cycleID, cycle.EndedAt, cycle.EndedAt, limit)
 	if err != nil {
 		return nil, "", err
 	}
@@ -663,15 +716,42 @@ func (s *store) pointsForCycle(ctx context.Context, account string, cycleID int6
 	if err = rows.Close(); err != nil {
 		return nil, "", err
 	}
+	anomalies, err := s.quotaRegimeAnomalies(ctx, cycle.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	if cycle.EndedAt > 0 && trustedAt > 0 {
+		original := cycle
+		original.ResetAt, original.WindowMinutes = originalReset, originalWindow
+		cycle.ResetAt, cycle.WindowMinutes, trustedUsed = trustedHistoricalRegime(original, quotaPoint{
+			Time: trustedAt, ResetAt: cycle.ResetAt, WindowMinutes: cycle.WindowMinutes, UsedPercent: trustedUsed,
+		}, anomalies)
+	}
 	live := quotaPoint{CycleID: cycle.ID, CycleStart: cycle.StartedAt, ResetAt: cycle.ResetAt, WindowMinutes: cycle.WindowMinutes}
 	var liveRequestedAt int64
-	errLive := s.db.QueryRowContext(ctx, `SELECT requested_at,
-	CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent
+	liveQuery := `SELECT requested_at,
+CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent
 FROM usage_events
-WHERE cycle_id=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL AND reset_at=? AND window_minutes=?
-ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END DESC,id DESC LIMIT 1`,
-		cycle.ID, mainQuotaScope, cycle.ResetAt, cycle.WindowMinutes).
-		Scan(&liveRequestedAt, &live.Time, &live.UsedPercent)
+WHERE cycle_id=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL AND window_minutes=?`
+	liveArgs := []any{cycle.ID, mainQuotaScope, cycle.WindowMinutes}
+	if cycle.EndedAt > 0 {
+		// A closed cycle must follow its last accepted sample, not a schedule
+		// temporarily advanced by the first unconfirmed replacement headers.
+		liveQuery += ` AND reset_at BETWEEN ? AND ? AND requested_at<?
+			AND (CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END)<?
+			AND used_percent>=?`
+		liveArgs = append(liveArgs, cycle.ResetAt-segmentResetSlack, cycle.ResetAt+segmentResetSlack,
+			cycle.EndedAt, cycle.EndedAt, trustedUsed-resetPercentTolerance)
+	} else {
+		liveQuery += ` AND reset_at=?`
+		liveArgs = append(liveArgs, cycle.ResetAt)
+	}
+	liveQuery += ` ORDER BY CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END DESC,id DESC LIMIT 1`
+	errLive := sql.ErrNoRows
+	if cycle.EndedAt == 0 || trustedAt > 0 {
+		errLive = s.db.QueryRowContext(ctx, liveQuery, liveArgs...).
+			Scan(&liveRequestedAt, &live.Time, &live.UsedPercent)
+	}
 	if errLive != nil && errLive != sql.ErrNoRows {
 		return nil, "", errLive
 	}
@@ -685,15 +765,20 @@ FROM usage_events WHERE cycle_id=? AND quota_scope=? AND requested_at<=?`, cycle
 			points = append(points, live)
 		}
 	}
-	anomalies, err := s.quotaRegimeAnomalies(ctx, cycle.ID)
-	if err != nil {
-		return nil, "", err
-	}
 	points, err = s.addQuotaAnomalyBoundaryPoints(ctx, cycle, points, anomalies)
 	if err != nil {
 		return nil, "", err
 	}
 	markQuotaAnomalyPoints(points, anomalies)
+	if cycle.EndedAt > 0 {
+		kept := points[:0]
+		for _, point := range points {
+			if point.Time < cycle.EndedAt {
+				kept = append(kept, point)
+			}
+		}
+		points = kept
+	}
 	return points, cycle.PlanType, nil
 }
 
@@ -715,7 +800,7 @@ func (s *store) pointsForRange(ctx context.Context, account string, startAt, end
 		if cycleEnd == 0 {
 			cycleEnd = cycle.ResetAt
 		}
-		if cycle.StartedAt <= endAt && (cycleEnd == 0 || cycleEnd >= startAt) {
+		if cycle.StartedAt < endAt && (cycleEnd == 0 || cycleEnd > startAt) {
 			selected = append(selected, cycle)
 		}
 	}
@@ -726,7 +811,7 @@ func (s *store) pointsForRange(ctx context.Context, account string, startAt, end
 			return nil, nil, errPoints
 		}
 		for _, point := range points {
-			if point.Time < startAt || point.Time > endAt {
+			if point.Time < startAt || point.Time >= endAt {
 				continue
 			}
 			out = append(out, point)
