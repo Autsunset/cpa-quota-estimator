@@ -11,7 +11,11 @@ import (
 const onlineWeightBasisKey = "online_weight_basis"
 
 func (fit weightFit) weightBasis() string {
-	return fitReferenceModel(&fit) + "|" + strconv.FormatFloat(fit.referenceCredits(), 'g', -1, 64)
+	basis := fitReferenceModel(&fit) + "|" + strconv.FormatFloat(fit.referenceCredits(), 'g', -1, 64)
+	if fit.EligibilityVersion >= 8 {
+		basis += "|v" + strconv.Itoa(fit.EligibilityVersion)
+	}
+	return basis
 }
 
 func (s *store) onlineWeightBasisMatches(ctx context.Context, fit *weightFit) (bool, error) {

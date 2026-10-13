@@ -387,6 +387,14 @@ func TestSelectedReferenceSnapshot(t *testing.T) {
 	if !found {
 		t.Fatal("selected reference missing from snapshot fit")
 	}
+	for _, pool := range fit.PooledModels {
+		if pool.Model == legacyWeightReferenceModel {
+			t.Logf("former_reference_scope=%s types=%v applied=%t value=%g conditional_fisher=%g share_sd=%g reason=%s validation=%d mae=%g->%g",
+				pool.Scope, pool.TokenTypes, pool.Applied, pool.Estimate.Value,
+				pool.Diagnostic.ConditionalFisher, pool.Diagnostic.WithinCycleShareSD,
+				pool.Evidence.Reason, pool.Evidence.ValidationSegments, pool.Evidence.PriorMAE, pool.Evidence.CandidateMAE)
+		}
+	}
 	t.Logf("reference=%s input_credits=%g segments=%d parameters=%d lag=%d mae=%g",
 		fit.ReferenceModel, fit.ReferenceInputCredits, fit.SegmentCount, len(fit.ParameterNames), fit.Lag, fit.MeanAbsError)
 }

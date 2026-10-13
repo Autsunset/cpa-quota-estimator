@@ -13,7 +13,7 @@ const (
 	legacyWeightReferenceModel = "gpt-5.6-sol"
 	weightObservationSD        = 0.35
 	weightHuberDelta           = 0.6
-	weightEligibilityVersion   = 7
+	weightEligibilityVersion   = 8
 )
 
 type weightLearnerOptions struct {
@@ -45,17 +45,19 @@ func defaultWeightLearnerOptions() weightLearnerOptions {
 }
 
 type identifiabilityDiagnostic struct {
-	Name               string  `json:"name"`
-	Model              string  `json:"model,omitempty"`
-	TokenType          string  `json:"token_type,omitempty"`
-	Unlocked           bool    `json:"unlocked"`
-	WithinCycleShareSD float64 `json:"within_cycle_share_sd"`
-	ConditionalFisher  float64 `json:"conditional_fisher"`
-	MinShareSD         float64 `json:"min_share_sd"`
-	MinFisher          float64 `json:"min_fisher"`
-	CycleRatioRange    float64 `json:"cycle_ratio_range,omitempty"`
-	MinCycleRatioRange float64 `json:"min_cycle_ratio_range,omitempty"`
-	CyclesCompared     int     `json:"cycles_compared,omitempty"`
+	Name               string   `json:"name"`
+	Model              string   `json:"model,omitempty"`
+	TokenType          string   `json:"token_type,omitempty"`
+	TokenTypes         []string `json:"token_types,omitempty"`
+	Scope              string   `json:"scope,omitempty"`
+	Unlocked           bool     `json:"unlocked"`
+	WithinCycleShareSD float64  `json:"within_cycle_share_sd"`
+	ConditionalFisher  float64  `json:"conditional_fisher"`
+	MinShareSD         float64  `json:"min_share_sd"`
+	MinFisher          float64  `json:"min_fisher"`
+	CycleRatioRange    float64  `json:"cycle_ratio_range,omitempty"`
+	MinCycleRatioRange float64  `json:"min_cycle_ratio_range,omitempty"`
+	CyclesCompared     int      `json:"cycles_compared,omitempty"`
 }
 
 type learnedCycleScale struct {
@@ -340,6 +342,7 @@ func newWeightModel(segments []quotaSegment, prices map[string]price, now int64,
 	}
 	for _, diagnostic := range pooledDiagnostics {
 		m.pooledModels[diagnostic.Model] = pooledModelEstimate{Model: diagnostic.Model, Diagnostic: diagnostic,
+			Scope: diagnostic.Scope, TokenTypes: append([]string(nil), diagnostic.TokenTypes...),
 			Estimate: priorWeightEstimate(1, .5), Composition: observedPooledComposition(diagnostic.Model, segments, prices),
 			Evidence: pooledValidationEvidence{Reason: "insufficient_identifiability"}}
 		if diagnostic.Unlocked && !opts.DisablePooled && opts.FixedModelFactors[diagnostic.Model] <= 0 {
@@ -398,7 +401,7 @@ func (m weightModel) predict(segment quotaSegment, x []float64) (float64, []floa
 		modelIndex, hasModel := m.index[componentParameter(feature.Model, feature.Type)]
 		if !hasModel {
 			modelIndex, hasModel = m.index[pooledParameter(feature.Model)]
-			if hasModel && m.pooledModels != nil && m.pooledModels[normalizeModel(feature.Model)].Composition[feature.Type].Tokens <= 0 {
+			if hasModel && m.pooledModels != nil && !m.pooledModels[normalizeModel(feature.Model)].appliesToTokenType(feature.Type) {
 				hasModel = false
 			}
 		}
@@ -668,7 +671,7 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 			if !pool.Diagnostic.Unlocked {
 				continue
 			}
-			pool.Evidence = pooledValidation(model, segments, prices, opts)
+			pool.Evidence = pooledValidation(pool, segments, prices, opts)
 			approved[model] = pool.Evidence.Accepted
 			m.pooledModels[model] = pool
 		}
@@ -694,10 +697,13 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 		}
 		estimate := deriveFactorEstimate(factorModel, factorX, factorCov, []string{pooledParameter(model)}, 1)
 		if supportedWeight(estimate) {
-			estimate.Source = "pooled"
+			estimate.Source = pool.source()
 		}
 		pool.Estimate = estimate
 		pool.Applied = supportedWeight(estimate) && opts.ApprovedPooledModels[model] && !opts.PooledDiagnosticOnly
+		if !supportedWeight(estimate) && pool.Evidence.Accepted {
+			pool.Evidence.Accepted, pool.Evidence.Reason = false, "posterior_not_supported"
+		}
 		if supportedWeight(estimate) && pool.Evidence.Reason == "insufficient_identifiability" {
 			pool.Evidence.Reason = "needs_validation"
 		}
@@ -747,7 +753,7 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 		estimate := deriveFactorEstimate(factorModel, factorX, factorCov, []string{pooledParameter(model)}, 1)
 		pool.Applied = supportedWeight(estimate)
 		if pool.Applied {
-			estimate.Source = "pooled"
+			estimate.Source = pool.source()
 		} else {
 			pool.Evidence.Accepted, pool.Evidence.Reason = false, "posterior_not_supported"
 		}
@@ -958,13 +964,13 @@ func deriveModelWeights(m weightModel, x []float64, covariance [][]float64) []le
 			} else if !componentUnlocked[parameter] {
 				estimate = priorWeightEstimate(base, .5)
 			}
-			if pool, exists := m.pooledModels[model]; exists && pool.Applied && pool.Composition[typ].Tokens > 0 {
+			if pool, exists := m.pooledModels[model]; exists && pool.Applied && pool.appliesToTokenType(typ) {
 				// This is an explicitly pooled shape allocation, never an
 				// independently identified token price. Keep component width.
 				estimate.Value = base * pool.Estimate.Value
 				estimate.Low = base * pool.Estimate.Low * math.Exp(-1.96*.5)
 				estimate.High = base * pool.Estimate.High * math.Exp(1.96*.5)
-				estimate.Source = "pooled"
+				estimate.Source = pool.source()
 			}
 			if fixed := m.fixedModels[model]; fixed > 0 {
 				estimate.Value *= fixed

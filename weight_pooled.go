@@ -24,6 +24,8 @@ type pooledValidationEvidence struct {
 
 type pooledModelEstimate struct {
 	Model       string                            `json:"model"`
+	Scope       string                            `json:"scope,omitempty"`
+	TokenTypes  []string                          `json:"token_types,omitempty"`
 	Estimate    weightEstimate                    `json:"estimate"`
 	Applied     bool                              `json:"applied"`
 	Diagnostic  identifiabilityDiagnostic         `json:"diagnostic"`
@@ -33,7 +35,47 @@ type pooledModelEstimate struct {
 
 func pooledParameter(model string) string { return "pooled:" + normalizeModel(model) }
 
-type contrastColumn struct{ name, model, typ string }
+func containsTokenType(types []string, typ string) bool {
+	for _, candidate := range types {
+		if candidate == typ {
+			return true
+		}
+	}
+	return false
+}
+
+func (p pooledModelEstimate) coversTokenType(typ string) bool {
+	return len(p.TokenTypes) == 0 || containsTokenType(p.TokenTypes, typ)
+}
+
+func (p pooledModelEstimate) appliesToTokenType(typ string) bool {
+	return p.coversTokenType(typ) && p.Composition[typ].Tokens > 0
+}
+
+func (p pooledModelEstimate) source() string {
+	if p.Scope == "residual" {
+		return "joint"
+	}
+	return "pooled"
+}
+
+func (p pooledModelEstimate) sameScope(other pooledModelEstimate) bool {
+	if p.Scope != other.Scope || len(p.TokenTypes) != len(other.TokenTypes) {
+		return false
+	}
+	for i, typ := range p.TokenTypes {
+		if typ != other.TokenTypes[i] {
+			return false
+		}
+	}
+	return true
+}
+
+type contrastColumn struct {
+	name, model, typ string
+	scope            string
+	tokenTypes       []string
+}
 
 func contrastMatches(column contrastColumn, f segmentFeature) bool {
 	switch column.typ {
@@ -44,38 +86,54 @@ func contrastMatches(column contrastColumn, f segmentFeature) bool {
 	case "fast_long":
 		return f.Fast && f.Long
 	case "total":
-		return normalizeModel(f.Model) == column.model
+		return normalizeModel(f.Model) == column.model &&
+			(len(column.tokenTypes) == 0 || containsTokenType(column.tokenTypes, f.Type))
 	default:
 		return normalizeModel(f.Model) == column.model && f.Type == column.typ
 	}
 }
 
-// Conditional contrasts use one coefficient per model total, never its three
-// proportional columns as simultaneous nuisance parameters for that total.
+// Keep independently distinguishable components separate, then condition one
+// coefficient for the observed remainder on those components and other models.
 func assessPooledAndModifierContrasts(segments []quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions, components []identifiabilityDiagnostic) ([]identifiabilityDiagnostic, []identifiabilityDiagnostic) {
 	opts = weightOptionsWithDefaults(opts)
 	var specs []contrastColumn
-	independent := map[string]bool{}
+	independent := map[string]map[string]bool{}
 	for _, d := range components {
 		if d.Unlocked {
-			independent[d.Model] = true
-			if d.Model == opts.ReferenceModel {
-				specs = append(specs, contrastColumn{d.Name, d.Model, d.TokenType})
+			if independent[d.Model] == nil {
+				independent[d.Model] = map[string]bool{}
 			}
+			independent[d.Model][d.TokenType] = true
 		}
 	}
-	for _, model := range assessedModelNames(segments, prices, opts.ReferenceModel) {
-		if independent[model] {
-			for _, d := range components {
-				if d.Model == model && d.Unlocked {
-					specs = append(specs, contrastColumn{d.Name, model, d.TokenType})
-				}
+	models := append([]string{opts.ReferenceModel}, assessedModelNames(segments, prices, opts.ReferenceModel)...)
+	for _, model := range models {
+		for _, d := range components {
+			if d.Model == model && d.Unlocked {
+				specs = append(specs, contrastColumn{name: d.Name, model: model, typ: d.TokenType})
 			}
-		} else {
-			specs = append(specs, contrastColumn{pooledParameter(model), model, "total"})
 		}
+		composition := observedPooledComposition(model, segments, prices)
+		var remainder []string
+		for _, typ := range weightTokenTypes {
+			if composition[typ].Tokens > 0 && !independent[model][typ] &&
+				!(model == opts.ReferenceModel && typ == "input") {
+				remainder = append(remainder, typ)
+			}
+		}
+		scope := "model"
+		if len(independent[model]) > 0 || model == opts.ReferenceModel {
+			scope = "residual"
+		}
+		if len(remainder) == 0 || (scope == "residual" && len(remainder) < 2) {
+			continue
+		}
+		specs = append(specs, contrastColumn{name: pooledParameter(model), model: model, typ: "total",
+			scope: scope, tokenTypes: remainder})
 	}
-	specs = append(specs, contrastColumn{"fast", "", "fast"}, contrastColumn{"long", "", "long"}, contrastColumn{"fast_long", "", "fast_long"})
+	specs = append(specs, contrastColumn{name: "fast", typ: "fast"},
+		contrastColumn{name: "long", typ: "long"}, contrastColumn{name: "fast_long", typ: "fast_long"})
 	columns := make([][]float64, len(specs))
 	diagnostics := make([]identifiabilityDiagnostic, len(specs))
 	denominator := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
@@ -83,6 +141,7 @@ func assessPooledAndModifierContrasts(segments []quotaSegment, prices map[string
 		columns[index] = make([]float64, len(segments))
 		diagnostics[index] = assessWeightParameter(segments, prices, now, opts, spec.name, func(f segmentFeature) bool { return contrastMatches(spec, f) }, opts.ModelShareMinSD, opts.ModelMinFisher)
 		diagnostics[index].Model = spec.model
+		diagnostics[index].Scope, diagnostics[index].TokenTypes = spec.scope, append([]string(nil), spec.tokenTypes...)
 	}
 	cycles := map[string][]int{}
 	for index, segment := range segments {
@@ -169,6 +228,9 @@ func assessPooledAndModifierContrasts(segments []quotaSegment, prices map[string
 			}
 			v := append([]float64(nil), column...)
 			original := componentSquaredNorm(v)
+			if original == 0 {
+				continue
+			}
 			projectComponentVector(v, basis)
 			norm := componentSquaredNorm(v)
 			if norm <= math.Max(1e-14, original*1e-10) {
@@ -255,15 +317,15 @@ func sortedPooledModels(models map[string]pooledModelEstimate) []pooledModelEsti
 // Pick the cutoff from this model's exposure history. Background observations
 // remain available to fit capacity, but cannot put every cold-model observation
 // on the validation side. Paired policies update capacity AFTER prediction.
-func pooledValidation(model string, segments []quotaSegment, prices map[string]price, opts weightLearnerOptions) pooledValidationEvidence {
-	model = normalizeModel(model)
+func pooledValidation(expected pooledModelEstimate, segments []quotaSegment, prices map[string]price, opts weightLearnerOptions) pooledValidationEvidence {
+	model := normalizeModel(expected.Model)
 	sorted := append([]quotaSegment(nil), segments...)
 	sortSegmentsChronologically(sorted)
 	evidence := pooledValidationEvidence{Reason: "insufficient_validation"}
 	var exposureTimes []int64
 	for _, segment := range sorted {
 		for _, feature := range segment.Features {
-			if feature.Tokens > 0 && normalizeModel(feature.Model) == model {
+			if feature.Tokens > 0 && normalizeModel(feature.Model) == model && expected.coversTokenType(feature.Type) {
 				exposureTimes = append(exposureTimes, segment.EndAt)
 				break
 			}
@@ -292,8 +354,12 @@ func pooledValidation(model string, segments []quotaSegment, prices map[string]p
 	}
 	applied := false
 	for _, pool := range candidate.PooledModels {
-		if pool.Model == model && pool.Applied {
-			applied = true
+		if pool.Model == model {
+			if !expected.sameScope(pool) {
+				evidence.Reason = "training_scope_changed"
+				return evidence
+			}
+			applied = pool.Applied
 		}
 	}
 	if !applied {
@@ -317,7 +383,7 @@ func pooledValidation(model string, segments []quotaSegment, prices map[string]p
 		candidateState, priorState := candidateTracker.forSegment(s), priorTracker.forSegment(s)
 		relevant := false
 		for _, f := range s.Features {
-			if normalizeModel(f.Model) == model && f.Tokens > 0 {
+			if normalizeModel(f.Model) == model && f.Tokens > 0 && expected.coversTokenType(f.Type) {
 				relevant = true
 			}
 		}

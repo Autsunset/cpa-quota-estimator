@@ -34,12 +34,13 @@ func TestPooledValidationKeepsTimestampTiesOutOfTraining(t *testing.T) {
 	// a background observation at that same time must both remain in validation.
 	cutoff := segments[17].EndAt
 	segments[15].EndAt, segments[16].EndAt = cutoff, cutoff
-	evidence := pooledValidation("gpt-6.1-sol", segments, nil, legacyWeightLearnerOptions())
+	expected := pooledModelEstimate{Model: "gpt-6.1-sol", Scope: "model", TokenTypes: weightTokenTypes}
+	evidence := pooledValidation(expected, segments, nil, legacyWeightLearnerOptions())
 	if evidence.TrainingSegments != 15 || evidence.ValidationSegments != 5 || !evidence.Accepted {
 		t.Fatalf("timestamp group leaked into training: %+v", evidence)
 	}
 	for _, n := range []int{8, 18} {
-		short := pooledValidation("gpt-6.1-sol", pooledContrastSegments(n), nil, legacyWeightLearnerOptions())
+		short := pooledValidation(expected, pooledContrastSegments(n), nil, legacyWeightLearnerOptions())
 		if short.Accepted {
 			t.Fatalf("too few target validation observations were accepted: %+v", short)
 		}
@@ -54,7 +55,8 @@ func TestPooledValidationAcceptsCandidateImprovingOutOfSampleError(t *testing.T)
 		})
 		segments[i].DP += 5.0
 	}
-	evidence := pooledValidation("gpt-6.1-sol", segments, nil, legacyWeightLearnerOptions())
+	expected := pooledModelEstimate{Model: "gpt-6.1-sol", Scope: "model", TokenTypes: weightTokenTypes}
+	evidence := pooledValidation(expected, segments, nil, legacyWeightLearnerOptions())
 	if !evidence.Accepted || evidence.Reason != "validation_improved" {
 		t.Fatalf("expected accepted validation in mixed workload, got: %+v", evidence)
 	}

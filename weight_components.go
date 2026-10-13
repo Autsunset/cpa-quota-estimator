@@ -106,6 +106,9 @@ func assessComponentIdentifiability(segments []quotaSegment, prices map[string]p
 			}
 			v := append([]float64(nil), column...)
 			original := componentSquaredNorm(v)
+			if original == 0 {
+				continue
+			}
 			projectComponentVector(v, basis)
 			norm := componentSquaredNorm(v)
 			if norm <= math.Max(1e-14, original*1e-10) {

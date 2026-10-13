@@ -136,27 +136,28 @@ func (c config) adjustmentForComponent(model, field string) modelPriceAdjustment
 		}
 		estimate := componentEstimate(row, field)
 		pooledApplied := false
-		if estimate.Source == "pooled" {
+		pooledComponent := estimate.Source == "pooled" || estimate.Source == "joint"
+		if pooledComponent {
 			typ := field
 			if typ == "cache_read" {
 				typ = "cache"
 			}
 			for _, pool := range c.LearnedFit.PooledModels {
-				if pool.Model == model && pool.Applied && pool.Composition[typ].Tokens > 0 {
+				if pool.Model == model && pool.Applied && pool.appliesToTokenType(typ) {
 					pooledApplied = true
 				}
 			}
 		}
-		if !supportedWeight(estimate) && !pooledApplied {
+		if (pooledComponent && !pooledApplied) || (!pooledComponent && !supportedWeight(estimate)) {
 			return result
 		}
 		result.Factor = estimate.Value / denominator
 		result.Low = estimate.Low / denominator
 		result.High = estimate.High / denominator
-		result.Calibrated = supportedWeight(estimate)
+		result.Calibrated = !pooledComponent && supportedWeight(estimate)
 		result.Source = "independent"
 		if pooledApplied {
-			result.Source = "pooled"
+			result.Source = estimate.Source
 		}
 		if result.Low <= 0 {
 			result.Low = result.Factor
