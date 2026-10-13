@@ -63,6 +63,60 @@ try {
     const result = await send('Page.captureScreenshot',{format:'png'});
     await fs.writeFile(root + '/' + name + '.png',Buffer.from(result.data,'base64'));
   };
+  const checkMixedCalibration = async english => {
+    const result = await evaluate(`(() => {
+      const previousWeights = weightCardState;
+      const data = structuredClone(priceCatalogState);
+      const target = data.rows.find(row => row.model === 'gpt-5.6-sol');
+      const joint = {source:'joint',calibrated:false,baseline:false,factor:1.8,low:1.4,high:2.2};
+      target.adjustment = {...joint};
+      target.component_adjustments = {input:{...joint},output:{...joint},
+        cache_read:{source:'independent',calibrated:true,factor:1.25,low:1.1,high:1.4},
+        cache_write:{source:'prior',calibrated:false,factor:1,low:1,high:1}};
+      target.anchor_adjustment = {source:'anchor',calibrated:false};
+      target.calculated = {...target.calculated,input:180,cache_read:12.5,output:900};
+      target.pooled = {model:target.model,scope:'residual',token_types:['input','output'],applied:true,
+        estimate:{source:'joint',identified:true,value:1.8,low:1.4,high:2.2},
+        composition:{input:{tokens:1000,mean_share:0.3},cache:{tokens:1000,mean_share:0.6},output:{tokens:10,mean_share:0.1}},
+        evidence:{accepted:true,validation_segments:10,prior_mae:0.2,candidate_mae:0.1}};
+      renderPricePreview(data);
+      const rendered = () => [...$('#pricePreviewRows').children].find(row => row.firstElementChild.textContent.startsWith(target.model));
+      const result = {header:rendered().firstElementChild.textContent,
+        statuses:['input','cache_read','output'].map(field=>rendered().querySelector('[data-price-field='+field+']').dataset.calibrationStatus),
+        values:['input','cache_read','output'].map(field=>rendered().querySelector('[data-price-field='+field+'] b').textContent)};
+      renderWeightCard({available:true,reference_model:'gpt-6-astra',models:[{
+        model:target.model,input:{source:'joint',value:0.72,low:0.3,high:1.3,prior_locked:true},
+        cache:{source:'independent',identified:true,value:0.05,low:0.044,high:0.056},
+        output:{source:'joint',value:3.6,low:1.5,high:6.5,prior_locked:true}}],pooled_models:[target.pooled]}, {});
+      result.card = $('#weightPooled').textContent;
+      target.pooled.applied = false;
+      target.pooled.evidence = {accepted:false,reason:'training_scope_changed'};
+      target.pooled.diagnostic = {conditional_fisher:8.75,min_fisher:10,within_cycle_share_sd:0.056,min_share_sd:0.05};
+      target.adjustment = {source:'prior',calibrated:false,factor:1,low:0.375,high:2.66};
+      target.component_adjustments.input = {...target.adjustment};
+      target.component_adjustments.output = {...target.adjustment};
+      target.calculated.input = 100; target.calculated.output = 500;
+      renderPricePreview(data);
+      result.candidateHeader = rendered().firstElementChild.textContent;
+      result.candidateStatuses = ['input','cache_read','output'].map(field=>rendered().querySelector('[data-price-field='+field+']').dataset.calibrationStatus);
+      renderPooledWeights([target.pooled], []);
+      result.candidateCard = $('#weightPooled').textContent;
+      renderPricePreview(priceCatalogState);
+      renderWeightCard(previousWeights?.fit, previousWeights?.backtest);
+      return result;
+    })()`);
+    assert.deepEqual(result.statuses,['joint','calibrated','joint'],'joint allocation does not certify separate input/output rates');
+    assert.deepEqual(result.values,['180 credits','12.5 credits','900 credits'],'cache is not multiplied by the joint input/output factor');
+    assert(result.header.includes(english?'Mixed calibration':'混合标定') && result.header.includes('1/3') && !result.header.includes('3/3'),'mixed model header states the correct independent count');
+    assert(result.header.includes(english?'Input / Output joint multiplier':'输入 / 输出联合倍率'));
+    assert(!result.header.includes(english?'Pooled model multiplier':'模型综合倍率'),'a remaining-group multiplier is not presented as a whole-model multiplier');
+    assert(result.card.includes(english?'Independent components: Cache':'独立标定项：缓存') && result.card.includes(english?'joint multiplier not applied':'不叠加联合倍率'),'expanded summary preserves independent cache evidence');
+    assert.deepEqual(result.candidateStatuses,['prior','calibrated','prior'],'failed group validation leaves priors active');
+    assert(result.candidateHeader.includes(english?'pending validation':'待验证') && !result.candidateHeader.includes(english?'Mixed calibration':'混合标定'));
+    assert(result.candidateCard.includes(english?'training and current joint groups differ':'训练阶段与当前的联合分组不同'),'scope changes have a precise rejection explanation');
+    assert(result.candidateCard.includes(english?'not active':'尚未生效') && !result.candidateCard.includes(english?'Joint calibrated':'联合标定'),'a candidate cannot look like an active joint estimate');
+    assert(result.candidateCard.includes('8.75 / 10') && result.candidateCard.includes('5.60% / 5.00%'),'joint rejection shows its actual information and share-variation thresholds');
+  };
   const checkInverseAnchor = async english => {
     const result = await evaluate(`(() => {
       const data = structuredClone(priceCatalogState);
@@ -179,6 +233,7 @@ try {
   const referencePriceStatuses = await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-5.6-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+']').dataset.calibrationStatus);})()");
   assert.deepEqual(referencePriceStatuses,['baseline','prior','prior'],'the input unit convention does not calibrate reference cache/output rates');
   await checkInverseAnchor(false);
+  await checkMixedCalibration(false);
   const observedReference = await evaluate(`(() => {
     const data = structuredClone(priceCatalogState);
     const row = data.rows.find(item => item.model === 'gpt-5.6-sol');
@@ -331,6 +386,7 @@ try {
   assert.equal(await evaluate("document.querySelector('.price-preview h2').textContent"),'Price table');
   assert.equal(await evaluate("document.querySelector('.pricing-choice small').textContent.startsWith('Estimate from API rates')"),true);
   await checkInverseAnchor(true);
+  await checkMixedCalibration(true);
   assert.equal(await evaluate("state.collection_coverage.mode"), 'unknown');
   await screenshot('coverage-unknown-mobile-en');
   await saveMode('cpa_only');

@@ -34,6 +34,9 @@
 @media(max-width:900px){.top-toolbar{width:100%;justify-items:stretch}.top-toolbar .actions{justify-content:flex-start}.toolbar-status{text-align:left}}
 @media(max-width:600px){.top-toolbar .actions>#account{width:100%;max-width:100%}.top-toolbar .actions>button{width:100%}}
 .price-preview .inverse-anchor,.price-preview td[data-calibration-status="inverse_anchor"] b,.price-preview .status-tag.inverse_anchor{color:var(--blue)}
+.price-preview .mixed-calibrated,.price-preview td[data-calibration-status="joint"] b,.price-preview .status-tag.joint{color:var(--blue)}
+#weightPooled>div[data-pool-scope="residual"][data-applied="true"]{border-color:color-mix(in srgb,var(--blue) 50%,var(--line));background:color-mix(in srgb,var(--blue) 8%,var(--control))}
+#weightPooled>div[data-pool-scope="residual"][data-applied="true"] strong{color:var(--blue)}
 #weightPooled>div[data-fit-reference="true"]{border-color:color-mix(in srgb,var(--blue) 45%,var(--line))}
 #weightPooled>div[data-fit-reference="true"] strong{color:var(--blue)}
 </style>
@@ -309,6 +312,11 @@ const messages = {
     pricingComponentPrior: '未标定 · 官方先验',
     pricingCacheWritePrior: '缓存写入未标定 · 官方先验',
     pricingComponentPooled: '综合标定 · 比例沿用官方',
+    pricingComponentJoint: '联合标定 · 组内比例沿用官方',
+    pricingMixedBrief: '混合标定 · {count}/3 项独立',
+    pricingJointAppliedBrief: '部分项联合标定',
+    pricingJointCandidateBrief: '其余项联合估计待验证',
+    pricingJointCellTitle: '仅 {parts} 使用联合倍率，组内比例暂沿用官方；其他项按自己的独立标定或先验估计，不叠加该倍率。联合估计不代表各项独立实测。',
     pricingComponentProvisional: '暂估；尚未独立标定',
     pricingAnchorUncertain: '输入锚缺少独立证据，换算区间包含锚的不确定性',
     pricingAnchorUnits: '仅输入锚固定公开价；所有计算项统一换单位。',
@@ -350,6 +358,14 @@ const messages = {
     weightsPriorRatio: '此项未标定 · 官方先验',
     weightsAnchor: '基准约定，非实测标定',
     weightsPooled: '综合标定 · 比例沿用官方',
+    weightsJoint: '联合标定 · 组内比例沿用官方',
+    weightsCandidate: '拟合候选 · 尚未生效',
+    weightsJointHeading: '{parts}联合倍率',
+    weightsJointApplied: '联合倍率已生效，仅用于 {parts}；其他项保留自己的独立标定或先验估计，不叠加该倍率。',
+    weightsJointCandidate: '{parts}联合估计候选，尚未应用；已有独立项仍使用自己的估计。',
+    weightsJointIndependent: '独立标定项：{parts}（不叠加联合倍率）',
+    weightsReasonScope: '训练阶段与当前的联合分组不同，暂不接纳',
+    weightsJointDiagnostic: '联合对照信息 {fisher} / {minimum}；周期内占比变化 {share}% / {threshold}%',
     weightsProvisional: '暂估，尚未独立标定',
     weightsCombined: 'Fast + 长上下文组合：{value}；该组合的证据不代表两个单项分别已标定。',
     pricingCombined: 'Fast + 长上下文：{value}',
@@ -362,7 +378,7 @@ const messages = {
     weightsPooledComposition: '已观察的计价值构成：输入 {input}% · 缓存 {cache}% · 输出 {output}%',
     weightsPooledNoValidation: '有效对照或后续验证不足',
     weightsRejected: '未接纳的拟合候选',
-    weightsReasonContrast: '缺少可区分模型整体消耗的对照',
+    weightsReasonContrast: '缺少可区分该倍率所控制贡献的有效对照',
     weightsReasonTraining: '较早的训练数据尚不能确定倍率',
     weightsReasonValidation: '仍需后续有效用量验证',
     weightsReasonNoGain: '后续预测改善未达到门槛',
@@ -374,9 +390,9 @@ const messages = {
     weightsGuideOutput: '保留输出占比不同的正常任务。',
     weightsGuideFast: '在同一模型、同一周期比较 Standard 与 Fast 的相近任务。',
     weightsGuideLong: '在同一模型、同一周期保留长上下文阈值两侧的自然任务对照。',
-    weightsIndependentComponents: '先利用可辨识的综合倍率；有独立对照后分别标定输入、缓存和输出。综合估计不等于各项已标定。',
+    weightsIndependentComponents: '保留可独立标定的项；尚不能拆开的其余项尝试联合倍率，经对照和时间验证后应用。联合倍率不等于单项独立实测，也不重复作用于已有独立项。',
     weightsReferenceHeading: '所选标定基准 · {count}/2 项独立标定（缓存、输出）',
-    weightsReferenceDetail: '所选模型的输入固定为 1，是基准约定，不是独立实测；缓存和输出仍可分别标定。其他模型按各自的对照和验证结果标定。',
+    weightsReferenceDetail: '所选模型的输入固定为 1，是基准约定，不是独立实测；缓存和输出可分别或联合标定。其他模型按各自的对照和验证结果标定。',
     weightsReferenceUnits: '相对 {model} 的未缓存输入，基准为 1；区间来自有先验的拟合。切换锚定模型会重新拟合，保留历史样本。',
     pricingReferenceFitting: '正在按所选锚定模型重新拟合；历史样本保持不变。',
     weightsComponentDetail: '仅已独立标定的 Token 项使用实测权重，其余项保留先验；单项标定不等于模型综合倍率标定。',
@@ -660,6 +676,11 @@ const messages = {
     pricingComponentPrior: 'Uncalibrated · official prior',
     pricingCacheWritePrior: 'Cache writes uncalibrated · official prior',
     pricingComponentPooled: 'Pooled calibrated · official ratio',
+    pricingComponentJoint: 'Joint calibrated · official within-group ratio',
+    pricingMixedBrief: 'Mixed calibration · {count}/3 independent',
+    pricingJointAppliedBrief: 'Joint component calibration',
+    pricingJointCandidateBrief: 'Remaining-group estimate pending validation',
+    pricingJointCellTitle: 'The joint multiplier applies only to {parts}, temporarily preserving their official within-group ratio. Other components retain their own independent estimates or priors without this multiplier. Joint evidence is not separate measured token rates.',
     pricingComponentProvisional: 'Provisional estimate; not independently calibrated',
     pricingAnchorUncertain: 'The input anchor lacks independent evidence; intervals include its uncertainty',
     pricingAnchorUnits: 'Only the input anchor fixes a published rate; all calculated rates share its unit.',
@@ -701,6 +722,14 @@ const messages = {
     weightsPriorRatio: 'Uncalibrated component · official prior',
     weightsAnchor: 'Reference convention, not measured calibration',
     weightsPooled: 'Pooled calibrated · official ratio',
+    weightsJoint: 'Joint calibrated · official within-group ratio',
+    weightsCandidate: 'Fit candidate · not active',
+    weightsJointHeading: '{parts} joint multiplier',
+    weightsJointApplied: 'Joint multiplier active only for {parts}; other components retain their own independent estimates or priors without this multiplier.',
+    weightsJointCandidate: 'Candidate joint estimate for {parts}, not applied; independent components retain their own estimates.',
+    weightsJointIndependent: 'Independent components: {parts} (joint multiplier not applied)',
+    weightsReasonScope: 'The training and current joint groups differ; not accepted',
+    weightsJointDiagnostic: 'Joint contrast information {fisher} / {minimum}; within-cycle share variation {share}% / {threshold}%',
     weightsProvisional: 'Provisional estimate, not independently calibrated',
     weightsCombined: 'Combined Fast + long context: {value}; evidence for this combination does not independently identify either modifier.',
     pricingCombined: 'Fast + long context: {value}',
@@ -713,7 +742,7 @@ const messages = {
     weightsPooledComposition: 'Observed value composition: input {input}% · cache {cache}% · output {output}%',
     weightsPooledNoValidation: 'More eligible contrasts or later validation are needed',
     weightsRejected: 'Rejected fit candidate',
-    weightsReasonContrast: 'Contrasts do not distinguish overall model consumption',
+    weightsReasonContrast: 'Eligible contrasts do not distinguish the contribution controlled by this multiplier',
     weightsReasonTraining: 'Earlier training data cannot yet identify the multiplier',
     weightsReasonValidation: 'More later observations are needed for validation',
     weightsReasonNoGain: 'Later prediction improvement did not meet the threshold',
@@ -725,9 +754,9 @@ const messages = {
     weightsGuideOutput: 'Keep normal tasks with different output shares.',
     weightsGuideFast: 'Compare similar Standard and Fast tasks on the same model within one cycle.',
     weightsGuideLong: 'Keep natural tasks on both sides of the long-context threshold for the same model and cycle.',
-    weightsIndependentComponents: 'Use supported pooled model evidence first, then independent input, cache, and output contrasts. A pooled estimate does not establish separate token rates.',
+    weightsIndependentComponents: 'Keep independently calibrated components and test a joint multiplier for the unseparated remainder. Contrasts and chronological validation govern application; joint evidence is not separate token rates and never multiplies independent components again.',
     weightsReferenceHeading: 'Selected calibration reference · {count}/2 independently calibrated (cache, output)',
-    weightsReferenceDetail: 'The selected model’s input is fixed at 1 as a reference convention, not an independent measurement. Cache and output can still be calibrated separately. Other models are calibrated according to their own contrasts and validation.',
+    weightsReferenceDetail: 'The selected model’s input is fixed at 1 as a reference convention, not an independent measurement. Cache and output can be calibrated separately or jointly. Other models are calibrated according to their own contrasts and validation.',
     weightsReferenceUnits: 'Relative to uncached {model} input, fixed at 1. Intervals use priors. Changing the anchor refits the model without deleting historical samples.',
     pricingReferenceFitting: 'Refitting against the selected anchor; historical samples are unchanged.',
     weightsComponentDetail: 'Only independently calibrated token components use measured weights; the rest retain priors. A single calibrated component is not a calibrated pooled model multiplier.',
@@ -2284,6 +2313,8 @@ function weightValue(estimate) {
   const numeric = value => Number(value).toLocaleString('en-US', {maximumSignificantDigits: 3});
   const status = estimate.source === 'anchor' ? 'weightsAnchor'
     : estimate.source === 'pooled' ? 'weightsPooled'
+    : estimate.source === 'joint' ? 'weightsJoint'
+    : estimate.source === 'candidate' ? 'weightsCandidate'
     : estimate.source === 'provisional' ? 'weightsProvisional'
     : estimate.source === 'rejected' ? 'weightsRejected'
     : estimate.prior_locked ? 'weightsPriorRatio'
@@ -2326,7 +2357,7 @@ function renderWeightCard(fit, backtest) {
   if (backtest.lag_ambiguous) summary += tr('weightsLagAmbiguous');
   $('#weightSummary').textContent = summary;
   $('#weightTypeDiagnostic').textContent = tr('weightsIndependentComponents');
-  renderPooledWeights(fit.pooled_models || []);
+  renderPooledWeights(fit.pooled_models || [], fit.models || []);
   renderComponentWeights(fit);
   if (Number(fit.fast_long?.value) > 0) {
     $('#weightCombined').hidden = false;
@@ -2369,7 +2400,7 @@ function renderWeightCard(fit, backtest) {
 
 function independentlySupportedWeight(estimate) {
   return !!estimate?.identified && !estimate.prior_locked && !estimate.correlated
-    && !['anchor','pooled'].includes(estimate.source) && Number(estimate.value) > 0;
+    && !['anchor','pooled','joint'].includes(estimate.source) && Number(estimate.value) > 0;
 }
 
 function renderComponentWeights(fit) {
@@ -2403,21 +2434,57 @@ function renderComponentWeights(fit) {
 }
 
 
-function renderPooledWeights(models) {
+function jointPartsText(pool) {
+  const labels = {input:'weightsTypeInput',cache:'weightsTypeCache',output:'weightsTypeOutput'};
+  return (pool.token_types || []).filter(type => labels[type]).map(type => tr(labels[type])).join(' / ');
+}
+
+function pooledHeadingText(pool) {
+  return pool.scope === 'residual' ? tr('weightsJointHeading', {parts: jointPartsText(pool)}) : tr('weightsPooledHeading');
+}
+
+function pooledEstimateText(pool) {
+  if (pool.applied) return weightValue(pool.estimate);
+  let estimate = pool.estimate?.candidate || pool.estimate;
+  if (estimate && (pool.estimate?.candidate || ['pooled','joint'].includes(estimate.source))) {
+    estimate = {...estimate, source:'candidate'};
+  }
+  return weightValue(estimate);
+}
+
+function pooledStatusText(pool, detail=false) {
+  if (pool.scope === 'residual') {
+    return tr(pool.applied ? 'weightsJointApplied' : 'weightsJointCandidate', {parts: jointPartsText(pool)});
+  }
+  return tr(pool.applied ? (detail ? 'weightsPooledAppliedDetail' : 'weightsPooledApplied') : 'weightsPooledCandidate');
+}
+
+function renderPooledWeights(models, components) {
   const container = $('#weightPooled');
   container.replaceChildren();
   models.filter(item => Object.values(item.composition || {}).some(part => Number(part.tokens)>0)).forEach(item => {
     const section = document.createElement('div');
     section.dataset.pooledModel = item.model;
     section.dataset.applied = item.applied ? 'true' : 'false';
+    section.dataset.poolScope = item.scope || 'model';
     const title = document.createElement('strong');
-    title.textContent = item.model + ' · ' + tr('weightsPooledHeading') + ' · ' + weightValue(item.applied ? item.estimate : (item.estimate?.candidate || item.estimate));
+    title.textContent = item.model + ' · ' + pooledHeadingText(item) + ' · ' + pooledEstimateText(item);
     section.append(title);
     const status = document.createElement('p');
-    status.textContent = tr(item.applied ? 'weightsPooledApplied' : 'weightsPooledCandidate');
-    const reasonKeys = {insufficient_identifiability:'weightsReasonContrast',training_not_identified:'weightsReasonTraining',insufficient_validation:'weightsReasonValidation',needs_validation:'weightsReasonValidation',validation_not_improved:'weightsReasonNoGain',posterior_not_supported:'weightsReasonPosterior'};
+    status.textContent = pooledStatusText(item);
+    const reasonKeys = {insufficient_identifiability:'weightsReasonContrast',training_not_identified:'weightsReasonTraining',training_scope_changed:'weightsReasonScope',insufficient_validation:'weightsReasonValidation',needs_validation:'weightsReasonValidation',validation_not_improved:'weightsReasonNoGain',posterior_not_supported:'weightsReasonPosterior'};
     if (!item.applied && reasonKeys[item.evidence?.reason]) status.textContent += ' · ' + tr(reasonKeys[item.evidence.reason]);
     section.append(status);
+    if (item.scope === 'residual' && item.diagnostic) {
+      const diagnostic = document.createElement('p');
+      diagnostic.textContent = tr('weightsJointDiagnostic', {
+        fisher:Number(item.diagnostic.conditional_fisher || 0).toFixed(2),
+        minimum:Number(item.diagnostic.min_fisher || 0).toFixed(0),
+        share:(100*Number(item.diagnostic.within_cycle_share_sd || 0)).toFixed(2),
+        threshold:(100*Number(item.diagnostic.min_share_sd || 0)).toFixed(2)
+      });
+      section.append(diagnostic);
+    }
     const evidence = item.evidence || {};
     const validation = document.createElement('p');
     validation.textContent = Number(evidence.validation_segments)>0
@@ -2428,6 +2495,22 @@ function renderPooledWeights(models) {
     const shares = Object.fromEntries(['input','cache','output'].map(type => [type,(100*Number(item.composition?.[type]?.mean_share || 0)).toFixed(1)]));
     composition.textContent = tr('weightsPooledComposition',shares);
     section.append(composition);
+    if (item.scope === 'residual') {
+      const row = (components || []).find(row => row.model === item.model);
+      if (row) {
+        const independent = ['input','cache','output'].filter(type => independentlySupportedWeight(row[type]));
+        if (independent.length) {
+          const note = document.createElement('p');
+          note.textContent = tr('weightsJointIndependent', {parts: jointPartsText({token_types:independent})});
+          section.append(note);
+        }
+        const values = document.createElement('p');
+        values.textContent = tr('weightsComponentValues', {
+          input: weightValue(row.input), cache: weightValue(row.cache), output: weightValue(row.output)
+        });
+        section.append(values);
+      }
+    }
     container.append(section);
   });
 }
@@ -2901,8 +2984,9 @@ function renderPricePreview(data) {
     let model = document.createElement('td');
     const componentAdjustments = item.component_adjustments || {};
     const calibratedCount = ['input','cache_read','output'].filter(field =>
-      componentAdjustments[field]?.calibrated && componentAdjustments[field]?.source !== 'inverse_anchor').length;
+      componentAdjustments[field]?.calibrated && !['inverse_anchor','joint','pooled'].includes(componentAdjustments[field]?.source)).length;
     const inverseAnchor = componentAdjustments.input?.source === 'inverse_anchor';
+    const joint = item.pooled?.scope === 'residual';
 
     let headerText = item.model;
     let className = '';
@@ -2916,8 +3000,13 @@ function renderPricePreview(data) {
         headerText += ' · ' + tr('pricingComponentCalibratedAll');
         className = 'calibrated';
         tooltip = tr('pricingCalibratedAllTooltip');
+      } else if (joint && item.pooled.applied) {
+        headerText += ' · ' + tr(calibratedCount ? 'pricingMixedBrief' : 'pricingJointAppliedBrief', {count: calibratedCount});
+        className = 'mixed-calibrated';
+        tooltip = tr('pricingJointCellTitle', {parts:jointPartsText(item.pooled)});
       } else if (calibratedCount > 0) {
         headerText += ' · ' + tr('pricingComponentPartial', {count: calibratedCount});
+        if (joint) headerText += ' · ' + tr('pricingJointCandidateBrief');
         className = 'partially-calibrated';
         tooltip = tr('pricingComponentPartialTooltip', {count: calibratedCount});
       } else if (inverseAnchor) {
@@ -2929,7 +3018,7 @@ function renderPricePreview(data) {
         className = 'pooled-applied';
         tooltip = tr('pricingPooledCellTitle');
       } else if (item.pooled && !item.pooled.applied) {
-        headerText += ' · ' + tr('pricingPooledCandidateBrief');
+        headerText += ' · ' + tr(joint ? 'pricingJointCandidateBrief' : 'pricingPooledCandidateBrief');
         className = 'uncalibrated';
         tooltip = tr('pricingPooledCandidateTooltip');
       } else {
@@ -2944,8 +3033,8 @@ function renderPricePreview(data) {
 
     if (item.pooled && activePricingMode() !== 'custom') {
       const pooled = document.createElement('small');
-      pooled.textContent = tr('weightsPooledHeading') + ': ' + weightValue(item.pooled.estimate)
-        + ' · ' + tr(item.pooled.applied ? 'weightsPooledAppliedDetail' : 'weightsPooledCandidate');
+      pooled.textContent = pooledHeadingText(item.pooled) + ': ' + pooledEstimateText(item.pooled)
+        + ' · ' + pooledStatusText(item.pooled, true);
       model.append(pooled);
     } else if (calibratedCount === 0 && !inverseAnchor && !item.adjustment?.baseline && activePricingMode() !== 'custom') {
       const uncalibratedNote = document.createElement('small');
@@ -2970,8 +3059,9 @@ function renderPricePreview(data) {
       const statusKey = activePricingMode() === 'custom' ? 'custom'
         : adjustment.baseline ? 'baseline'
         : adjustment.source === 'inverse_anchor' ? 'inverse_anchor'
+        : adjustment.source === 'joint' ? 'joint'
         : adjustment.calibrated ? 'calibrated'
-        : ['pooled','provisional'].includes(adjustment.source) ? adjustment.source
+        : ['pooled','joint','provisional'].includes(adjustment.source) ? adjustment.source
         : 'prior';
       cell.dataset.calibrationStatus = statusKey;
       let value = item.calculated && item.calculated[field] || 0;
@@ -2995,6 +3085,7 @@ function renderPricePreview(data) {
         const status = adjustment.baseline ? 'pricingBaseline'
           : field === 'cache_write' ? 'pricingCacheWritePrior'
           : adjustment.source === 'inverse_anchor' ? 'pricingInverseAnchor'
+          : adjustment.source === 'joint' ? 'pricingComponentJoint'
           : adjustment.calibrated ? 'pricingComponentCalibrated'
           : adjustment.source === 'pooled' ? 'pricingComponentPooled'
           : adjustment.source === 'provisional' ? 'pricingComponentProvisional'
@@ -3011,6 +3102,8 @@ function renderPricePreview(data) {
           cell.title = tr('pricingInverseAnchorDetail');
         } else if (statusKey === 'pooled') {
           cell.title = tr('pricingPooledCellTitle');
+        } else if (statusKey === 'joint') {
+          cell.title = tr('pricingJointCellTitle', {parts:jointPartsText(item.pooled || {})});
         } else if (statusKey === 'prior') {
           cell.title = tr(item.observed ? 'pricingObservedPriorDetail' : 'pricingUncalibratedCellTitle');
         }
