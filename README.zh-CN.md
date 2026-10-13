@@ -53,7 +53,7 @@
 - 价格表展示常用 GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 与 GPT-5.6 Sol／Terra／Luna，并包含所选锚与有效样本中的其他模型；旧模型价格仍留在本地，供历史请求计价。顶部账号选择器缩短后可悬停查看完整名称。**同步价格**从 models.dev 更新本地价格目录；**刷新数据**重读插件已经记录的数据，并在按钮旁显示完成状态。两者都不会向上游请求新的额度样本。
 - 估计完整周期与剩余额度的 Token/计价等效容量，并提供四分位数区间和置信度；还会把所选周期剩余计价值分别换算为各模型的未缓存输入、输出和缓存命中 Token 余量。
 - 展示实际额度轨迹、可持续基准、累计平均预测、近期速率预测、预计耗尽时间、计划重置时间和倒计时。
-- 为每个已确认的额度周期建立独立账本；重置后，旧周期仍可在下拉框中选择和回看。
+- 为每个已确认的额度周期建立独立账本；重置后，旧周期仍可在下拉框中选择和回看。已关闭周期按最后被采样接受的额度计划回看，不会追加下一窗口尚未确认的响应头；即使旧采样器漏采了恢复后的低读数，已确认的异常恢复仍有效。这项历史读取修正不改写或删除原始记录。
 - 将 `gpt-5.3-codex-spark` 响应头视为独立额度口径和周期。当 Spark 返回“5 小时 Primary + 周 Secondary”组合时，两个 Spark 轴分别计算百分比、重置周期、容量估算和月度汇总，不再把 5 小时窗口当成周限额。Spark 的实际 Token、请求数、计价值和额度消耗当量不会创建、拆分、估算或累加到主额度；仪表盘可通过页面顶部的可选开关在主额度内容下方显示完整 Spark 统计。
 - 只有当最新主额度窗口被检测为约 5 小时，并且同时存在有效的 `X-Codex-Secondary-*` 响应头时，才把 Primary 作为独立 5 小时额度、Secondary 作为独立周限额；两者分别计算使用率轨迹、重置周期、Token/计价值等效容量、月度额度当量，并在仪表盘分区展示。未检测到 5 小时主额度的账号（包括只有周限额的 Pro 账号）继续沿用原来的单窗口逻辑，不会启用或计算 Secondary 周限额区域。
 - 按响应头实际观察时间排序额度证据；计划周期切换需连续两个成功观测一致。提前重置需三个成功、稳定且跨越至少 60 秒的观测；对于此前未出现的完整新窗口计划，只要读数始终不高于旧峰值的一半，也能确认超过 5% 的稀疏采样。
@@ -257,7 +257,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 
 仪表盘还会只读查询 CPA 的 Codex OAuth 清单，把未采样账号合并进同一张表格。账号只按精确的 `id`/`name` 别名匹配，不读取或暴露凭证秘密；已停用、当前不可用与仍在等待首次样本的凭证会分别展示。对于双额度账号，剩余、重置、容量、置信度和预测单元格会同时列出 5 小时与周额度，排序则使用约束更紧或状态更紧急的额度。概览支持折叠；每一列都有独立的浏览器端筛选框，点击列名可按字段类型切换升序/降序。拖动表头列边界可在 `40px` 技术下限至 `2000px` 之间调整列宽，双击拖动手柄可恢复该列默认宽度；键盘用户可聚焦分隔条后使用方向键调整（按住 `Shift` 增大步长），或按 `Home` 重置。数字和时间筛选支持 `>`、`>=`、`<`、`<=`、`=` 比较符，显示偏好和列宽会保存在当前浏览器。点击有样本的账号行即可进入现有详情视图，整个过程不会发起 AI 请求。若父面板未提供受限桥接且浏览器没有可复用的 Management Key，仪表盘仍会正常展示已采样账号，并明确提示 OAuth 清单暂不可读。
 
-使用 `?account=<AuthID>` 可选择指定凭证；在 `summary` 或 `series` 中使用 `?cycle_id=<ID>` 可选择预测周期；在 `monthly` 中使用 `?month=YYYY-MM` 可选择月份。`series` 还可传入 Unix 秒级的 `?start_at=<时间戳>&end_at=<时间戳>`，返回该范围内所有重叠额度周期的曲线采样点和容量估计轨迹。
+使用 `?account=<AuthID>` 可选择指定凭证；在 `summary` 或 `series` 中使用 `?cycle_id=<ID>` 可选择预测周期；在 `monthly` 中使用 `?month=YYYY-MM` 可选择月份。`series` 还可传入 Unix 秒级的 `?start_at=<时间戳>&end_at=<时间戳>`，返回左闭右开范围 `[start_at, end_at)` 内所有重叠额度周期的曲线采样点和容量估计轨迹。恰好在 `end_at` 开始的下一周期不会混入前一周期图表。
 
 `summary`、`series`、月度汇总和概览账号记录会返回 `collection_coverage`，包含 `mode`、`configured`、`usage_source: "cpa"`、`quota_source: "account_quota_pool"` 及 `capacity_estimation_enabled`。默认返回 `configured: false` 和 `assumption: "all_usage_through_cpa"`，表示假设而非已验证的覆盖范围。估算还会返回 `coverage_mode`、`assumption` 和 `sample_confidence`。混合/未知模式下，`available` 为 false，`confidence` 为 `"unavailable"`，`unavailable_reason` 分别为 `"partial_usage_collection"` 或 `"usage_coverage_unknown"`。容量数值及区间使用 JSON `null`，容量轨迹数组为空，按模型换算清空；`sample_confidence` 和样本数仍独立保留。月度容量字段采用同样规则；`quota_coverage_complete` 仍只表示月初时间基线是否完整，不代表采集到了其他入口的用量。
 
@@ -278,7 +278,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.21.0
+make package VERSION=0.21.1
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
