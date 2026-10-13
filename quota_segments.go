@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	segmentBackfillKey = "quota_segments_v2"
+	segmentBackfillKey = "quota_segments_v3"
 	segmentGapSeconds  = int64(2 * time.Hour / time.Second)
 	segmentResetSlack  = int64(120)
 )

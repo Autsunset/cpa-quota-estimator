@@ -170,7 +170,8 @@ func (s *store) addQuotaAnomalyBoundaryPoints(ctx context.Context, cycle quotaCy
 			boundary.CycleStart = cycle.StartedAt
 			var found bool
 			for index := range points {
-				if points[index].Time == boundary.Time && points[index].ResetAt == boundary.ResetAt {
+				if points[index].Time == boundary.Time &&
+					absSegmentTime(points[index].ResetAt-boundary.ResetAt) <= segmentResetSlack {
 					points[index].UsedPercent = boundary.UsedPercent
 					points[index].Anomalous = points[index].Anomalous || boundary.Anomalous
 					points[index].BreakBefore = points[index].BreakBefore || boundary.BreakBefore
@@ -196,7 +197,9 @@ FROM usage_events WHERE cycle_id=? AND quota_scope=? AND requested_at<=?`, cycle
 }
 
 func sameQuotaRegimeKey(run quotaRegimeRun, resetAt, windowMinutes int64) bool {
-	return run.ResetAt == resetAt && run.WindowMinutes == windowMinutes
+	// Headers are rounded to minutes; use the same reset tolerance as segments.
+	// Keep the run's original reset so gradual drift cannot chain indefinitely.
+	return absSegmentTime(run.ResetAt-resetAt) <= segmentResetSlack && run.WindowMinutes == windowMinutes
 }
 
 func markQuotaAnomalyPoints(points []quotaPoint, anomalies []quotaRegimeAnomaly) {
@@ -207,7 +210,7 @@ func markQuotaAnomalyPoints(points []quotaPoint, anomalies []quotaRegimeAnomaly)
 		for pointIndex := range points {
 			point := &points[pointIndex]
 			if point.Time >= anomaly.StartedAt && point.Time < anomaly.EndedAt &&
-				point.ResetAt == anomaly.AnomalousResetAt {
+				absSegmentTime(point.ResetAt-anomaly.AnomalousResetAt) <= segmentResetSlack {
 				point.Anomalous = true
 				if !markedStart {
 					point.BreakBefore = true
@@ -215,7 +218,7 @@ func markQuotaAnomalyPoints(points []quotaPoint, anomalies []quotaRegimeAnomaly)
 				}
 			}
 			if !markedRecovery && point.Time >= anomaly.EndedAt &&
-				point.ResetAt == anomaly.RestoredResetAt {
+				absSegmentTime(point.ResetAt-anomaly.RestoredResetAt) <= segmentResetSlack {
 				point.BreakBefore = true
 				markedRecovery = true
 			}
