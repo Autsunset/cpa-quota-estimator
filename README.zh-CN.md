@@ -73,7 +73,7 @@
 
 仪表盘可选 `api`、`credits`、`custom`。API 和 Credits 按 `adj(模型, Token类型) / adj(锚定模型, input)` 换算。输入锚只确定单位，不代表其缓存和输出也已独立标定；公开价目表保持原样并同时展示。先验项也参与同一单位换算，继续明确标为未标定。模型综合估计描述已观察到的用量构成，不能证明各 Token 单价。自定义口径可编辑输入／缓存／输出／缓存写入美元价、Fast 倍率和长上下文设置；“恢复官方价格”重置草稿。以上仅影响插件估值，不改变上游计费。
 
-`POST /pricing-settings` 立即返回 HTTP 202 和任务 ID；通过 `GET /pricing-settings/task?id=<id>` 查看请求／样本进度。任务进行中再次保存返回 409。任务读取快照前先切换内存口径，让新请求立刻使用目标价格；历史行按批次更新，`recalculating` 标明期间可能短暂混用新旧值。失败时按批恢复旧口径和历史值。旧接口名称 `legacy_api`、`current_api` 映射到 `api`，`learned` 映射到 `credits`；已有保存设置升级时后台分批迁移，不因重计价拖慢插件注册。CPA 重复下发相同配置时幂等返回，保留当前任务和已注册接口能力。
+`POST /pricing-settings` 立即返回 HTTP 202 和任务 ID；通过 `GET /pricing-settings/task?id=<id>` 查看请求／样本进度。任务进行中再次保存返回 409。切换基准重拟合时，`progress.stage` 为 `fitting`，`fits_done` / `fits_total` 返回滚动拟合的完成次数；仪表盘两处状态区均单独显示重拟合进度，不再误显示成历史请求重算 0%。任务读取快照前先切换内存口径，让新请求立刻使用目标价格；历史行按批次更新，`recalculating` 标明期间可能短暂混用新旧值。失败时按批恢复旧口径和历史值。旧接口名称 `legacy_api`、`current_api` 映射到 `api`，`learned` 映射到 `credits`；已有保存设置升级时后台分批迁移，不因重计价拖慢插件注册。CPA 重复下发相同配置时幂等返回，保留当前任务和已注册接口能力。
 
 `GET /pricing-settings` 通过 `available_modes` 列出 `api`、`credits`、`custom`。`/prices` 的 `component_adjustments` 返回各项倍率、区间、来源及标定状态，`anchor_adjustment` 返回共同输入锚，另可附带模型综合估计 `pooled`。`/weights` 记录 `reference_model` 和 `reference_input_credits`，并返回 `component_diagnostics`、`modifier_diagnostics`、`pooled_models`、可选的组合估计 `fast_long` 和被动建议 `guidance`。价格行另标明实际应用倍率的来源和不确定性，`provisional` 暂估不等于独立标定。综合估计证据包含按时间划分的训练／验证段数、先验与候选的预测误差及是否接纳，另保留已观察的 Token 构成。被拒绝的候选不会作为生效值。兼容字段 `adjustment` 仍仅描述输入项。 联合分组在 `pooled` 中以 `scope: "residual"` 和受控的 `token_types` 标识；分摊项以 `joint` 为来源，仍不算独立实测，保留官方组内比例及明确的结构不确定性。模型整体综合估计以 `scope: "model"` 标识。验证拒绝或训练分组变化的候选保持未应用，未观察到的项继续保留先验。
 
@@ -220,7 +220,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 - `credits`：[公开 Codex Credits 单价](https://learn.chatgpt.com/docs/pricing)，采用相同锚定规则。官方表未单列缓存写入或长上下文价格；未收录模型使用 API 价格推算。
 - `custom`：逐模型编辑输入／缓存读取／输出／缓存写入美元价，以及 Fast 倍率、长上下文开关和阈值（默认 272,000 Token）。初始值取官方 API 价，不应用学习器价格调整。
 
-后台重算期间仪表盘禁用设置并轮询进度。独立只读连接先计算快照，再以约 500 行一个短事务更新请求和逐周期样本前缀和，批次之间释放写连接。任务期间新请求按目标口径计价，结束时补算新增事件影响的周期样本；接口和仪表盘以 `recalculating` 提示历史图可能暂时混用新旧值。失败会按批恢复旧设置和值。用量写入遇到 busy／超时会重试约 30 秒；最终失败记入 `metadata.dropped_usage_events` 并在仪表盘提示。拟合触发重计价须有实际使用因子变化超过 2%，且六小时最多一次；custom 不触发。WAL 检查点由独立连接执行。为兼容旧客户端，JSON 中 `_cost_usd` 字段名保留；实际单位看 `pricing_mode` 和 `value_unit`。
+后台重算期间仪表盘禁用设置并轮询进度。可辨识度计算按周期一次性分组观测，跳过零信息分项投影与零梯度正规方程行，不改变标定门槛或滚动验证规则。CPU 拟合及嵌套的综合估计拟合遵守任务取消和现有超时。独立只读连接先计算快照，再以约 500 行一个短事务更新请求和逐周期样本前缀和，批次之间释放写连接。任务期间新请求按目标口径计价，结束时补算新增事件影响的周期样本；接口和仪表盘以 `recalculating` 提示历史图可能暂时混用新旧值。失败会按批恢复旧设置和值。用量写入遇到 busy／超时会重试约 30 秒；最终失败记入 `metadata.dropped_usage_events` 并在仪表盘提示。拟合触发重计价须有实际使用因子变化超过 2%，且六小时最多一次；custom 不触发。WAL 检查点由独立连接执行。为兼容旧客户端，JSON 中 `_cost_usd` 字段名保留；实际单位看 `pricing_mode` 和 `value_unit`。
 
 对于所选主额度周期，以及检测到的独立周限额周期，仪表盘会列出各 Codex 模型的剩余未缓存输入、输出和缓存命中 Token。每一列都是独立假设：剩余计价值全部用于该模型及该 Token 类型，并采用 Standard、基础上下文单价。
 
@@ -278,7 +278,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.21.1
+make package VERSION=0.21.2
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
