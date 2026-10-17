@@ -11,6 +11,8 @@ const wbCopy = {
     pricing: '模型与计价', history: '历史与额度', settings: '设置',
     loading: '正在读取额度数据…', updating: '正在更新…', loaded: '数据已更新',
     recalculating: '正在重算历史计价 · {percent}%',
+    referenceFitting: '正在重新拟合计价基准 · {percent}%',
+    pricingRollback: '正在回滚历史计价',
     offline: '当前处于离线状态，显示上次读取的数据。网络恢复后可重试。',
     error: '数据读取失败，当前显示上次成功读取的内容。', retry: '重试',
     emptyTitle: '等待第一条额度记录', emptyBody: '让此账号通过 CPA 完成一次真实的 Codex 请求，这里就会显示剩余额度与重置时间。',
@@ -40,6 +42,8 @@ const wbCopy = {
     pricing: 'Models & pricing', history: 'History & quotas', settings: 'Settings',
     loading: 'Loading quota data…', updating: 'Updating…', loaded: 'Data updated',
     recalculating: 'Recalculating historical pricing · {percent}%',
+    referenceFitting: 'Refitting pricing reference · {percent}%',
+    pricingRollback: 'Rolling back historical pricing',
     offline: 'You are offline. Showing the last loaded data. Retry when the connection returns.',
     error: 'Could not load data. Showing the last successfully loaded view.', retry: 'Retry',
     emptyTitle: 'Waiting for the first quota sample', emptyBody: 'Complete a real Codex request through CPA for this account to see its remaining quota and reset time.',
@@ -532,7 +536,9 @@ function workbenchLoadStart(account) {
 function workbenchPricingTaskStatus(task, percent) {
   if (!$('#workbench') || !['queued', 'running', 'rolling_back'].includes(task.status)) return;
   $('#wbFeedback').dataset.state = 'loading';
-  $('#wbStateText').textContent = wb('recalculating').replace('{percent}', percent.toFixed(0));
+  const key = task.status === 'rolling_back' ? 'pricingRollback'
+    : task.progress && task.progress.stage === 'fitting' ? 'referenceFitting' : 'recalculating';
+  $('#wbStateText').textContent = wb(key).replace('{percent}', percent.toFixed(0));
   if (workbenchLastLoaded) {
     $('#workbench').dataset.loading = 'false';
     $('#wbLoading').hidden = true;

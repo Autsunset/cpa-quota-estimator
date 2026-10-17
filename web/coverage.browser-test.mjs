@@ -427,6 +427,15 @@ try {
   assert.equal(await evaluate('state.account'),'b-cpa');
   assert.equal(await evaluate("$('#coverageMode').value"),'cpa_only');
   await evaluate("setWorkbenchView('pricing', false);true");
+  await evaluate("renderPricingTask({status:'running',progress:{stage:'fitting',fits_done:3,fits_total:12}});true");
+  assert.equal(await evaluate("$('#wbStateText').textContent"),'Refitting pricing reference · 25%');
+  assert.equal(await evaluate("$('#pricingTaskBar').style.width"),'25%');
+  assert.ok((await evaluate("$('#pricingTaskText').textContent")).includes('3/12'));
+  await select('language','zh-CN');
+  await evaluate("renderPricingTask({status:'running',progress:{stage:'fitting',fits_done:3,fits_total:12}});true");
+  assert.equal(await evaluate("$('#wbStateText').textContent"),'正在重新拟合计价基准 · 25%');
+  await select('language','en');
+  await evaluate("renderPricingTask(null);true");
   await evaluate("$('#savePricingSettings').click();true");
   await wait("!$('#pricingTaskProgress').hidden",'background pricing task visible');
   await wait("$('#pricingTaskText').textContent.includes('Recalculation complete')",'background pricing task complete');

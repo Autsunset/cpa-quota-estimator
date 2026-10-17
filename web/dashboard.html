@@ -4167,6 +4167,10 @@ function renderPricingTask(task) {
   let progress = task.progress || {};
   let done = Number(progress.events_done || 0) + Number(progress.samples_done || 0);
   let total = Number(progress.events_total || 0) + Number(progress.samples_total || 0);
+  if (active && progress.stage === 'fitting') {
+    done = Number(progress.fits_done || 0);
+    total = Number(progress.fits_total || 0);
+  }
   let percent = total > 0 ? Math.min(100, 100*done/total) : 0;
   workbenchPricingTaskStatus(task, percent);
   $('#pricingTaskBar').style.width = percent.toFixed(1) + '%';
@@ -4175,7 +4179,8 @@ function renderPricingTask(task) {
     events:usageExact(progress.events_done), total:usageExact(progress.events_total),
     samples:usageExact(progress.samples_done), sampleTotal:usageExact(progress.samples_total)
   });
-  if (active && progress.stage === 'fitting') $('#pricingTaskText').textContent = tr('pricingReferenceFitting');
+  if (active && progress.stage === 'fitting') $('#pricingTaskText').textContent = tr('pricingReferenceFitting')
+    + (total > 0 ? ' · ' + percent.toFixed(1) + '% · ' + done + '/' + total : '');
   if (task.status === 'failed') $('#pricingSaveStatus').textContent = tr('pricingSettingsFailed', {message:task.error || '—'});
   if (task.status === 'succeeded') $('#pricingSaveStatus').textContent = tr('pricingSettingsSaved', {count:usageExact(task.recalculated_events)});
 }
