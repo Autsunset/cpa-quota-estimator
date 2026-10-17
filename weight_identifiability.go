@@ -9,6 +9,11 @@ type fisherCycleSums struct {
 	Weight, Share, ShareSquared        float64
 	TotalSquared, Cross, TargetSquared float64
 	Ratios                             []float64
+	Observations                       []fisherObservation
+}
+
+type fisherObservation struct {
+	Total, Target, Weight float64
 }
 
 func weightOptionsWithDefaults(opts weightLearnerOptions) weightLearnerOptions {
@@ -78,12 +83,13 @@ func assessWeightParameter(segments []quotaSegment, prices map[string]price, now
 	name string, match func(segmentFeature) bool, minShareSD, minFisher float64) identifiabilityDiagnostic {
 	opts = weightOptionsWithDefaults(opts)
 	result := identifiabilityDiagnostic{Name: name, MinShareSD: minShareSD, MinFisher: minFisher}
+	denominator := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
+	if denominator <= 0 {
+		return result
+	}
 	cycles := make(map[string]*fisherCycleSums)
+	var exposed bool
 	for _, segment := range segments {
-		denominator := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
-		if denominator <= 0 {
-			continue
-		}
 		var total, target float64
 		for _, feature := range segment.Features {
 			value := float64(feature.Tokens) / 1_000_000 * referenceFeatureRate(feature, pricingModeCredits, prices) / denominator
@@ -102,28 +108,21 @@ func assessWeightParameter(segments []quotaSegment, prices map[string]price, now
 			cycles[cycle] = group
 		}
 		group.Ratios = append(group.Ratios, segment.DP/total)
+		group.Observations = append(group.Observations, fisherObservation{
+			Total: total, Target: target, Weight: segmentFitWeight(segment, now, opts.HalfLifeDays),
+		})
+		exposed = exposed || target > 0
+	}
+	if !exposed {
+		return result
 	}
 	var weightedVariance, totalWeight, fisher float64
-	for cycle, group := range cycles {
+	for _, group := range cycles {
 		sort.Float64s(group.Ratios)
 		scale := group.Ratios[len(group.Ratios)/2]
-		for _, segment := range segments {
-			if modelCycle(segment) != cycle {
-				continue
-			}
-			var total, target float64
-			denominator := referenceInputRate(pricingModeCredits, prices, opts.ReferenceModel)
-			for _, feature := range segment.Features {
-				value := float64(feature.Tokens) / 1_000_000 * referenceFeatureRate(feature, pricingModeCredits, prices) / denominator
-				total += value
-				if match(feature) {
-					target += value
-				}
-			}
-			if total <= 0 {
-				continue
-			}
-			weight := segmentFitWeight(segment, now, opts.HalfLifeDays)
+		// Reuse each observation instead of rescanning all history per cycle.
+		for _, observation := range group.Observations {
+			total, target, weight := observation.Total, observation.Target, observation.Weight
 			share := target / total
 			group.Weight += weight
 			group.Share += weight * share

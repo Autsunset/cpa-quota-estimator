@@ -36,6 +36,11 @@ func (s *store) latestWeightFitForReference(ctx context.Context, reference strin
 }
 
 func (s *store) refreshWeightFit(ctx context.Context, opts weightLearnerOptions) (weightBacktest, error) {
+	return s.refreshWeightFitProgress(ctx, opts, nil)
+}
+
+func (s *store) refreshWeightFitProgress(ctx context.Context, opts weightLearnerOptions, progress func(done, total int)) (weightBacktest, error) {
+	opts.ctx = ctx
 	byLag := make(map[int][]quotaSegment)
 	var err error
 	for lag := 0; lag <= 2; lag++ {
@@ -53,7 +58,7 @@ func (s *store) refreshWeightFit(ctx context.Context, opts weightLearnerOptions)
 		prices[normalizeModel(p.Model)] = p
 	}
 	now := time.Now().Unix()
-	result, err := rollingBacktest(byLag, prices, now, opts)
+	result, err := rollingBacktestProgress(byLag, prices, now, opts, progress)
 	if err != nil {
 		return result, err
 	}
@@ -63,6 +68,7 @@ func (s *store) refreshWeightFit(ctx context.Context, opts weightLearnerOptions)
 // The hourly path reuses the latest selected lag and scores. A full rolling
 // backtest is still run daily and whenever calibration explicitly requests it.
 func (s *store) refreshWeightFitScheduled(ctx context.Context, opts weightLearnerOptions, previous weightBacktest, hasPrevious bool) (weightBacktest, error) {
+	opts.ctx = ctx
 	opts = weightOptionsWithDefaults(opts)
 	now := time.Now().Unix()
 	if !hasPrevious || previous.GeneratedAt <= 0 || now-previous.GeneratedAt >= 24*3600 ||

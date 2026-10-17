@@ -168,6 +168,9 @@ func prequentialScores(eligible []quotaSegment, prices map[string]price, opts we
 	if err != nil {
 		return nil, err
 	}
+	if opts.onBacktestFit != nil {
+		opts.onBacktestFit()
+	}
 	learnedTracker := newOnlineScaleTracker(learnedFit, opts.RandomWalkSigma)
 	trackers := make(map[string]*onlineScaleTracker)
 	for _, mode := range modes[:2] {
@@ -178,12 +181,18 @@ func prequentialScores(eligible []quotaSegment, prices map[string]price, opts we
 		trackers[mode] = newOnlineScaleTracker(fit, opts.RandomWalkSigma)
 	}
 	for index := start; index < len(eligible); index++ {
+		if err := opts.contextError(); err != nil {
+			return nil, err
+		}
 		// Shared model factors are refreshed at a fixed cadence; every cycle
 		// scale is updated after each observed crossing below.
 		if index > start && (index-start)%25 == 0 {
 			learnedFit, err = fitQuotaWeights(eligible[:index], prices, eligible[index-1].EndAt, opts)
 			if err != nil {
 				return nil, err
+			}
+			if opts.onBacktestFit != nil {
+				opts.onBacktestFit()
 			}
 			learnedTracker = newOnlineScaleTracker(learnedFit, opts.RandomWalkSigma)
 		}
@@ -221,7 +230,14 @@ func prequentialScores(eligible []quotaSegment, prices map[string]price, opts we
 }
 
 func rollingBacktest(byLag map[int][]quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions) (weightBacktest, error) {
+	return rollingBacktestProgress(byLag, prices, now, opts, nil)
+}
+
+func rollingBacktestProgress(byLag map[int][]quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions, progress func(done, total int)) (weightBacktest, error) {
 	opts = weightOptionsWithDefaults(opts)
+	if err := opts.contextError(); err != nil {
+		return weightBacktest{}, err
+	}
 	result := weightBacktest{GeneratedAt: now, Lags: []backtestLagResult{}, Scores: []backtestScore{}}
 	bestMAE := math.Inf(1)
 	secondMAE := math.Inf(1)
@@ -239,6 +255,8 @@ func rollingBacktest(byLag map[int][]quotaSegment, prices map[string]price, now 
 			common[id]++
 		}
 	}
+	eligibleByLag := make(map[int][]quotaSegment)
+	total := 1 // The final fit follows the rolling lag comparisons.
 	for lag := 0; lag <= 2; lag++ {
 		all := append([]quotaSegment(nil), byLag[lag]...)
 		eligible := make([]quotaSegment, 0, len(all))
@@ -248,7 +266,23 @@ func rollingBacktest(byLag map[int][]quotaSegment, prices map[string]price, now 
 			}
 		}
 		sortSegmentsChronologically(eligible)
-		row := backtestLagResult{Lag: lag, EligibleSegments: len(eligible), FlaggedSegments: len(all) - len(eligible)}
+		eligibleByLag[lag] = eligible
+		if len(eligible) >= 25 {
+			start := max(25, len(eligible)*40/100)
+			total += 1 + max(0, len(eligible)-start-1)/25
+		}
+	}
+	done := 0
+	if progress != nil {
+		progress(done, total)
+		opts.onBacktestFit = func() {
+			done++
+			progress(done, total)
+		}
+	}
+	for lag := 0; lag <= 2; lag++ {
+		eligible := eligibleByLag[lag]
+		row := backtestLagResult{Lag: lag, EligibleSegments: len(eligible), FlaggedSegments: len(byLag[lag]) - len(eligible)}
 		var err error
 		row.Scores, err = prequentialScores(eligible, prices, opts)
 		if err != nil {
@@ -279,5 +313,8 @@ func rollingBacktest(byLag map[int][]quotaSegment, prices map[string]price, now 
 	}
 	fit.Lag = result.SelectedLag
 	result.FittedWeights = fit
+	if progress != nil {
+		progress(total, total)
+	}
 	return result, nil
 }

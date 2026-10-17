@@ -35,6 +35,8 @@ type pricingSettingsUpdate struct {
 
 type pricingRecalcProgress struct {
 	Stage          string  `json:"stage"`
+	FitsDone       int     `json:"fits_done,omitempty"`
+	FitsTotal      int     `json:"fits_total,omitempty"`
 	EventsDone     int64   `json:"events_done"`
 	EventsTotal    int64   `json:"events_total"`
 	SamplesDone    int64   `json:"samples_done"`

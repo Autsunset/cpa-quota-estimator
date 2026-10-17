@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -17,6 +18,8 @@ const (
 )
 
 type weightLearnerOptions struct {
+	ctx                       context.Context
+	onBacktestFit             func()
 	ReferenceModel            string
 	DisablePooled             bool
 	PooledDiagnosticOnly      bool
@@ -500,6 +503,9 @@ func weightNormalEquations(m weightModel, segments []quotaSegment, x []float64, 
 		}
 		weight /= weightObservationSD * weightObservationSD
 		for i := 0; i < n; i++ {
+			if grad[i] == 0 {
+				continue
+			}
 			b[i] += weight * grad[i] * residual
 			for j := 0; j <= i; j++ {
 				h[i][j] += weight * grad[i] * grad[j]
@@ -590,6 +596,9 @@ func optimizeWeightModel(m weightModel, segments []quotaSegment, now int64, opts
 	damping := .01
 	objective := weightObjective(m, segments, x, now, opts)
 	for iteration := 0; iteration < opts.MaxIterations; iteration++ {
+		if err := opts.contextError(); err != nil {
+			return nil, nil, 0, 0, err
+		}
 		h, b, _ := weightNormalEquations(m, segments, x, now, opts)
 		for i := range h {
 			h[i][i] += damping * (1 + h[i][i])
@@ -627,6 +636,9 @@ func optimizeWeightModel(m weightModel, segments []quotaSegment, now int64, opts
 }
 
 func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opts weightLearnerOptions) (weightFit, error) {
+	if err := opts.contextError(); err != nil {
+		return weightFit{}, err
+	}
 	opts = weightOptionsWithDefaults(opts)
 	segments := make([]quotaSegment, 0, len(all))
 	for _, segment := range all {
@@ -668,6 +680,9 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 	if !opts.DisablePooled && !opts.PooledDiagnosticOnly && !opts.SkipPooledValidation {
 		approved := make(map[string]bool)
 		for model, pool := range m.pooledModels {
+			if err := opts.contextError(); err != nil {
+				return fit, err
+			}
 			if !pool.Diagnostic.Unlocked {
 				continue
 			}
@@ -812,6 +827,13 @@ func fitQuotaWeights(all []quotaSegment, prices map[string]price, now int64, opt
 	fit.CycleScales = deriveCycleScales(scaleModel, x, scaleCov)
 	fit.Guidance = guidanceFromFit(fit)
 	return fit, nil
+}
+
+func (opts weightLearnerOptions) contextError() error {
+	if opts.ctx != nil {
+		return opts.ctx.Err()
+	}
+	return nil
 }
 
 func deriveFactorEstimate(m weightModel, x []float64, covariance [][]float64, names []string, base float64) weightEstimate {

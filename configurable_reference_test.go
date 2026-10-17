@@ -358,6 +358,9 @@ func TestSelectedReferenceSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg = cfg.withPricingSettings(settings)
+	if reference := os.Getenv("SELECTED_REFERENCE_MODEL"); reference != "" {
+		cfg.AnchorModel = reference
+	}
 	previous, ok, err := s.latestWeightFit(ctx)
 	if err != nil || !ok {
 		t.Fatalf("previous fit available=%t err=%v", ok, err)

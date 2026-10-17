@@ -90,7 +90,11 @@ func (a *app) runPricingTask(s *store, settings pricingSettings, cfg, previousCf
 		cfg.LearnedFit.EligibilityVersion != weightEligibilityVersion {
 		update(func(task *pricingRecalcTask) { task.Progress.Stage = "fitting" })
 		var result weightBacktest
-		result, err = s.refreshWeightFit(ctx, cfg.weightLearnerOptions())
+		result, err = s.refreshWeightFitProgress(ctx, cfg.weightLearnerOptions(), func(done, total int) {
+			update(func(task *pricingRecalcTask) {
+				task.Progress = pricingRecalcProgress{Stage: "fitting", FitsDone: done, FitsTotal: total}
+			})
+		})
 		if err == nil {
 			cfg.LearnedFit = &result.FittedWeights
 			a.mu.Lock()

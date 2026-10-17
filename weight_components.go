@@ -89,6 +89,11 @@ func assessComponentIdentifiability(segments []quotaSegment, prices map[string]p
 		}
 	}
 	for target := range diagnostics {
+		if componentSquaredNorm(columns[target]) == 0 {
+			diagnostics[target].ConditionalFisher = 0
+			diagnostics[target].Unlocked = false
+			continue
+		}
 		var basis [][]float64
 		for other, column := range columns {
 			if other == target {
@@ -104,11 +109,11 @@ func assessComponentIdentifiability(segments []quotaSegment, prices map[string]p
 				diagnostics[other].Model == opts.ReferenceModel && !diagnostics[other].Unlocked {
 				continue
 			}
-			v := append([]float64(nil), column...)
-			original := componentSquaredNorm(v)
+			original := componentSquaredNorm(column)
 			if original == 0 {
 				continue
 			}
+			v := append([]float64(nil), column...)
 			projectComponentVector(v, basis)
 			norm := componentSquaredNorm(v)
 			if norm <= math.Max(1e-14, original*1e-10) {
