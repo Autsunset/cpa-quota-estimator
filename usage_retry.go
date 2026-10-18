@@ -119,11 +119,23 @@ func (a *app) startDropFlush(s *store) {
 	if a.droppedUsagePending.Load() <= 0 || !a.dropFlushRunning.CompareAndSwap(false, true) {
 		return
 	}
+	a.workWG.Add(1)
 	go func() {
+		defer a.workWG.Done()
 		defer a.dropFlushRunning.Store(false)
 		for attempt := 0; attempt < 5; attempt++ {
 			count := a.droppedUsagePending.Swap(0)
 			if count <= 0 {
+				return
+			}
+			// Abort once this store generation was detached by quiesce or
+			// shutdown; the pending counter survives and the flush inside
+			// flushAndClose accounts it before close.
+			a.mu.RLock()
+			stale := a.store != s
+			a.mu.RUnlock()
+			if stale {
+				a.droppedUsagePending.Add(count)
 				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
