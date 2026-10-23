@@ -272,6 +272,12 @@ func (s *store) ensureEventCycle(ctx context.Context, tx *sql.Tx, e event) (quot
 		if !confirmed {
 			return current, false, nil
 		}
+		if advancedCandidate {
+			first, err = firstAdvancedResetRequest(ctx, tx, current, e, first)
+			if err != nil {
+				return quotaCycle{}, false, err
+			}
+		}
 		if err = closeCycle(ctx, tx, current.ID, first.RequestedAt, "early_reset"); err != nil {
 			return quotaCycle{}, false, err
 		}

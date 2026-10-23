@@ -31,13 +31,39 @@ AND reset_at=? AND window_minutes=?`, current.ID, mainQuotaScope, current.ResetA
 	}
 	var knownPlan bool
 	err = tx.QueryRowContext(ctx, `SELECT EXISTS(
-SELECT 1 FROM usage_events WHERE cycle_id=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL
+SELECT 1 FROM quota_samples WHERE cycle_id=?
 AND reset_at=? AND window_minutes=?
-AND (CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END)<=?)`,
-		current.ID, mainQuotaScope, e.ResetAt, e.WindowMinutes, lastOriginalObservation).Scan(&knownPlan)
-	// Restoring a previously observed plan is a regime recovery, including
-	// when the restored reset_at happens to be later than the temporary one.
+AND sampled_at<=?)`,
+		current.ID, e.ResetAt, e.WindowMinutes, lastOriginalObservation).Scan(&knownPlan)
+	// Only accepted samples establish a known plan. Pending reset responses
+	// can overlap the old plan by seconds without being a regime recovery.
 	return !knownPlan, err
+}
+
+func firstAdvancedResetRequest(ctx context.Context, tx *sql.Tx, current quotaCycle, e event, first recordedQuotaEvent) (recordedQuotaEvent, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id,requested_at,CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END,used_percent,reset_at,window_minutes,plan_type,failed
+FROM usage_events WHERE cycle_id=? AND quota_scope=? AND failed=0 AND used_percent IS NOT NULL
+AND reset_at=? AND window_minutes=? AND requested_at>=? AND requested_at<=?
+AND (CASE WHEN observed_at>0 THEN observed_at ELSE requested_at END) BETWEEN ? AND ?
+ORDER BY requested_at,id`, current.ID, mainQuotaScope, e.ResetAt, e.WindowMinutes,
+		current.StartedAt, first.RequestedAt, e.ResetAt-e.WindowMinutes*60-scheduledResetTolerance, first.ObservedAt)
+	if err != nil {
+		return recordedQuotaEvent{}, err
+	}
+	defer rows.Close()
+	// Include new-window requests whose headers crossed an old response in
+	// flight. Confirmation still uses the uninterrupted successful low run.
+	for rows.Next() {
+		var item recordedQuotaEvent
+		if err = rows.Scan(&item.ID, &item.RequestedAt, &item.ObservedAt, &item.UsedPercent, &item.ResetAt, &item.WindowMinutes, &item.PlanType, &item.Failed); err != nil {
+			return recordedQuotaEvent{}, err
+		}
+		if compatiblePlan(item.PlanType, e.PlanType) && earlyResetPercentCandidate(current.PeakPercent, item.UsedPercent, true) &&
+			item.UsedPercent <= first.UsedPercent+resetPercentTolerance {
+			return item, nil
+		}
+	}
+	return first, rows.Err()
 }
 
 // recoverAdvancedEarlyReset returns a zero cycle when the event is unrelated.

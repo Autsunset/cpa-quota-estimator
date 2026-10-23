@@ -10,7 +10,7 @@ const (
 	falseResetMinimumPeak       = 20.0
 	falseResetMinimumChain      = 2
 	falseResetReboundMaxSeconds = 10 * 60
-	missedResetRepairKey        = "missed_advanced_early_resets_v1"
+	missedResetRepairKey        = "missed_advanced_early_resets_v2"
 )
 
 type missedResetBoundary struct {
@@ -23,9 +23,8 @@ type missedResetBoundary struct {
 	PlanType      string
 }
 
-// repairMissedAdvancedEarlyResets upgrades cycles created before advanced
-// early-reset detection existed. A confirmed low run in a new weekly schedule
-// is required; the entire repair and its marker commit atomically.
+// A new marker also repairs resets lost to overlapping in-flight headers in
+// versions that already completed v1. The split and marker commit atomically.
 func (s *store) repairMissedAdvancedEarlyResets(ctx context.Context) ([]missedResetBoundary, error) {
 	var marker string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key=?`, missedResetRepairKey).Scan(&marker)
@@ -171,7 +170,44 @@ func (s *store) missedResetInCycle(ctx context.Context, cycleID, startedAt, ende
 			count++
 			lastAt = next.ObservedAt
 		}
-		if count >= resetConfirmationSamples && lastAt-first.ObservedAt >= resetConfirmationMinSeconds {
+		if count < resetConfirmationSamples || lastAt-first.ObservedAt < resetConfirmationMinSeconds {
+			continue
+		}
+		// The confirmed run can begin after a final old header even though a
+		// concurrent new-window request was sent (and observed) just before it.
+		firstObserved, firstUsed := first.ObservedAt, first.UsedPercent
+		for _, earlier := range events[:i] {
+			if earlier.Failed || earlier.RequestedAt < startedAt || earlier.RequestedAt >= first.RequestedAt ||
+				earlier.ObservedAt < declared-scheduledResetTolerance || earlier.ObservedAt > firstObserved ||
+				earlier.ResetAt != first.ResetAt || earlier.WindowMinutes != first.WindowMinutes ||
+				!compatiblePlan(earlier.PlanType, first.PlanType) || earlier.UsedPercent > firstUsed+resetPercentTolerance {
+				continue
+			}
+			first = earlier
+		}
+		if first.RequestedAt <= startedAt+scheduledResetTolerance {
+			continue
+		}
+		var knownPlan bool
+		if err = s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM quota_samples
+WHERE cycle_id=? AND reset_at=? AND window_minutes=? AND sampled_at<?)`,
+			cycleID, first.ResetAt, first.WindowMinutes, first.RequestedAt).Scan(&knownPlan); err != nil {
+			return missedResetBoundary{}, err
+		}
+		if knownPlan {
+			continue
+		}
+		recovered := false
+		for _, later := range events {
+			if later.Failed || later.ObservedAt <= lastAt || later.RequestedAt < first.RequestedAt ||
+				later.ResetAt != old.ResetAt || later.WindowMinutes != old.WindowMinutes ||
+				!compatiblePlan(later.PlanType, old.PlanType) {
+				continue
+			}
+			recovered = later.UsedPercent >= old.UsedPercent-resetPercentTolerance
+			break
+		}
+		if !recovered {
 			return missedResetBoundary{CycleID: cycleID, EventID: first.ID, At: first.RequestedAt, OldReset: old.ResetAt, NewReset: first.ResetAt, WindowMinutes: first.WindowMinutes, PlanType: first.PlanType}, nil
 		}
 	}
