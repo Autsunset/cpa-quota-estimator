@@ -323,10 +323,10 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 			time.Sleep(pricingBatchPause)
 		}
 	}
-	go func() {
+	s.spawnDetached(func() {
 		checkpointCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = s.checkpointWAL(checkpointCtx)
-	}()
+	})
 	return int64(len(updates)), nil
 }

@@ -41,10 +41,15 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		}
 		a.mu.RLock()
 		s, cfg := a.store, a.cfg
-		a.mu.RUnlock()
 		if s == nil {
+			a.mu.RUnlock()
 			return textResponse(503, "plugin store is not ready")
 		}
+		// Register before releasing a.mu so quiesce/shutdown drain this call
+		// instead of closing the store underneath it.
+		done := a.beginStoreOp()
+		a.mu.RUnlock()
+		defer done()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		count, err := syncPrices(ctx, s, cfg)
@@ -207,7 +212,7 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 				return textResponse(500, claimErr.Error())
 			}
 			if claimed {
-				go a.runGuidedCalibrationRefit(a.store, a.cfg, body.Account)
+				a.spawnGuidedCalibrationRefit(a.store, a.cfg, body.Account)
 			}
 		}
 		return jsonResponse(200, session)
@@ -526,10 +531,15 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 func (a *app) handleEarlyResetRepair(req managementRequest) managementResponse {
 	a.mu.RLock()
 	s := a.store
-	a.mu.RUnlock()
 	if s == nil {
+		a.mu.RUnlock()
 		return textResponse(503, "plugin store is not ready")
 	}
+	// Same admission contract as /prices/sync: stay on workWG until the
+	// repair finishes so drain covers it.
+	done := a.beginStoreOp()
+	a.mu.RUnlock()
+	defer done()
 	account := req.Query.Get("account")
 	if account == "" {
 		return textResponse(400, "account is required")

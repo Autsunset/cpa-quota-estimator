@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +20,9 @@ type store struct {
 	attributionBatchMaxNS atomic.Int64
 	segmentBatchMaxNS     atomic.Int64
 	walCheckpointing      atomic.Bool
+	// bg tracks detached goroutines that still hold this store so close can
+	// wait for them before releasing the SQLite connection.
+	bg sync.WaitGroup
 }
 
 func openStore(path string) (*store, error) {
@@ -215,7 +219,20 @@ WHERE failed=0 AND used_percent IS NOT NULL AND reset_at>0 AND window_minutes>0;
 	return err
 }
 
-func (s *store) close() error { return s.db.Close() }
+// spawnDetached runs fn asynchronously while keeping close() blocking until
+// every detached goroutine finished its last database call.
+func (s *store) spawnDetached(fn func()) {
+	s.bg.Add(1)
+	go func() {
+		defer s.bg.Done()
+		fn()
+	}()
+}
+
+func (s *store) close() error {
+	s.bg.Wait()
+	return s.db.Close()
+}
 
 func (s *store) checkpointWAL(ctx context.Context) error {
 	if s.path == "" || !s.walCheckpointing.CompareAndSwap(false, true) {
