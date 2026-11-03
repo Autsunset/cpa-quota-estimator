@@ -56,11 +56,13 @@ func (a *app) startPricingTask(s *store, settings pricingSettings, _ config) (pr
 	cfg := a.cfg
 	task := pricingRecalcTask{ID: strconv.FormatInt(time.Now().UnixNano(), 36), Status: "queued", PricingMode: settings.PricingMode, AnchorModel: settings.AnchorModel, StartedAt: time.Now().Unix()}
 	a.pricingTask = &task
-	go a.runPricingTask(s, settings, cfg, previousCfg, task.ID)
+	a.workWG.Add(1)
+	go a.runPricingTask(a.workContext(), s, settings, cfg, previousCfg, task.ID)
 	return task, nil
 }
 
-func (a *app) runPricingTask(s *store, settings pricingSettings, cfg, previousCfg config, id string) {
+func (a *app) runPricingTask(workCtx context.Context, s *store, settings pricingSettings, cfg, previousCfg config, id string) {
+	defer a.workWG.Done()
 	update := func(f func(*pricingRecalcTask)) {
 		a.pricingTaskMu.Lock()
 		if a.pricingTask != nil && a.pricingTask.ID == id {
@@ -69,7 +71,7 @@ func (a *app) runPricingTask(s *store, settings pricingSettings, cfg, previousCf
 		a.pricingTaskMu.Unlock()
 	}
 	update(func(task *pricingRecalcTask) { task.Status = "running" })
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	ctx, cancel := context.WithTimeout(workCtx, 20*time.Minute)
 	defer cancel()
 	rollbackCfg := func() {
 		update(func(task *pricingRecalcTask) { task.Status = "rolling_back" })
@@ -120,11 +122,11 @@ func (a *app) runPricingTask(s *store, settings pricingSettings, cfg, previousCf
 	} else if cfg.LearnedFit != nil {
 		_, _ = s.updateWeightAttributions(ctx, cfg.LearnedFit, cfg.LongContextThreshold)
 	}
-	go func() {
+	s.spawnDetached(func() {
 		checkpointCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = s.checkpointWAL(checkpointCtx)
-	}()
+	})
 	update(func(task *pricingRecalcTask) {
 		task.FinishedAt = time.Now().Unix()
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -16,12 +17,17 @@ import (
 )
 
 type app struct {
-	mu                          sync.RWMutex
-	cfg                         config
-	requestedConfig             config
-	configured                  bool
-	store                       *store
-	cancel                      context.CancelFunc
+	mu              sync.RWMutex
+	cfg             config
+	requestedConfig config
+	configured      bool
+	store           *store
+	cancel          context.CancelFunc
+	// lifecycleMu serializes complete configure/quiesce/shutdown transitions
+	// so a drain never overlaps a reopen or a second drain of the same store.
+	lifecycleMu                 sync.Mutex
+	workCtx                     context.Context
+	workWG                      sync.WaitGroup
 	pricingTaskMu               sync.Mutex
 	pricingTask                 *pricingRecalcTask
 	pricingTaskHistory          map[string]pricingRecalcTask
@@ -51,6 +57,11 @@ func (a *app) handle(method string, raw []byte) ([]byte, error) {
 			return nil, err
 		}
 		return okEnvelope(pluginRegistration())
+	case "plugin.quiesce":
+		if err := a.quiesce(); err != nil {
+			return nil, err
+		}
+		return okEnvelope(struct{}{})
 	case "usage.handle":
 		record, err := decode[usageRecord](raw)
 		if err != nil {
@@ -185,6 +196,11 @@ func fitNeedsRefresh(result weightBacktest, hasFit bool, cfg config) bool {
 }
 
 func (a *app) configure(raw []byte) error {
+	// Serialize the whole transition with quiesce/shutdown: a quiesce draining
+	// the current generation must not race this reopen, and a reconfigure must
+	// not publish a replacement while a drain is still waiting on workWG.
+	a.lifecycleMu.Lock()
+	defer a.lifecycleMu.Unlock()
 	cfg, err := parseConfig(raw)
 	if err != nil {
 		return err
@@ -261,6 +277,19 @@ func (a *app) configure(raw []byte) error {
 		return fmt.Errorf("store changed while configuring")
 	}
 	oldStore, oldCancel := a.store, a.cancel
+	// Seal admission before waiting: replacement work must not join the old
+	// generation's WaitGroup or race its final Done with a fresh Add.
+	a.store, a.cancel, a.workCtx = nil, nil, nil
+	a.mu.Unlock()
+	if oldCancel != nil {
+		oldCancel()
+	}
+	a.workWG.Wait()
+	if oldStore != nil && oldStore != s {
+		_ = a.flushAndClose(oldStore)
+	}
+
+	a.mu.Lock()
 	a.store, a.cfg = s, cfg
 	a.requestedConfig, a.configured = requestedConfig, true
 	a.pricingTaskMu.Lock()
@@ -272,19 +301,19 @@ func (a *app) configure(raw []byte) error {
 	a.pricingTaskMu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
+	a.workCtx = ctx
 	a.mu.Unlock()
-	if oldCancel != nil {
-		oldCancel()
-	}
-	if oldStore != nil && oldStore != s {
-		_ = oldStore.close()
-	}
 	if settings.Migrated {
 		if _, taskErr := a.startPricingTask(s, settings, cfg); taskErr != nil {
 			return fmt.Errorf("schedule pricing migration: %w", taskErr)
 		}
 	}
-	go a.background(ctx, s, cfg)
+	// No fallible step may sit between Add and the goroutine taking ownership.
+	a.workWG.Add(1)
+	go func() {
+		defer a.workWG.Done()
+		a.background(ctx, s, cfg)
+	}()
 	return nil
 }
 
@@ -425,25 +454,75 @@ func samePriceCatalogRates(left, right map[string]price) bool {
 	return true
 }
 
-func (a *app) shutdown() {
-	a.mu.Lock()
-	cancel, s := a.cancel, a.store
-	a.cancel = nil
-	a.store = nil
-	a.mu.Unlock()
+// quiesce stops accepting new work, waits for in-flight calls and detached
+// workers to drain, then closes the SQLite connection so a replacement plugin
+// can initialize the same database file. It is idempotent; a later
+// plugin.reconfigure (host rollback) opens a fresh store and restarts workers.
+func (a *app) quiesce() error {
+	// Serializes against concurrent quiesce/shutdown/configure: a second
+	// quiesce may only report success after the first finished flushing and
+	// closing the old store, and no reopen may overlap the drain.
+	a.lifecycleMu.Lock()
+	defer a.lifecycleMu.Unlock()
+	cancel, s := a.detachStore()
 	if cancel != nil {
 		cancel()
 	}
-	if s != nil {
-		if pending := a.droppedUsagePending.Swap(0); pending > 0 {
-			ctx, done := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := s.addDroppedUsageCount(ctx, pending); err != nil {
-				a.droppedUsagePending.Add(pending)
-			}
-			done()
-		}
-		_ = s.close()
+	// Synchronous callers drain through a.mu inside detachStore; detached
+	// workers (background loop, pricing tasks, calibration refits, drop
+	// flushes, management exceptions) drain through the WaitGroup after
+	// their contexts cancel.
+	a.workWG.Wait()
+	return a.flushAndClose(s)
+}
+
+func (a *app) shutdown() {
+	a.lifecycleMu.Lock()
+	defer a.lifecycleMu.Unlock()
+	cancel, s := a.detachStore()
+	if cancel != nil {
+		cancel()
 	}
+	a.workWG.Wait()
+	_ = a.flushAndClose(s)
+}
+
+// beginStoreOp registers a synchronous store workflow that releases a.mu
+// before finishing. Call while holding a.mu (read or write); the returned
+// func releases ownership and must run on every return path.
+func (a *app) beginStoreOp() func() {
+	a.workWG.Add(1)
+	return a.workWG.Done
+}
+
+// detachStore swaps the active store out under the write lock. In-flight
+// usage.handle and management.handle calls hold a.mu.RLock() for their whole
+// duration, so once the lock is acquired no synchronous DB work remains; new
+// calls observe a nil store and fail fast instead of touching the old store.
+func (a *app) detachStore() (context.CancelFunc, *store) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cancel, s := a.cancel, a.store
+	a.cancel, a.workCtx, a.store = nil, nil, nil
+	return cancel, s
+}
+
+func (a *app) flushAndClose(s *store) error {
+	if s == nil {
+		return nil
+	}
+	var flushErr error
+	if pending := a.droppedUsagePending.Swap(0); pending > 0 {
+		ctx, done := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := s.addDroppedUsageCount(ctx, pending); err != nil {
+			// The retiring host may never call Shutdown, so surface the
+			// failure instead of silently keeping the count in memory.
+			a.droppedUsagePending.Add(pending)
+			flushErr = fmt.Errorf("flush dropped usage count: %w", err)
+		}
+		done()
+	}
+	return errors.Join(flushErr, s.close())
 }
 
 func (a *app) recordUsage(r usageRecord) error {
@@ -554,13 +633,32 @@ func (a *app) recordUsage(r usageRecord) error {
 		return err
 	}
 	if claimed {
-		go a.runGuidedCalibrationRefit(a.store, a.cfg, account)
+		a.spawnGuidedCalibrationRefit(a.store, a.cfg, account)
 	}
 	return nil
 }
 
-func (a *app) runGuidedCalibrationRefit(s *store, cfg config, account string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+// workContext returns the context canceled when the current plugin generation
+// is quiesced or shut down. Callers must hold a.mu so the context cannot be
+// detached before the worker captures it; tests without configure fall back
+// to context.Background().
+func (a *app) workContext() context.Context {
+	if a.workCtx == nil {
+		return context.Background()
+	}
+	return a.workCtx
+}
+
+// spawnGuidedCalibrationRefit must be called while holding a.mu (read or
+// write) so the captured generation context cannot detach before Add.
+func (a *app) spawnGuidedCalibrationRefit(s *store, cfg config, account string) {
+	a.workWG.Add(1)
+	go a.runGuidedCalibrationRefit(a.workContext(), s, cfg, account)
+}
+
+func (a *app) runGuidedCalibrationRefit(workCtx context.Context, s *store, cfg config, account string) {
+	defer a.workWG.Done()
+	ctx, cancel := context.WithTimeout(workCtx, 5*time.Minute)
 	defer cancel()
 	result, err := s.refreshWeightFit(ctx, cfg.weightLearnerOptions())
 	if err == nil && !result.FittedWeights.Available {
