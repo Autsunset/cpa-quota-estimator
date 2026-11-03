@@ -25,7 +25,11 @@ type app struct {
 	cancel          context.CancelFunc
 	// lifecycleMu serializes complete configure/quiesce/shutdown transitions
 	// so a drain never overlaps a reopen or a second drain of the same store.
-	lifecycleMu                 sync.Mutex
+	lifecycleMu sync.Mutex
+	// cleanupErr belongs to the last detached store (cfg.DataPath). Keep it
+	// until that database has been reopened and its pending accounting saved.
+	// Only lifecycle transitions access it, while holding lifecycleMu.
+	cleanupErr                  error
 	workCtx                     context.Context
 	workWG                      sync.WaitGroup
 	pricingTaskMu               sync.Mutex
@@ -206,8 +210,12 @@ func (a *app) configure(raw []byte) error {
 		return err
 	}
 	a.mu.RLock()
+	recoveryPath := a.cfg.DataPath
 	unchanged := a.configured && a.store != nil && reflect.DeepEqual(cfg, a.requestedConfig)
 	a.mu.RUnlock()
+	if a.cleanupErr != nil && cfg.DataPath != recoveryPath {
+		return fmt.Errorf("recover original data_path %q before switching databases: %w", recoveryPath, a.cleanupErr)
+	}
 	if unchanged {
 		// CPA repeats plugin.reconfigure during startup. Keep the active
 		// store, fit and task intact while returning valid capabilities.
@@ -232,6 +240,13 @@ func (a *app) configure(raw []byte) error {
 		if err = seedPrices(context.Background(), s); err != nil {
 			s.close()
 			return err
+		}
+	}
+	if a.cleanupErr != nil {
+		// A failed quiesce closes SQLite but retains the pending counter.
+		// Recover it before exposing this store or starting new workers.
+		if err = a.flushDroppedUsage(s); err != nil {
+			return errors.Join(fmt.Errorf("recover dropped usage accounting: %w", err), s.close())
 		}
 	}
 	catalog, err := loadPriceCatalog(context.Background(), s)
@@ -286,12 +301,16 @@ func (a *app) configure(raw []byte) error {
 	}
 	a.workWG.Wait()
 	if oldStore != nil && oldStore != s {
-		_ = a.flushAndClose(oldStore)
+		if err = a.flushAndClose(oldStore); err != nil {
+			a.cleanupErr = errors.Join(err, s.close())
+			return a.cleanupErr
+		}
 	}
 
 	a.mu.Lock()
 	a.store, a.cfg = s, cfg
 	a.requestedConfig, a.configured = requestedConfig, true
+	a.cleanupErr = nil
 	a.pricingTaskMu.Lock()
 	a.lastAutoFitRepriceAt = lastAutoFit
 	a.lastPricedFit = cfg.LearnedFit
@@ -465,6 +484,9 @@ func (a *app) quiesce() error {
 	a.lifecycleMu.Lock()
 	defer a.lifecycleMu.Unlock()
 	cancel, s := a.detachStore()
+	if s == nil {
+		return a.cleanupErr
+	}
 	if cancel != nil {
 		cancel()
 	}
@@ -473,18 +495,12 @@ func (a *app) quiesce() error {
 	// flushes, management exceptions) drain through the WaitGroup after
 	// their contexts cancel.
 	a.workWG.Wait()
-	return a.flushAndClose(s)
+	a.cleanupErr = a.flushAndClose(s)
+	return a.cleanupErr
 }
 
 func (a *app) shutdown() {
-	a.lifecycleMu.Lock()
-	defer a.lifecycleMu.Unlock()
-	cancel, s := a.detachStore()
-	if cancel != nil {
-		cancel()
-	}
-	a.workWG.Wait()
-	_ = a.flushAndClose(s)
+	_ = a.quiesce()
 }
 
 // beginStoreOp registers a synchronous store workflow that releases a.mu
@@ -511,18 +527,21 @@ func (a *app) flushAndClose(s *store) error {
 	if s == nil {
 		return nil
 	}
-	var flushErr error
+	return errors.Join(a.flushDroppedUsage(s), s.close())
+}
+
+func (a *app) flushDroppedUsage(s *store) error {
 	if pending := a.droppedUsagePending.Swap(0); pending > 0 {
 		ctx, done := context.WithTimeout(context.Background(), 5*time.Second)
+		defer done()
 		if err := s.addDroppedUsageCount(ctx, pending); err != nil {
 			// The retiring host may never call Shutdown, so surface the
 			// failure instead of silently keeping the count in memory.
 			a.droppedUsagePending.Add(pending)
-			flushErr = fmt.Errorf("flush dropped usage count: %w", err)
+			return fmt.Errorf("flush dropped usage count: %w", err)
 		}
-		done()
 	}
-	return errors.Join(flushErr, s.close())
+	return nil
 }
 
 func (a *app) recordUsage(r usageRecord) error {
