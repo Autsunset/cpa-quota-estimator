@@ -200,6 +200,12 @@ Plugin upgrades migrate SQLite in place. The confirmed historical missed-reset r
 
 GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, and GPT-5.6 Sol use verified [OpenAI Standard API rates](https://developers.openai.com/api/docs/pricing) where the catalog lags. The [Codex Credits card](https://learn.chatgpt.com/docs/pricing) gives their separate subscription credit rates. Official API Fast and long-context rates are displayed beside learner-adjusted estimates; API Batch/Flex requests retain their 50% rate. `gpt-6.1-sol` uses $2 input, $0.10 cached input, $2.50 cache writes, and $10 output per million Tokens in API mode; its Standard Codex rates are 50 input, 2.5 cached input, and 250 output Credits. The older `gpt-6-sol` keeps its own rates. Neither published card alone determines an account’s included subscription quota.
 
+### Upgrading and lifecycle recovery
+
+Version `0.21.4` implements `plugin.quiesce`: it stops accepting store operations, cancels background work, waits for accepted operations and detached checkpoints, flushes pending dropped-usage accounting, and closes SQLite. Repeated stops preserve any cleanup error. After a failed flush, `plugin.reconfigure` must reopen the original `data_path` and save its pending accounting before resuming; switching to another database is rejected until recovery succeeds.
+
+Continue using a controlled CPA process restart for upgrades. Installing this version cannot add quiesce support to an already loaded older plugin. Lossless hot reload also requires the host to hold and replay usage events during replacement and abort replacement when quiesce fails. This plugin change alone does not provide those host guarantees. Back up SQLite online before upgrading.
+
 ## Token and pricing-value rules
 
 The Token charts use input + output Tokens. Cached Tokens are normally included in input Tokens and are therefore not added again. Pricing-value calculation still applies cache rates independently:
@@ -280,7 +286,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.21.3
+make package VERSION=0.21.4
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
@@ -304,5 +310,7 @@ The plugin does not require CPAMP. A custom CPAMP deployment can optionally reus
 ## Acknowledgements
 
 Thanks to [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) for the underlying proxy capabilities and native plugin system.
+
+Thanks to [Xiangzhe (@xz-dev)](https://github.com/xz-dev) for the SQLite lifecycle draining implementation and regression tests in [PR #4](https://github.com/Autsunset/cpa-quota-estimator/pull/4). The original contribution is retained in the merge history; subsequent maintainer fixes cover cleanup-error retention and recovery of pending accounting.
 
 Thanks to the [Linux.do community](https://linux.do/) for testing, feedback, and technical discussion.

@@ -200,6 +200,12 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 和 GPT-5.6 Sol 使用已核实的 [OpenAI Standard API 价格](https://developers.openai.com/api/docs/pricing) 覆盖滞后的目录条目；[Codex Credits 价目表](https://learn.chatgpt.com/docs/pricing) 则列出独立的订阅 Credits 单价。官方 Fast 与长上下文倍率会和学习器调整值并列显示，API Batch/Flex 仍按 50% 计价。`gpt-6.1-sol` 的 API 单价为每百万 Token 输入 $2、缓存读取 $0.10、缓存写入 $2.50、输出 $10；Standard Codex 单价为输入 50、缓存读取 2.5、输出 250 Credits。旧模型 `gpt-6-sol` 保留原有单价。任一公开价目表都不能单独确定账号套餐内含额度。
 
+### 升级与生命周期恢复
+
+`0.21.4` 实现了 `plugin.quiesce`：停止接收新的数据库操作，取消后台任务，等待已接收的操作与独立检查点完成，将待写入的丢失用量统计落盘，然后关闭 SQLite。重复停止会保留清理错误。统计落盘失败后，`plugin.reconfigure` 必须重新打开原 `data_path` 并保存待写入统计，才能恢复运行；恢复成功前拒绝切换到其他数据库。
+
+升级时请继续采用受控重启 CPA 进程的方式。安装此版本无法让已加载的旧插件获得 quiesce 能力。无损热更新还需要宿主在替换期间暂存并补发用量事件，并在 quiesce 失败时中止替换；仅更新插件尚不能提供这些宿主侧保障。升级前请在线备份 SQLite。
+
 ## Token 与计价值计算规则
 
 Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已经包含在输入 Token 中，因此不会重复相加；计价值计算仍会单独应用缓存费率：
@@ -280,7 +286,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.21.3
+make package VERSION=0.21.4
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
@@ -304,5 +310,7 @@ SQLite 数据库包含凭证标识符、模型名称、Token 数、所选口径�
 ## 致谢
 
 感谢 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 提供底层代理能力与原生插件机制。
+
+感谢 [Xiangzhe（@xz-dev）](https://github.com/xz-dev) 在 [PR #4](https://github.com/Autsunset/cpa-quota-estimator/pull/4) 中实现 SQLite 生命周期排空与回归测试。合并历史保留了原始贡献；维护者后续补充了清理错误保留和待写入统计恢复的修复。
 
 感谢 [Linux.do 社区](https://linux.do/) 在测试、反馈与技术交流方面提供的支持。
