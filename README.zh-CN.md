@@ -291,7 +291,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 
 ## 构建
 
-需要 Go 1.22+、GCC 和 CGO：
+需要 Go 1.24.1+、GCC 和 CGO：
 
 ```bash
 make test
