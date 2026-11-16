@@ -204,9 +204,11 @@ GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 和 GPT-5.6 Sol 使用已核�
 
 `0.21.4` 实现了 `plugin.quiesce`：停止接收新的数据库操作，取消后台任务，等待已接收的操作与独立检查点完成，将待写入的丢失用量统计落盘，然后关闭 SQLite。重复停止会保留清理错误。统计落盘失败后，`plugin.reconfigure` 必须重新打开原 `data_path` 并保存待写入统计，才能恢复运行；恢复成功前拒绝切换到其他数据库。
 
+`0.22.2` 把构建工具链保持在 Go 1.26 线。C ABI 插件是加载进 CPA 进程的 c-shared 库，而 v8.0.74 宿主用 Go 1.26.10 构建；用 Go 1.27.4 构建的库在宿主的 dlopen 预检阶段直接 `SIGILL`，而 Go 1.26.11 与 Go 1.24.13 构建的库可以正常加载。相对 `0.22.1` 没有生产代码改动。
+
 `0.22.1` 把 CI 与发布工具链固定到受支持的补丁版本，并把模块最低 Go 版本提高到 1.24.1：Go 1.24.0 的 arm64 编译器会损坏堆（`golang/go#71938`），导致 arm64 发布构建失败。相对 `0.22.0` 没有生产代码改动。
 
-`0.22.0` 将 SQLite 驱动升级到 `modernc.org/sqlite` v1.41.0：上游现在会在查询被取消时关闭自己已创建的 Rows（`stmt.go` 的取消分支）；旧版本把 Rows 交给调用方后又丢弃，导致已准备的 statement 泄漏。泄漏的 statement 会让 `sqlite3_close_v2` 无法完成，于是连接池报告 0 个连接、操作系统却仍持有数据库文件句柄（可确定性复现为“池 0、残留 4 个 fd”），驱动同时还会滞留内存。本版本同时包含 `0.21.5` 的 checkpoint worker 与归因分页、`0.21.6`/`0.21.7` 的连接排空与关闭失败上报。**从源码构建插件现在需要 Go 1.24.1 或更新版本**（Go 1.24.0 存在 arm64 编译器缺陷 golang/go#71938，已在 1.24.1 修复）；CI 与发布流程固定使用受支持的补丁版 1.27.4。预编译的 C ABI 插件不受影响，CPA 宿主无需更换 Go 版本。
+`0.22.0` 将 SQLite 驱动升级到 `modernc.org/sqlite` v1.41.0：上游现在会在查询被取消时关闭自己已创建的 Rows（`stmt.go` 的取消分支）；旧版本把 Rows 交给调用方后又丢弃，导致已准备的 statement 泄漏。泄漏的 statement 会让 `sqlite3_close_v2` 无法完成，于是连接池报告 0 个连接、操作系统却仍持有数据库文件句柄（可确定性复现为“池 0、残留 4 个 fd”），驱动同时还会滞留内存。本版本同时包含 `0.21.5` 的 checkpoint worker 与归因分页、`0.21.6`/`0.21.7` 的连接排空与关闭失败上报。**从源码构建插件现在需要 Go 1.24.1 或更新版本**（Go 1.24.0 存在 arm64 编译器缺陷 golang/go#71938，已在 1.24.1 修复）；CI 与发布流程固定使用受支持的补丁版 1.26.11，同时与 CPA 宿主的 Go 运行时保持兼容。预编译的 C ABI 插件不受影响，CPA 宿主无需更换 Go 版本。
 
 `0.21.7` 让关闭在临时连接未能排空时**失败**：排空错误与主库关闭错误合并返回，并保留 cleanup 错误，`plugin.reconfigure` 必须先重新打开同一 `data_path` 才能恢复，因此 quiesce 不会再在驱动可能仍持有数据库文件时报告干净退出。checkpoint 使用的临时连接同样记录，管理接口概览提供 `db_drain_failures` / `last_db_drain_error` 便于观测。请部署此版本：它包含 `0.21.6` 的连接排空与 `0.21.5` 的 checkpoint、归因回写改动。
 
@@ -296,7 +298,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.22.1
+make package VERSION=0.22.2
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。

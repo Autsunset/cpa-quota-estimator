@@ -204,6 +204,8 @@ GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, and GPT-5.6 Sol use verified [O
 
 Version `0.21.4` implements `plugin.quiesce`: it stops accepting store operations, cancels background work, waits for accepted operations and detached checkpoints, flushes pending dropped-usage accounting, and closes SQLite. Repeated stops preserve any cleanup error. After a failed flush, `plugin.reconfigure` must reopen the original `data_path` and save its pending accounting before resuming; switching to another database is rejected until recovery succeeds.
 
+Version `0.22.2` keeps the build toolchain on the Go 1.26 line. A C ABI plugin is a c-shared library loaded into the CPA process, and the v8.0.74 host is built with Go 1.26.10; a library built with Go 1.27.4 failed to load there with `SIGILL` during the host's dlopen preflight, while builds with Go 1.26.11 and Go 1.24.13 loaded normally. No production code changed relative to `0.22.1`.
+
 Version `0.22.1` pins the CI and release toolchain to a supported patch release and raises the module's minimum Go version to 1.24.1, because Go 1.24.0's arm64 compiler corrupts the heap (`golang/go#71938`) and broke the arm64 release build. No production code changed relative to `0.22.0`.
 
 Version `0.22.0` upgrades the SQLite driver to `modernc.org/sqlite` v1.41.0. Upstream now closes the rows it created when a query is canceled (`stmt.go`, cancellation path); the previous version handed those rows to the caller and then dropped them, leaking the prepared statement. The leaked statement keeps `sqlite3_close_v2` from finishing, so the connection pool reports zero connections while the operating system still holds the database file — reproduced deterministically as four leftover file descriptors with zero open connections — and the driver also retained its memory. This release bundles the `0.21.5` checkpoint worker and paged attribution, and the `0.21.6`/`0.21.7` connection drain with a failing close. Building the plugin from source now requires Go 1.24.1 or newer; the prebuilt C ABI plugins are unaffected and CPA does not need a different Go toolchain.
@@ -296,7 +298,7 @@ Requires Go 1.24.1+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.22.1
+make package VERSION=0.22.2
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
