@@ -27,7 +27,14 @@ mkdir -p "${out_dir}"
 artifact="${plugin_id}.${ext}"
 zip_name="${plugin_id}_${version}_${goos}_${goarch}.zip"
 
-CGO_ENABLED=1 go build -trimpath -buildvcs=false -buildmode=c-shared \
+cgo_arch_flags=""
+if [ "${goarch}" = "amd64" ]; then
+  # Keep the C side (runtime/cgo is linked in) at the x86-64 baseline; builder
+  # defaults with BMI2/AVX2 make the library unloadable on older CPUs.
+  cgo_arch_flags="-march=x86-64 -mtune=generic"
+fi
+
+CGO_ENABLED=1 CGO_CFLAGS="$CGO_CFLAGS $cgo_arch_flags" go build -trimpath -buildvcs=false -buildmode=c-shared \
   -ldflags="-s -w -X main.pluginVersion=${version}" \
   -o "${artifact}" .
 
