@@ -204,6 +204,8 @@ GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 和 GPT-5.6 Sol 使用已核�
 
 `0.21.4` 实现了 `plugin.quiesce`：停止接收新的数据库操作，取消后台任务，等待已接收的操作与独立检查点完成，将待写入的丢失用量统计落盘，然后关闭 SQLite。重复停止会保留清理错误。统计落盘失败后，`plugin.reconfigure` 必须重新打开原 `data_path` 并保存待写入统计，才能恢复运行；恢复成功前拒绝切换到其他数据库。
 
+`0.21.5` 把 SQLite 的 WAL checkpoint 放到独立的后台 worker 上，不再与维护 goroutine 共用调度，因此耗时数分钟的权重拟合或分段重建不会再让 30 秒的 checkpoint 节奏完全停摆；归因回写改为固定上界的 keyset 分页写入，不再先把全部事件物化成切片。在 275,396 条事件的生产库上，归因回写的堆峰值从 23.9 MiB 降到 3.7 MiB，输出完全一致（派生归因全表校验和、行数、Token 总量均相同）。不涉及表结构、额度公式或依赖变化。本次只针对归因回写峰值与 checkpoint 调度，不代表已修复宿主侧全部内存问题。
+
 升级时请继续采用受控重启 CPA 进程的方式。安装此版本无法让已加载的旧插件获得 quiesce 能力。无损热更新还需要宿主在替换期间暂存并补发用量事件，并在 quiesce 失败时中止替换；仅更新插件尚不能提供这些宿主侧保障。升级前请在线备份 SQLite。
 
 ## Token 与计价值计算规则
@@ -286,7 +288,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.21.4
+make package VERSION=0.21.5
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。

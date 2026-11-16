@@ -204,6 +204,8 @@ GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, and GPT-5.6 Sol use verified [O
 
 Version `0.21.4` implements `plugin.quiesce`: it stops accepting store operations, cancels background work, waits for accepted operations and detached checkpoints, flushes pending dropped-usage accounting, and closes SQLite. Repeated stops preserve any cleanup error. After a failed flush, `plugin.reconfigure` must reopen the original `data_path` and save its pending accounting before resuming; switching to another database is rejected until recovery succeeds.
 
+Version `0.21.5` runs the SQLite WAL checkpoint on its own tracked worker instead of the maintenance goroutine, so a multi-minute weight fit or segment rebuild can no longer silence the 30-second checkpoint cadence; and it rewrites learned quota attribution in keyset pages with a pinned upper bound instead of materialising every event first. On a 275,396-event database the attribution pass peaked at 3.7 MiB of heap instead of 23.9 MiB, with identical output (same derived-attribution checksum, same row count, same Token totals). No schema, quota formula or dependency changes. These changes target the attribution rewrite peak and the checkpoint scheduling; they are not a claim to have fixed every host-side memory issue.
+
 Continue using a controlled CPA process restart for upgrades. Installing this version cannot add quiesce support to an already loaded older plugin. Lossless hot reload also requires the host to hold and replay usage events during replacement and abort replacement when quiesce fails. This plugin change alone does not provide those host guarantees. Back up SQLite online before upgrading.
 
 ## Token and pricing-value rules
@@ -286,7 +288,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.21.4
+make package VERSION=0.21.5
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
