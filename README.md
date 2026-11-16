@@ -204,6 +204,8 @@ GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, and GPT-5.6 Sol use verified [O
 
 Version `0.21.4` implements `plugin.quiesce`: it stops accepting store operations, cancels background work, waits for accepted operations and detached checkpoints, flushes pending dropped-usage accounting, and closes SQLite. Repeated stops preserve any cleanup error. After a failed flush, `plugin.reconfigure` must reopen the original `data_path` and save its pending accounting before resuming; switching to another database is rejected until recovery succeeds.
 
+Version `0.21.7` makes a store close fail when a temporary handle could not be drained: the drain failure is joined with the store close error, the retained cleanup error is kept, and `plugin.reconfigure` must reopen the same `data_path` before resuming, so quiesce can never report a clean shutdown while a driver may still own a database file. Checkpoint connections are recorded the same way, and the overview exposes `db_drain_failures` / `last_db_drain_error` for observability. Deploy this version: it contains the `0.21.6` connection drain and the `0.21.5` checkpoint and attribution work.
+
 Version `0.21.6` drains canceled SQLite connections before a close is reported as complete. `database/sql` finishes the rollback of a canceled transaction asynchronously, so `Close` could return while the driver still owned the database file handles; Windows test cleanup exposed it as `TempDir: file in use`, and a Linux regression harness reproduced 4 leftover handles in 97 of 100 runs. Store and temporary readers now wait, with a bounded deadline, until the pool reports no open connections, and the overview reports `db_drain_failures` plus `last_db_drain_error` so a drain timeout is never silently reported as a clean quiesce. The same regression harness now passes 100 of 100 runs. Deploy this version instead of `0.21.5`.
 
 Version `0.21.5` runs the SQLite WAL checkpoint on its own tracked worker instead of the maintenance goroutine, so a multi-minute weight fit or segment rebuild can no longer silence the 30-second checkpoint cadence; and it rewrites learned quota attribution in keyset pages with a pinned upper bound instead of materialising every event first. On a 275,396-event database the attribution pass peaked at 3.7 MiB of heap instead of 23.9 MiB, with identical output (same derived-attribution checksum, same row count, same Token totals). No schema, quota formula or dependency changes. These changes target the attribution rewrite peak and the checkpoint scheduling; they are not a claim to have fixed every host-side memory issue.
@@ -290,7 +292,7 @@ Requires Go 1.22+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.21.6
+make package VERSION=0.21.7
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.
