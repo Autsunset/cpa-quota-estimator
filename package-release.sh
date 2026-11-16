@@ -34,7 +34,7 @@ if [ "${goarch}" = "amd64" ]; then
   cgo_arch_flags="-march=x86-64 -mtune=generic"
 fi
 
-CGO_ENABLED=1 CGO_CFLAGS="$CGO_CFLAGS $cgo_arch_flags" go build -trimpath -buildvcs=false -buildmode=c-shared \
+CGO_ENABLED=1 CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} $cgo_arch_flags" go build -trimpath -buildvcs=false -buildmode=c-shared \
   -ldflags="-s -w -X main.pluginVersion=${version}" \
   -o "${artifact}" .
 

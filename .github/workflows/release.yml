@@ -40,11 +40,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          # Pin a supported patch release: go.mod only carries the *minimum*
+          # Pin the toolchain that was actually verified against the CPA host
+          # (v8.0.74, built with Go 1.26.10): go.mod only carries the *minimum*
           # language version, and Go 1.24.0 shipped an arm64 compiler bug
-          # (golang/go#71938, fixed in 1.24.1) that corrupts the heap. Stay on
-          # the 1.26 line: a c-shared plugin built with a newer Go than the CPA
-          # host (v8.0.74 is built with Go 1.26.10) fails to load with SIGILL.
+          # (golang/go#71938, fixed in 1.24.1). The amd64 C baseline is set
+          # explicitly in the build, and the host's own dlopen probe is the
+          # acceptance gate for every artifact.
           go-version: "1.26.11"
           cache: true
 

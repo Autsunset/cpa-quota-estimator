@@ -1,5 +1,5 @@
 PLUGIN_ID := cpa-quota-estimator
-VERSION ?= 0.22.3
+VERSION ?= 0.22.4
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 EXT := so
@@ -23,7 +23,7 @@ endif
 
 build:
 	@mkdir -p dist
-	CGO_ENABLED=1 CGO_CFLAGS="$$CGO_CFLAGS $(CGO_ARCH_FLAGS)" go build -trimpath -buildvcs=false -buildmode=c-shared \
+	CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2 -g} $(CGO_ARCH_FLAGS)" go build -trimpath -buildvcs=false -buildmode=c-shared \
 		-ldflags="-s -w -X main.pluginVersion=$(VERSION)" -o $(OUT) .
 
 package:
