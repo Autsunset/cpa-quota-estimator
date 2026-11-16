@@ -13,7 +13,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.21.5"
+var pluginVersion = "0.21.6"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -409,6 +409,8 @@ type overviewResponse struct {
 	Recalculating      bool              `json:"recalculating"`
 	PricingTaskID      string            `json:"pricing_task_id,omitempty"`
 	DroppedUsageEvents int64             `json:"dropped_usage_events"`
+	DBDrainFailures    int64             `json:"db_drain_failures"`
+	LastDBDrainError   string            `json:"last_db_drain_error,omitempty"`
 	Accounts           []accountOverview `json:"accounts"`
 }
 

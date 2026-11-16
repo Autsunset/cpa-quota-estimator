@@ -37,6 +37,9 @@ func TestOverviewReturnsEveryRecordedAccount(t *testing.T) {
 	if overview.PluginVersion != pluginVersion {
 		t.Fatalf("plugin_version=%q want %q", overview.PluginVersion, pluginVersion)
 	}
+	if overview.DBDrainFailures != 0 || overview.LastDBDrainError != "" {
+		t.Fatalf("db_drain_failures=%d last=%q, want a clean drain report", overview.DBDrainFailures, overview.LastDBDrainError)
+	}
 	if overview.PricingMode != pricingModeCredits || overview.ValueUnit != "credits" {
 		t.Fatalf("pricing_mode=%q value_unit=%q", overview.PricingMode, overview.ValueUnit)
 	}

@@ -96,11 +96,13 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 			items = append(items, item)
 		}
 		active, taskID := a.pricingTaskActive()
+		drainFailures, lastDrainError := a.store.drainDiagnostics()
 		return jsonResponse(200, overviewResponse{
 			PluginVersion: pluginVersion,
 			PricingMode:   normalizePricingMode(a.cfg.PricingMode),
 			ValueUnit:     pricingValueUnit(a.cfg.PricingMode),
 			Recalculating: active, PricingTaskID: taskID, DroppedUsageEvents: a.totalDroppedUsage(ctx, a.store),
+			DBDrainFailures: drainFailures, LastDBDrainError: lastDrainError,
 			Accounts: items,
 		})
 	case strings.HasSuffix(req.Path, "/usage"):

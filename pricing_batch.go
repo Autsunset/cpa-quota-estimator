@@ -92,7 +92,7 @@ func (s *store) preparePricingSnapshot(ctx context.Context, cfg config) (pricing
 	if err != nil {
 		return pricingSnapshot{}, err
 	}
-	defer reader.Close()
+	defer s.closeTemporary(reader, "reader")
 	tx, err := reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return pricingSnapshot{}, err
@@ -314,7 +314,7 @@ func (s *store) newCycleIDsSince(ctx context.Context, eventID, sampleID int64) (
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer s.closeTemporary(reader, "reader")
 	rows, err := reader.QueryContext(ctx, `SELECT cycle_id FROM usage_events WHERE id>? AND quota_scope=? UNION SELECT cycle_id FROM quota_samples WHERE id>? ORDER BY cycle_id`, eventID, mainQuotaScope, sampleID)
 	if err != nil {
 		return nil, err
@@ -374,20 +374,20 @@ func (s *store) restorePricingSnapshot(ctx context.Context, plan pricingSnapshot
 	}
 	tx, err := reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		reader.Close()
+		s.closeTemporary(reader, "reader")
 		return err
 	}
 	prices, err := readPricesInTx(ctx, tx)
 	if err != nil {
 		tx.Rollback()
-		reader.Close()
+		s.closeTemporary(reader, "reader")
 		return err
 	}
 	oldCfg.PriceCatalog = prices
 	rows, err := tx.QueryContext(ctx, `SELECT id,cycle_id,requested_at,quota_scope,model,service_tier,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,cost_usd FROM usage_events WHERE id>? ORDER BY id`, plan.MaxEventID)
 	if err != nil {
 		tx.Rollback()
-		reader.Close()
+		s.closeTemporary(reader, "reader")
 		return err
 	}
 	var late []repricedEvent
@@ -398,7 +398,7 @@ func (s *store) restorePricingSnapshot(ctx context.Context, plan pricingSnapshot
 		if err = rows.Scan(&e.ID, &e.CycleID, &e.RequestedAt, &e.Scope, &model, &tier, &input, &output, &read, &write, &e.NewCost); err != nil {
 			rows.Close()
 			tx.Rollback()
-			reader.Close()
+			s.closeTemporary(reader, "reader")
 			return err
 		}
 		if p, ok := prices[normalizeModel(model)]; ok {
@@ -409,12 +409,12 @@ func (s *store) restorePricingSnapshot(ctx context.Context, plan pricingSnapshot
 	if err = rows.Err(); err != nil {
 		rows.Close()
 		tx.Rollback()
-		reader.Close()
+		s.closeTemporary(reader, "reader")
 		return err
 	}
 	rows.Close()
 	tx.Commit()
-	reader.Close()
+	s.closeTemporary(reader, "reader")
 	for start := 0; start < len(late); start += pricingEventBatchSize {
 		end := min(start+pricingEventBatchSize, len(late))
 		if _, err = s.writeEventBatch(ctx, late[start:end], true); err != nil {
@@ -460,7 +460,7 @@ func (s *store) restorePricingSnapshot(ctx context.Context, plan pricingSnapshot
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer s.closeTemporary(reader, "reader")
 	cycles, err := reader.QueryContext(ctx, `SELECT DISTINCT cycle_id FROM quota_samples WHERE id>? ORDER BY cycle_id`, plan.MaxSampleID)
 	if err != nil {
 		return err
@@ -566,7 +566,7 @@ func (s *store) recalculatePricingBatches(ctx context.Context, settings pricingS
 					break
 				}
 			}
-			reader.Close()
+			s.closeTemporary(reader, "reader")
 		}
 	}
 	if err == nil {
@@ -587,7 +587,7 @@ func (s *store) recalculatePricingBatches(ctx context.Context, settings pricingS
 						break
 					}
 				}
-				reader.Close()
+				s.closeTemporary(reader, "reader")
 			}
 		}
 	}

@@ -24,6 +24,12 @@ type store struct {
 	// tests use it to prove the checkpoint cadence keeps running while other
 	// maintenance work holds the store busy.
 	walCheckpointRuns atomic.Int64
+	// dbDrainFailures counts handles whose close drain timed out, and
+	// lastDBDrainError keeps the most recent one. They are surfaced through the
+	// management overview so a reader that could not release its handle is not
+	// silently reported as a clean quiesce.
+	dbDrainFailures  atomic.Int64
+	lastDBDrainError atomic.Value // string
 	// attributionPinned reports the upper bound a rewrite pinned before it read
 	// anything. Tests use it to inject concurrent traffic at a deterministic
 	// point instead of racing on sleeps.
@@ -241,9 +247,68 @@ func (s *store) spawnDetached(fn func()) {
 	}()
 }
 
+const (
+	// dbDrainTimeout bounds how long a close waits for database/sql to finish
+	// the asynchronous rollback of a canceled transaction. The wait polls the
+	// pool's real state instead of sleeping a fixed amount.
+	dbDrainTimeout = 10 * time.Second
+	// dbDrainPollInterval is how often the drain re-reads the pool counters.
+	dbDrainPollInterval = 2 * time.Millisecond
+)
+
+// closeDBDrained closes a database handle and waits until the pool reports no
+// open connections. database/sql completes the rollback of a canceled
+// transaction asynchronously, so Close alone can return while the driver still
+// owns the database file handles; on Windows that leaves the file impossible to
+// delete or replace right after a quiesce. The wait is bounded and always
+// closes the handle first.
+func closeDBDrained(db *sql.DB) error {
+	if db == nil {
+		return nil
+	}
+	err := db.Close()
+	deadline := time.Now().Add(dbDrainTimeout)
+	for {
+		stats := db.Stats()
+		if stats.OpenConnections == 0 && stats.InUse == 0 {
+			return err
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("database still has %d open / %d in-use connections after close", stats.OpenConnections, stats.InUse)
+		}
+		time.Sleep(dbDrainPollInterval)
+	}
+}
+
+// closeTemporary closes a short-lived database handle and records a drain
+// timeout instead of swallowing it: the caller continues, but the failure stays
+// visible through drainDiagnostics so a leaked handle is never reported as a
+// clean shutdown.
+func (s *store) closeTemporary(db *sql.DB, label string) {
+	if err := closeDBDrained(db); err != nil {
+		s.dbDrainFailures.Add(1)
+		s.lastDBDrainError.Store(label + ": " + err.Error())
+	}
+}
+
+// drainDiagnostics reports how many temporary handles could not be released and
+// the most recent failure, if any.
+func (s *store) drainDiagnostics() (int64, string) {
+	last, _ := s.lastDBDrainError.Load().(string)
+	return s.dbDrainFailures.Load(), last
+}
+
 func (s *store) close() error {
 	s.bg.Wait()
-	return s.db.Close()
+	if err := closeDBDrained(s.db); err != nil {
+		s.dbDrainFailures.Add(1)
+		s.lastDBDrainError.Store("store: " + err.Error())
+		return err
+	}
+	return nil
 }
 
 func (s *store) checkpointWAL(ctx context.Context) error {
@@ -255,8 +320,8 @@ func (s *store) checkpointWAL(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer connection.Close()
 	connection.SetMaxOpenConns(1)
+	defer func() { _ = closeDBDrained(connection) }()
 	var busy, logPages, checkpointed int
 	err = connection.QueryRowContext(ctx, `PRAGMA wal_checkpoint(PASSIVE)`).Scan(&busy, &logPages, &checkpointed)
 	s.walCheckpointRuns.Add(1)

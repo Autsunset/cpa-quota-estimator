@@ -220,7 +220,7 @@ func (s *store) rebuildAllQuotaSegments(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer s.closeTemporary(reader, "reader")
 	rows, err := reader.QueryContext(ctx, `SELECT account,quota_scope,cycle_id,reset_at,window_minutes,
 		used_percent,secondary_used_percent,secondary_reset_at,secondary_window_minutes
 		FROM usage_events WHERE used_percent IS NOT NULL OR secondary_used_percent IS NOT NULL`)

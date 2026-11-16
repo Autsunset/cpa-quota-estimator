@@ -250,7 +250,7 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 	if err != nil {
 		return 0, err
 	}
-	defer reader.Close()
+	defer s.closeTemporary(reader, "reader")
 	var upperID int64
 	if err = reader.QueryRowContext(ctx, `SELECT COALESCE(MAX(id),0) FROM usage_events`).Scan(&upperID); err != nil {
 		return 0, err
