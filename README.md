@@ -204,6 +204,8 @@ GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, and GPT-5.6 Sol use verified [O
 
 Version `0.21.4` implements `plugin.quiesce`: it stops accepting store operations, cancels background work, waits for accepted operations and detached checkpoints, flushes pending dropped-usage accounting, and closes SQLite. Repeated stops preserve any cleanup error. After a failed flush, `plugin.reconfigure` must reopen the original `data_path` and save its pending accounting before resuming; switching to another database is rejected until recovery succeeds.
 
+Version `0.22.3` builds the C side of the plugin against a portable x86-64 baseline (`-march=x86-64 -mtune=generic`). The builder's GCC default emitted a single BMI2 `shlx` inside `runtime/cgo`'s `x_cgo_sigaction`; a host CPU without BMI2 rejected the library with `SIGILL` in CPA's dlopen preflight even though the Go code itself was baseline. Verified against CPA v8.0.74 (host Go 1.26.10); the deployment script now gates activation on the host's own dlopen probe.
+
 Version `0.22.2` keeps the build toolchain on the Go 1.26 line. A C ABI plugin is a c-shared library loaded into the CPA process, and the v8.0.74 host is built with Go 1.26.10; a library built with Go 1.27.4 failed to load there with `SIGILL` during the host's dlopen preflight, while builds with Go 1.26.11 and Go 1.24.13 loaded normally. No production code changed relative to `0.22.1`.
 
 Version `0.22.1` pins the CI and release toolchain to a supported patch release and raises the module's minimum Go version to 1.24.1, because Go 1.24.0's arm64 compiler corrupts the heap (`golang/go#71938`) and broke the arm64 release build. No production code changed relative to `0.22.0`.
@@ -298,7 +300,7 @@ Requires Go 1.24.1+, GCC, and CGO:
 ```bash
 make test
 make build
-make package VERSION=0.22.2
+make package VERSION=0.22.3
 ```
 
 `make package` produces a marketplace-compatible zip and `checksums.txt` under `dist/`. Tagged releases are built for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 by GitHub Actions.

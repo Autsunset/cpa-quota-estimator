@@ -204,6 +204,8 @@ GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 和 GPT-5.6 Sol 使用已核�
 
 `0.21.4` 实现了 `plugin.quiesce`：停止接收新的数据库操作，取消后台任务，等待已接收的操作与独立检查点完成，将待写入的丢失用量统计落盘，然后关闭 SQLite。重复停止会保留清理错误。统计落盘失败后，`plugin.reconfigure` 必须重新打开原 `data_path` 并保存待写入统计，才能恢复运行；恢复成功前拒绝切换到其他数据库。
 
+`0.22.3` 把插件的 C 侧按可移植的 x86-64 基線编译（`-march=x86-64 -mtune=generic`）。构建机的 GCC 默认在 `runtime/cgo` 的 `x_cgo_sigaction` 里生成了一条 BMI2 的 `shlx`，在没有 BMI2 的宿主 CPU 上，即便 Go 代码本身是基線，库也会在 CPA 的 dlopen 预检阶段 `SIGILL`。已对 CPA v8.0.74（宿主 Go 1.26.10）验证；部署脚本现在以宿主自身的 dlopen 预检作为激活门槛。
+
 `0.22.2` 把构建工具链保持在 Go 1.26 线。C ABI 插件是加载进 CPA 进程的 c-shared 库，而 v8.0.74 宿主用 Go 1.26.10 构建；用 Go 1.27.4 构建的库在宿主的 dlopen 预检阶段直接 `SIGILL`，而 Go 1.26.11 与 Go 1.24.13 构建的库可以正常加载。相对 `0.22.1` 没有生产代码改动。
 
 `0.22.1` 把 CI 与发布工具链固定到受支持的补丁版本，并把模块最低 Go 版本提高到 1.24.1：Go 1.24.0 的 arm64 编译器会损坏堆（`golang/go#71938`），导致 arm64 发布构建失败。相对 `0.22.0` 没有生产代码改动。
@@ -298,7 +300,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.22.2
+make package VERSION=0.22.3
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。
