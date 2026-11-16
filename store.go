@@ -20,6 +20,18 @@ type store struct {
 	attributionBatchMaxNS atomic.Int64
 	segmentBatchMaxNS     atomic.Int64
 	walCheckpointing      atomic.Bool
+	// walCheckpointRuns counts completed checkpoint attempts. Diagnostics and
+	// tests use it to prove the checkpoint cadence keeps running while other
+	// maintenance work holds the store busy.
+	walCheckpointRuns atomic.Int64
+	// attributionPinned reports the upper bound a rewrite pinned before it read
+	// anything. Tests use it to inject concurrent traffic at a deterministic
+	// point instead of racing on sleeps.
+	attributionPinned func(upperID int64)
+	// attributionCommitted reports how many rows of the current rewrite are
+	// already durable. Tests use it to cancel or switch the pricing basis right
+	// after a batch has landed.
+	attributionCommitted func(written int64)
 	// bg tracks detached goroutines that still hold this store so close can
 	// wait for them before releasing the SQLite connection.
 	bg sync.WaitGroup
@@ -246,7 +258,9 @@ func (s *store) checkpointWAL(ctx context.Context) error {
 	defer connection.Close()
 	connection.SetMaxOpenConns(1)
 	var busy, logPages, checkpointed int
-	return connection.QueryRowContext(ctx, `PRAGMA wal_checkpoint(PASSIVE)`).Scan(&busy, &logPages, &checkpointed)
+	err = connection.QueryRowContext(ctx, `PRAGMA wal_checkpoint(PASSIVE)`).Scan(&busy, &logPages, &checkpointed)
+	s.walCheckpointRuns.Add(1)
+	return err
 }
 
 func (s *store) insertEvent(ctx context.Context, e event, sampleInterval time.Duration) error {

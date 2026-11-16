@@ -348,7 +348,25 @@ func loadPriceCatalog(ctx context.Context, s *store) (map[string]price, error) {
 	return byModel, nil
 }
 
+const (
+	// walCheckpointInterval is the cadence of the dedicated checkpoint worker.
+	walCheckpointInterval = 30 * time.Second
+	// walCheckpointTimeout bounds one checkpoint attempt so a busy database
+	// cannot leave the worker stuck for the whole interval.
+	walCheckpointTimeout = 30 * time.Second
+)
+
 func (a *app) background(ctx context.Context, s *store, cfg config) {
+	// Weight fitting, segment rebuilds and repricing can run for minutes. When
+	// they shared this goroutine with the 30s checkpoint ticker, no checkpoint
+	// could run during a fit at all. The worker below only guarantees that
+	// scheduling independence: a PASSIVE checkpoint still cannot advance past a
+	// pinned reader, and the -wal file keeps its high-water mark, so neither is a
+	// measure of pending pages. Use PRAGMA wal_checkpoint's busy/log/checkpointed
+	// values when that matters.
+	a.workWG.Add(1)
+	go a.checkpointWorker(ctx, s, walCheckpointInterval)
+
 	a.refreshWeightsIfNeeded(ctx, s, cfg)
 	if _, err := syncPrices(ctx, s, cfg); err == nil {
 		a.refreshPriceCatalog(ctx, s)
@@ -362,8 +380,6 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 	defer weights.Stop()
 	drops := time.NewTicker(30 * time.Second)
 	defer drops.Stop()
-	checkpoint := time.NewTicker(30 * time.Second)
-	defer checkpoint.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -379,8 +395,29 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 			a.refreshWeightsIfNeeded(ctx, s, cfg)
 		case <-drops.C:
 			a.startDropFlush(s)
-		case <-checkpoint.C:
-			_ = s.checkpointWAL(ctx)
+		}
+	}
+}
+
+// checkpointWorker runs PASSIVE checkpoints on their own cadence so long
+// maintenance work can no longer silence them. It is tracked by workWG so
+// shutdown waits for an in-flight checkpoint, and it stops with the generation
+// context.
+func (a *app) checkpointWorker(ctx context.Context, s *store, interval time.Duration) {
+	defer a.workWG.Done()
+	if interval <= 0 {
+		interval = walCheckpointInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			checkpointCtx, cancel := context.WithTimeout(ctx, walCheckpointTimeout)
+			_ = s.checkpointWAL(checkpointCtx)
+			cancel()
 		}
 	}
 }
