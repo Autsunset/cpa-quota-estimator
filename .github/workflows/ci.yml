@@ -15,7 +15,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          # Pin a supported patch release: go.mod only carries the *minimum*
+          # language version, and Go 1.24.0 shipped an arm64 compiler bug
+          # (golang/go#71938, fixed in 1.24.1) that corrupts the heap.
+          go-version: "1.27.4"
           cache: true
       - run: go test ./...
       - run: make build
@@ -27,7 +30,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          # Pin a supported patch release: go.mod only carries the *minimum*
+          # language version, and Go 1.24.0 shipped an arm64 compiler bug
+          # (golang/go#71938, fixed in 1.24.1) that corrupts the heap.
+          go-version: "1.27.4"
           cache: true
       - uses: msys2/setup-msys2@v2
         with:
