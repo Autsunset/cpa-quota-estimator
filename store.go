@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -248,13 +249,15 @@ func (s *store) spawnDetached(fn func()) {
 }
 
 const (
-	// dbDrainTimeout bounds how long a close waits for database/sql to finish
-	// the asynchronous rollback of a canceled transaction. The wait polls the
-	// pool's real state instead of sleeping a fixed amount.
-	dbDrainTimeout = 10 * time.Second
 	// dbDrainPollInterval is how often the drain re-reads the pool counters.
 	dbDrainPollInterval = 2 * time.Millisecond
 )
+
+// dbDrainTimeout bounds how long a close waits for database/sql to finish the
+// asynchronous rollback of a canceled transaction. The wait polls the pool's
+// real state instead of sleeping a fixed amount. It is a variable so tests can
+// shorten it.
+var dbDrainTimeout = 10 * time.Second
 
 // closeDBDrained closes a database handle and waits until the pool reports no
 // open connections. database/sql completes the rollback of a canceled
@@ -301,14 +304,22 @@ func (s *store) drainDiagnostics() (int64, string) {
 	return s.dbDrainFailures.Load(), last
 }
 
+// close releases the store. A temporary handle that could not be drained turns
+// the close into a failure: quiesce must not report a clean shutdown while the
+// driver may still own a database file, and the retained cleanup error forces a
+// reconfigure that reopens the same data_path before resuming.
 func (s *store) close() error {
 	s.bg.Wait()
-	if err := closeDBDrained(s.db); err != nil {
+	err := closeDBDrained(s.db)
+	if err != nil {
 		s.dbDrainFailures.Add(1)
 		s.lastDBDrainError.Store("store: " + err.Error())
-		return err
 	}
-	return nil
+	if failures := s.dbDrainFailures.Load(); failures > 0 {
+		last, _ := s.lastDBDrainError.Load().(string)
+		err = errors.Join(err, fmt.Errorf("%d database handle(s) could not be released: %s", failures, last))
+	}
+	return err
 }
 
 func (s *store) checkpointWAL(ctx context.Context) error {
@@ -321,7 +332,7 @@ func (s *store) checkpointWAL(ctx context.Context) error {
 		return err
 	}
 	connection.SetMaxOpenConns(1)
-	defer func() { _ = closeDBDrained(connection) }()
+	defer s.closeTemporary(connection, "checkpoint")
 	var busy, logPages, checkpointed int
 	err = connection.QueryRowContext(ctx, `PRAGMA wal_checkpoint(PASSIVE)`).Scan(&busy, &logPages, &checkpointed)
 	s.walCheckpointRuns.Add(1)

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fdHandlesUnder(dir string) []string {
@@ -70,9 +71,7 @@ func TestStoreCloseDrainsCanceledTransactions(t *testing.T) {
 	if stats := s.db.Stats(); stats.OpenConnections != 0 || stats.InUse != 0 {
 		t.Fatalf("after close open=%d inUse=%d", stats.OpenConnections, stats.InUse)
 	}
-	if failures, last := s.drainDiagnostics(); failures != 0 {
-		t.Fatalf("clean close recorded %d drain failures (last: %s)", failures, last)
-	}
+
 	if runtime.GOOS == "linux" {
 		if hits := fdHandlesUnder(dir); len(hits) > 0 {
 			t.Fatalf("database handles still open after close: %v", hits)
@@ -111,11 +110,7 @@ func TestReaderCloseDrainsCanceledTransactions(t *testing.T) {
 	if stats := reader.Stats(); stats.OpenConnections != 0 || stats.InUse != 0 {
 		t.Fatalf("reader after close open=%d inUse=%d", stats.OpenConnections, stats.InUse)
 	}
-	// A drained reader must not be recorded as a failure; the counter is what
-	// stops a leaked handle from being reported as a clean quiesce.
-	if failures, last := s.drainDiagnostics(); failures != 0 {
-		t.Fatalf("drained reader recorded %d drain failures (last: %s)", failures, last)
-	}
+
 	// The store itself still owns handles; close it before inspecting the files.
 	if err = s.close(); err != nil {
 		t.Fatalf("store close: %v", err)
@@ -126,4 +121,40 @@ func TestReaderCloseDrainsCanceledTransactions(t *testing.T) {
 		}
 	}
 	assertDatabaseRemovable(t, path)
+}
+
+// A temporary handle that cannot be drained must make the store close fail, so
+// quiesce can never report a clean shutdown while a driver may still own a file.
+func TestStoreCloseFailsWhenTemporaryHandleLeaks(t *testing.T) {
+	dir := t.TempDir()
+	s, err := openStore(filepath.Join(dir, "usage.sqlite"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	reader, err := s.openReadOnly()
+	if err != nil {
+		t.Fatalf("open reader: %v", err)
+	}
+	// Keep a connection in use so the drained close cannot reach zero.
+	ctx := context.Background()
+	tx, err := reader.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	// Release the connection even when an assertion below fails.
+	defer func() { _ = tx.Rollback() }()
+	var one int
+	if err = tx.QueryRowContext(ctx, `SELECT 1`).Scan(&one); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	previous := dbDrainTimeout
+	dbDrainTimeout = 50 * time.Millisecond
+	defer func() { dbDrainTimeout = previous }()
+	s.closeTemporary(reader, "reader")
+	if failures, _ := s.drainDiagnostics(); failures == 0 {
+		t.Fatal("leaked temporary handle was not recorded")
+	}
+	if err = s.close(); err == nil {
+		t.Fatal("store close reported a clean shutdown while a temporary handle leaked")
+	}
 }
