@@ -232,25 +232,76 @@ type attributionUpdate struct {
 	Primary, Secondary *float64
 }
 
+const (
+	// attributionReadBatchSize bounds how many events one attribution read keeps
+	// in memory. The pass used to materialise every event in the database before
+	// writing anything, holding a large slice and a long read snapshot (which in
+	// turn starves WAL checkpoints).
+	attributionReadBatchSize = 5000
+)
+
+// updateWeightAttributions rewrites the learned quota attribution of the events
+// that existed when the pass started. The upper bound is pinned so a pass that
+// runs for minutes cannot chase traffic that keeps arriving; those events are
+// attributed by the next fit. Every batch closes its rows before writing, so a
+// read snapshot is never held across the writes.
 func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, longThreshold int64) (int64, error) {
 	reader, err := s.openReadOnly()
 	if err != nil {
 		return 0, err
 	}
 	defer reader.Close()
-	rows, err := reader.QueryContext(ctx, `SELECT id,cycle_id,reset_at,secondary_reset_at,account,quota_scope,model,service_tier,
-  input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,
-  CASE WHEN secondary_used_percent IS NOT NULL THEN 1 ELSE 0 END,failed FROM usage_events ORDER BY id`)
-	if err != nil {
+	var upperID int64
+	if err = reader.QueryRowContext(ctx, `SELECT COALESCE(MAX(id),0) FROM usage_events`).Scan(&upperID); err != nil {
 		return 0, err
 	}
-	updates := make([]attributionUpdate, 0, 10000)
+	if s.attributionPinned != nil {
+		s.attributionPinned(upperID)
+	}
+	var written int64
+	for lastID := int64(0); lastID < upperID; {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return written, ctxErr
+		}
+		updates, nextID, readErr := s.readAttributionBatch(ctx, reader, fit, longThreshold, lastID, upperID)
+		if readErr != nil {
+			return written, readErr
+		}
+		if len(updates) == 0 {
+			break
+		}
+		done, writeErr := s.writeAttributionBatch(ctx, fit, updates, written)
+		written += int64(done)
+		if writeErr != nil {
+			return written, writeErr
+		}
+		lastID = nextID
+	}
+	s.spawnDetached(func() {
+		checkpointCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = s.checkpointWAL(checkpointCtx)
+	})
+	return written, nil
+}
+
+func (s *store) readAttributionBatch(ctx context.Context, reader *sql.DB, fit *weightFit, longThreshold int64, afterID, upperID int64) ([]attributionUpdate, int64, error) {
+	rows, err := reader.QueryContext(ctx, `SELECT id,cycle_id,reset_at,secondary_reset_at,account,quota_scope,model,service_tier,
+  input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,
+  CASE WHEN secondary_used_percent IS NOT NULL THEN 1 ELSE 0 END,failed
+  FROM usage_events WHERE id>? AND id<=? ORDER BY id LIMIT ?`, afterID, upperID, attributionReadBatchSize)
+	if err != nil {
+		return nil, afterID, err
+	}
+	updates := make([]attributionUpdate, 0, attributionReadBatchSize)
+	nextID := afterID
 	for rows.Next() {
 		var e attributionEvent
 		if err = rows.Scan(&e.ID, &e.CycleID, &e.ResetAt, &e.SecondaryResetAt, &e.Account, &e.Scope, &e.Model, &e.Tier, &e.Input, &e.Output, &e.CacheRead, &e.CacheWrite, &e.HasSecondary, &e.Failed); err != nil {
 			rows.Close()
-			return 0, err
+			return nil, afterID, err
 		}
+		nextID = e.ID
 		detail := usageDetail{InputTokens: e.Input, OutputTokens: e.Output, CacheReadTokens: e.CacheRead, CacheCreationTokens: e.CacheWrite}
 		update := attributionUpdate{ID: e.ID}
 		if !e.Failed {
@@ -267,17 +318,24 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 	}
 	if err = rows.Err(); err != nil {
 		rows.Close()
-		return 0, err
+		return nil, afterID, err
 	}
 	if err = rows.Close(); err != nil {
-		return 0, err
+		return nil, afterID, err
 	}
+	return updates, nextID, nil
+}
+
+// writeAttributionBatch applies one read batch in small transactions so usage
+// writes keep interleaving with the pass, and reports how many rows it wrote
+// before failing.
+func (s *store) writeAttributionBatch(ctx context.Context, fit *weightFit, updates []attributionUpdate, alreadyWritten int64) (int, error) {
 	for start := 0; start < len(updates); start += pricingEventBatchSize {
 		end := min(start+pricingEventBatchSize, len(updates))
 		batchStarted := time.Now()
 		tx, txErr := s.db.BeginTx(ctx, nil)
 		if txErr != nil {
-			return int64(start), txErr
+			return start, txErr
 		}
 		if fit != nil && fit.Available {
 			var basis string
@@ -286,31 +344,34 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 				basis = (weightFit{}).weightBasis()
 			} else if basisErr != nil {
 				tx.Rollback()
-				return int64(start), basisErr
+				return start, basisErr
 			}
 			if basis != fit.weightBasis() {
 				tx.Rollback()
-				return int64(start), context.Canceled
+				return start, context.Canceled
 			}
 		}
 		stmt, prepErr := tx.PrepareContext(ctx, `UPDATE usage_events SET learned_quota_pct=?,learned_secondary_pct=? WHERE id=?`)
 		if prepErr != nil {
 			tx.Rollback()
-			return int64(start), prepErr
+			return start, prepErr
 		}
 		for _, update := range updates[start:end] {
-			if _, err = stmt.ExecContext(ctx, update.Primary, update.Secondary, update.ID); err != nil {
+			if _, err := stmt.ExecContext(ctx, update.Primary, update.Secondary, update.ID); err != nil {
 				stmt.Close()
 				tx.Rollback()
-				return int64(start), err
+				return start, err
 			}
 		}
-		if err = stmt.Close(); err != nil {
+		if err := stmt.Close(); err != nil {
 			tx.Rollback()
-			return int64(start), err
+			return start, err
 		}
-		if err = tx.Commit(); err != nil {
-			return int64(start), err
+		if err := tx.Commit(); err != nil {
+			return start, err
+		}
+		if s.attributionCommitted != nil {
+			s.attributionCommitted(alreadyWritten + int64(end))
 		}
 		held := time.Since(batchStarted).Nanoseconds()
 		for {
@@ -323,10 +384,5 @@ func (s *store) updateWeightAttributions(ctx context.Context, fit *weightFit, lo
 			time.Sleep(pricingBatchPause)
 		}
 	}
-	s.spawnDetached(func() {
-		checkpointCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		_ = s.checkpointWAL(checkpointCtx)
-	})
-	return int64(len(updates)), nil
+	return len(updates), nil
 }
