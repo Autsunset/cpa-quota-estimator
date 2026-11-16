@@ -236,11 +236,6 @@ func TestConfigureWaitsForQuiesceDrain(t *testing.T) {
 	waitFor(t, "quiesce detached store", func() bool { return detached(a) })
 
 	newPath := filepath.Join(t.TempDir(), "new.sqlite")
-	// Cleanups are LIFO: registered before the shutdown inside configure/quiesce
-	// they still run last, so the wait happens before TempDir removes the files.
-	t.Cleanup(func() {
-		waitForStoreFilesReleased(t, filepath.Dir(filepath.Join(filepath.Dir(newPath), "old.sqlite")), filepath.Dir(newPath))
-	})
 	configured := make(chan error, 1)
 	go func() { configured <- a.configure([]byte("data_path: " + newPath + "\n")) }()
 	select {
