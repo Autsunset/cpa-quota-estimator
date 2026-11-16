@@ -25,6 +25,9 @@ func failingQuiesceApp(t *testing.T, persistentFailure bool) (*app, *store, []by
 	t.Cleanup(server.Close)
 	cfg.PriceSourceURL = server.URL
 	a := &app{store: s, cfg: cfg}
+	// Registered before the shutdown cleanup, so it runs after it (LIFO) and can
+	// wait for the OS to release the files that TempDir cleanup must delete.
+	t.Cleanup(func() { waitForStoreFilesReleased(t, filepath.Dir(path)) })
 	t.Cleanup(a.shutdown)
 	query := `PRAGMA query_only=ON`
 	if persistentFailure {
