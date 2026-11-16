@@ -42,8 +42,10 @@ jobs:
         with:
           # Pin a supported patch release: go.mod only carries the *minimum*
           # language version, and Go 1.24.0 shipped an arm64 compiler bug
-          # (golang/go#71938, fixed in 1.24.1) that corrupts the heap.
-          go-version: "1.27.4"
+          # (golang/go#71938, fixed in 1.24.1) that corrupts the heap. Stay on
+          # the 1.26 line: a c-shared plugin built with a newer Go than the CPA
+          # host (v8.0.74 is built with Go 1.26.10) fails to load with SIGILL.
+          go-version: "1.26.11"
           cache: true
 
       - name: Install Windows C compiler
