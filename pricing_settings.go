@@ -21,6 +21,7 @@ type pricingSettings struct {
 	CustomLongThreshold  int64                       `json:"custom_long_threshold"`
 	Migrated             bool                        `json:"-"`
 	AutoFitAt            int64                       `json:"-"`
+	CatalogRevision      int64                       `json:"-"`
 }
 
 type pricingSettingsUpdate struct {

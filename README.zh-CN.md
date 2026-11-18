@@ -42,7 +42,7 @@
 - 监听 CPA 原生 `usage.handle` 事件，不发送探测请求，也不会额外消耗额度。
 - 区分账号整体额度观测与仅经 CPA 的用量，并按账号持久化采集范围。默认保留现有估算并明确标注“假设全部用量经过 CPA”；混合入口和范围未知模式会停用容量换算，保留实测用量和额度趋势。
 - 将 Token 数、模型、`service_tier`、所选口径计价值和 `X-Codex-Primary-*` 额度元数据持久化到独立的 SQLite 数据库。
-- 默认从 `https://models.dev/catalog.json` 同步 OpenAI 模型价格。
+- 自动从 models.dev 同步 OpenAI API 价格，并从官方 Codex 价目表同步订阅 Credits。
 - 计算缓存读写、输出 Token，以及输入超过 272K Token 时的长上下文价格层级。
 - 仪表盘提供三种计价口径：**官方 API 美元价**、**Codex Credits（新安装默认）**和**自定义美元价**。公开价目表与计算出的额度等价值并列保留。所有模型与 Token 项使用同一个输入锚换算，只有所选锚定模型的输入价固定为公开价。各项区分独立标定、模型用量构成的综合估计和未标定先验；缓存写入没有独立学习参数。自定义口径不使用学习器调整。旧计价名称仍作为兼容别名接收。保存立即返回后台任务 ID，以每批约 500 行的短事务重算历史。
 - 按账号的 **近期模型用量** 表可查看最近 24 小时、7 天或 30 天各模型的请求、失败、未缓存输入、缓存读写、输出及总 Token、官方 Credits 参考值、学习器估计的分模型额度消耗和当前口径计价值。表格还按各周期“每 1% 计价值”分摊当前口径用量，并显示与账号实测额度增长的差异。实测额度增长仍属于整个账号；分模型份额明确标为估计。没有官方 Credits 单价的模型标为未收录。
@@ -50,7 +50,7 @@
 - 学习器将各周期容量与模型价格分开，采用 Huber 损失、默认 21 天半衰期、对数高斯先验和近似不确定区间。是否可标定取决于同周期有效对照，不能仅看请求数或 Token 总量。输入、缓存、输出有独立对照时分别拟合；三项均无法拆分，但模型整体贡献可辨识时，可先估计模型综合倍率，不冒充三项独立价格。已有部分独立证据的模型保留这些分项系数，同时可对已观察到、尚未拆分的其余项估计联合倍率，绝不重复乘到独立项上。综合或联合估计须通过条件可辨识性及按时间顺序的验证才应用；训练和最终拟合控制的分组必须一致，验证只计入该分组的实际暴露。不含新模型的旧周期不再稀释它的构成变化指标。失败请求、重置异常和未知价格仍排除，同周期长间隔仍可利用。Fast 与长上下文区分有先验约束的暂估和独立标定：弱但有效的对照保留明确标识的暂估值与区间，完全没有对照时保留先验。两者无法拆分时只估计组合模式，且仅对同时满足两个条件的用量应用。参考值是约定，不是实测结果。每次新跨越更新容量，定期从保留的原始观测重新拟合，不把旧拟合重复算成新证据。公式升级会重建旧拟合；逐请求额度分摊仍是估计，不是上游账单。
 - 新增**被动引导式标定**：选择账号、基准模型、有待标定项的目标模型和每阶段额度目标（默认 5%）。仪表盘追踪同周期的两段纯模型用量、跨越点及按当前计价口径计算的非目标模型污染（超过 5% 警告），完成后重拟合权重并对比目标输入倍率的前后区间。周期重置会使会话作废。`GET /calibration` 返回状态和请求 ID 段，`/calibration/start`、`/calibration/end`、`/calibration/cancel` 分别用于开始、结束阶段和取消；不会生成探针或模型请求。
 - 价格表按输入、缓存读取、输出列出计算价、官方价、来源、相对差异和区间。只有锚定输入项按约定差异为零；标定也使用所选输入基准，切换锚时保留原始样本重新拟合；先验项与缓存写入仍使用一致的换算单位。未标定项显示先验不确定性，不伪装成零宽度的实测区间。已列模型的 API 与 Credits 基础价相差 25 倍，缓存写入、长上下文与速度层级另有规则。`capture_codex_headers` 不记录无分析价值的 `X-Codex-Turn-State`。
-- 价格表展示常用 GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 与 GPT-5.6 Sol／Terra／Luna，并包含所选锚与有效样本中的其他模型；旧模型价格仍留在本地，供历史请求计价。顶部账号选择器缩短后可悬停查看完整名称。**同步价格**从 models.dev 更新本地价格目录；**刷新数据**重读插件已经记录的数据，并在按钮旁显示完成状态。两者都不会向上游请求新的额度样本。
+- 价格表展示 GPT-6.2 Astra 和 Sol、`gpt-6-chat-thinking`、其他已公开报价的 Codex 模型、所选锚和有效样本中的模型。旧模型价格仍留在本地，供历史请求计价。顶部账号选择器缩短后可悬停查看完整名称。**同步价格**立即检查两处价格来源；**刷新数据**重读插件已经记录的数据，并在按钮旁显示完成状态。两者都不会向上游请求新的额度样本。
 - 估计完整周期与剩余额度的 Token/计价等效容量，并提供四分位数区间和置信度；还会把所选周期剩余计价值分别换算为各模型的未缓存输入、输出和缓存命中 Token 余量。
 - 展示实际额度轨迹、可持续基准、累计平均预测、近期速率预测、预计耗尽时间、计划重置时间和倒计时。
 - 为每个已确认的额度周期建立独立账本；重置后，旧周期仍可在下拉框中选择和回看。已关闭周期按最后被采样接受的额度计划回看，不会追加下一窗口尚未确认的响应头；即使旧采样器漏采了恢复后的低读数，已确认的异常恢复仍有效。这项历史读取修正不改写或删除原始记录。
@@ -172,6 +172,7 @@ plugins:
       data_path: /CLIProxyAPI/data/cpa-quota-estimator.sqlite
       sample_interval_minutes: 5
       price_source_url: https://models.dev/catalog.json
+      codex_price_source_url: https://learn.chatgpt.com/docs/pricing.md
       price_sync_interval_minutes: 1440
       pricing_mode: credits # credits (default) | api | custom
       anchor_model: gpt-6-astra
@@ -198,7 +199,9 @@ plugin registered plugin_id=cpa-quota-estimator plugin_name=CPA Quota Estimator
 
 插件升级会原位迁移 SQLite。历史漏识别的确认重置已由幂等流程修复；伪提前重置链的修复仍须显式调用管理接口。已有保存的旧计价名称映射到三个现行口径，保留的请求和样本计价值从原始 Token 重算。Docker 部署应持久化 `data_path` 所在目录，默认是 `/CLIProxyAPI/data`。
 
-GPT-6 Astra、GPT-6.1 Sol、GPT-6 Sol、GPT-6 Luna 和 GPT-5.6 Sol 使用已核实的 [OpenAI Standard API 价格](https://developers.openai.com/api/docs/pricing) 覆盖滞后的目录条目；[Codex Credits 价目表](https://learn.chatgpt.com/docs/pricing) 则列出独立的订阅 Credits 单价。官方 Fast 与长上下文倍率会和学习器调整值并列显示，API Batch/Flex 仍按 50% 计价。`gpt-6.1-sol` 的 API 单价为每百万 Token 输入 $2、缓存读取 $0.10、缓存写入 $2.50、输出 $10；Standard Codex 单价为输入 50、缓存读取 2.5、输出 250 Credits。旧模型 `gpt-6-sol` 保留原有单价。任一公开价目表都不能单独确定账号套餐内含额度。
+插件启动时及之后默认每 24 小时检查 models.dev 的 [OpenAI API 价格](https://developers.openai.com/api/docs/pricing) 和独立的 [Codex Credits 价目表](https://learn.chatgpt.com/docs/pricing)。成功请求使用尚未计价的 GPT 模型时，会安排提前检查；这类检查最多每小时一次。两个来源可独立更新，暂时失败或下架条目时保留本地旧价，价格新增或变化后自动补算保留的历史用量。离线时，常用模型可使用内置价格。
+
+GPT-6.2 Astra 的 Standard API 单价为每百万 Token 输入 $8、缓存读取 $0.40、30 分钟缓存写入 $10、输出 $40；Standard Codex 单价为输入 200、缓存读取 10、输出 1,000 Credits。GPT-6.2 Sol 对应的 API 单价为 $2 / $0.10 / $2.50 / $10，Codex 单价为 50 / 2.5 / 250 Credits。两个来源暂未查到 `gpt-6-chat-thinking` 的公开报价，插件会采集请求并标记暂无报价，也支持在自定义计价中填写已知单价。任一公开价目表都不能单独确定账号套餐内含额度。
 
 ### 升级与生命周期恢复
 
@@ -236,7 +239,7 @@ Token 图表使用输入 Token 与输出 Token 之和。缓存 Token 通常已�
 
 当前价格按每百万 Token 计算，`api`／`custom` 单位为美元，`credits` 单位为 Codex Credits。`ReasoningTokens` 已包含在输出 Token 中，不重复计量。有支持的独立项可调整自己的相对单价，综合估计与先验分别标识；所有计算价共用同一个输入锚换算。
 
-Fast／长上下文已独立标定或有明确标识的暂估时，可替代额度等价估值的默认倍率。组合估计仅用于 Fast＋长上下文同时成立的用量，不证明两个单项的倍率；完全缺乏有效对照时采用对应口径的默认规则。[官方定价](https://learn.chatgpt.com/docs/pricing) 明确区分 **购买 Credits 的 Fast 2 倍**与**套餐内额度的 Fast 2.5 倍**，API 参考计算使用自己的公开层级价。官方 Credits 明细包含 GPT-6.1 Sol 的 Fast 用量。默认每小时更新模型参数，按时间顺序的回测最多每天一次，也可手动标定触发。被动建议提示有帮助的同周期模型对照或 Token 构成变化，不会自动发送付费探针。
+Fast／长上下文已独立标定或有明确标识的暂估时，可替代额度等价估值的默认倍率。组合估计仅用于 Fast＋长上下文同时成立的用量，不证明两个单项的倍率。[官方价目表](https://learn.chatgpt.com/docs/pricing) 中，GPT-6.2 Astra 和 Sol 的 Fast 在购买 Credits 和套餐内额度两种口径下均为 **2 倍**；GPT-6.1 Sol 和 GPT-6 Astra 则分别为 **2 倍**和 **2.5 倍**，API 参考计算使用自己的公开层级价。默认每小时更新模型参数，按时间顺序的回测最多每天一次，也可手动标定触发。被动建议提示有帮助的同周期模型对照或 Token 构成变化，不会自动发送付费探针。
 
 - `api`：当前[官方 API 美元价](https://developers.openai.com/api/docs/pricing)，目录滞后时使用已核实的覆盖值。所选锚定输入保持官方价，其余全部计算项使用同一个换算倍率，显示各自来源与不确定性。
 - `credits`：[公开 Codex Credits 单价](https://learn.chatgpt.com/docs/pricing)，采用相同锚定规则。官方表未单列缓存写入或长上下文价格；未收录模型使用 API 价格推算。
@@ -267,7 +270,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 | GET | `/v0/management/cpa-quota-estimator/repair/early-resets` | 只读预览历史伪提前重置候选 |
 | POST | `/v0/management/cpa-quota-estimator/repair/early-resets` | 在单个事务中合并当前全部候选 |
 | GET | `/v0/management/cpa-quota-estimator/prices` | 各模型官方价、计算价及倍率区间 |
-| POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即触发 models.dev 价格同步 |
+| POST | `/v0/management/cpa-quota-estimator/prices/sync` | 立即检查 API 和 Codex Credits 价格来源 |
 | GET | `/v0/management/cpa-quota-estimator/pricing-settings` | 读取已保存的口径、锚定模型和自定义价格 |
 | POST | `/v0/management/cpa-quota-estimator/pricing-settings` | 启动分批后台重算任务，立即返回 HTTP 202 和任务 ID |
 | GET | `/v0/management/cpa-quota-estimator/pricing-settings/task?id=<id>` | 轮询重算进度和完成状态 |
@@ -300,7 +303,7 @@ Fast／长上下文已独立标定或有明确标识的暂估时，可替代额�
 ```bash
 make test
 make build
-make package VERSION=0.22.4
+make package VERSION=0.23.0
 ```
 
 `make package` 会在 `dist/` 下生成兼容插件商店的压缩包和 `checksums.txt`。带版本标签的发布会通过 GitHub Actions 构建 Linux amd64/arm64、macOS amd64/arm64 和 Windows amd64 版本。

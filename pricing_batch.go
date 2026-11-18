@@ -71,15 +71,15 @@ func (s *store) openReadOnly() (*sql.DB, error) {
 }
 
 func readPricesInTx(ctx context.Context, tx *sql.Tx) (map[string]price, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT model,input,output,cache_read,cache_write,long_input,long_output,long_cache_read,long_cache_write,fast_input,fast_output,fast_cache_read,fast_cache_write,source,updated_at FROM model_prices`)
+	rows, err := tx.QueryContext(ctx, priceCatalogSelect)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	prices := make(map[string]price)
 	for rows.Next() {
-		var p price
-		if err = rows.Scan(&p.Model, &p.Input, &p.Output, &p.CacheRead, &p.CacheWrite, &p.LongInput, &p.LongOutput, &p.LongRead, &p.LongWrite, &p.FastInput, &p.FastOutput, &p.FastRead, &p.FastWrite, &p.Source, &p.UpdatedAt); err != nil {
+		p, err := scanCatalogPrice(rows)
+		if err != nil {
 			return nil, err
 		}
 		prices[normalizeModel(p.Model)] = p
@@ -349,6 +349,12 @@ func (s *store) persistPricingSettings(ctx context.Context, settings pricingSett
 	}
 	if settings.AutoFitAt > 0 {
 		if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, fitRepriceMetadataKey, fmt.Sprint(settings.AutoFitAt)); err != nil {
+			return err
+		}
+	}
+	if settings.CatalogRevision > 0 {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES('priced_catalog_revision',?)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value`, settings.CatalogRevision); err != nil {
 			return err
 		}
 	}

@@ -47,7 +47,7 @@ func TestGPT6OfficialPricing(t *testing.T) {
 }
 
 func TestGPT6CatalogAndAllowances(t *testing.T) {
-	prices, err := decodeCatalog(strings.NewReader(`{"providers":{"openai":{"models":{"gpt-6-sol":{"cost":{"input":99}},"gpt-6.1-sol":{"cost":{"input":99,"cache_read":99}},"gpt-6-luna":{"cost":{"input":99}}}}}}`))
+	prices, err := decodeCatalog(strings.NewReader(`{"providers":{"openai":{"models":{"gpt-6-sol":{"cost":{"input":99}},"gpt-6.1-sol":{"cost":{"input":99,"cache_read":99}},"gpt-6-luna":{"cost":{"input":99}},"gpt-new":{"cost":{"input":1,"output":2}}}}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}

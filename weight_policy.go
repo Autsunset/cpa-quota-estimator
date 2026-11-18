@@ -3,7 +3,8 @@ package main
 // Paid API/Credits and included quota use different Fast defaults.
 // Keep these separate even though their Standard token-price shapes overlap.
 func quotaFastDefault(model string) float64 {
-	if normalizeModel(model) == "gpt-5.4" {
+	switch normalizeModel(model) {
+	case "gpt-5.4", "gpt-6.2-astra", "gpt-6.2-sol":
 		return 2
 	}
 	return 2.5

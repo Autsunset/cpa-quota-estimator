@@ -349,7 +349,8 @@ func clusteredSegmentKeys(raw map[segmentKey]struct{}) []segmentKey {
 }
 
 func knownSegmentModels(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT model FROM model_prices WHERE input>0 OR output>0 OR cache_read>0`)
+	rows, err := tx.QueryContext(ctx, `SELECT model FROM model_prices WHERE input>0 OR output>0 OR cache_read>0
+UNION SELECT model FROM codex_credit_prices`)
 	if err != nil {
 		return nil, err
 	}

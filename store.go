@@ -156,6 +156,13 @@ CREATE TABLE IF NOT EXISTS model_prices (
  updated_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS codex_credit_prices (
+ model TEXT PRIMARY KEY,
+ input REAL NOT NULL,
+ cached REAL NOT NULL,
+ output REAL NOT NULL,
+ fast REAL NOT NULL
+);
 `)
 	if err != nil {
 		return err
@@ -422,31 +429,83 @@ ORDER BY sampled_at DESC,id DESC LIMIT 1`, cycle.ID, e.ResetAt, e.WindowMinutes)
 }
 
 func (s *store) upsertPrices(ctx context.Context, prices []price) error {
+	return s.writePriceCatalog(ctx, prices, nil, false, false)
+}
+
+func (s *store) writePriceCatalog(ctx context.Context, prices []price, credits map[string]codexCreditRates, seed, trackChanges bool) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO model_prices(model,input,output,cache_read,cache_write,long_input,long_output,long_cache_read,long_cache_write,fast_input,fast_output,fast_cache_read,fast_cache_write,source,updated_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(model) DO UPDATE SET input=excluded.input,output=excluded.output,cache_read=excluded.cache_read,cache_write=excluded.cache_write,long_input=excluded.long_input,long_output=excluded.long_output,long_cache_read=excluded.long_cache_read,long_cache_write=excluded.long_cache_write,fast_input=excluded.fast_input,fast_output=excluded.fast_output,fast_cache_read=excluded.fast_cache_read,fast_cache_write=excluded.fast_cache_write,source=excluded.source,updated_at=excluded.updated_at`)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(model) DO UPDATE SET input=excluded.input,output=excluded.output,cache_read=excluded.cache_read,cache_write=excluded.cache_write,long_input=excluded.long_input,long_output=excluded.long_output,long_cache_read=excluded.long_cache_read,long_cache_write=excluded.long_cache_write,fast_input=excluded.fast_input,fast_output=excluded.fast_output,fast_cache_read=excluded.fast_cache_read,fast_cache_write=excluded.fast_cache_write,source=excluded.source,updated_at=excluded.updated_at
+WHERE (NOT ? OR (model_prices.input=0 AND model_prices.output=0)) AND
+ (model_prices.input,model_prices.output,model_prices.cache_read,model_prices.cache_write,model_prices.long_input,model_prices.long_output,model_prices.long_cache_read,model_prices.long_cache_write,model_prices.fast_input,model_prices.fast_output,model_prices.fast_cache_read,model_prices.fast_cache_write,model_prices.source)
+ IS NOT (excluded.input,excluded.output,excluded.cache_read,excluded.cache_write,excluded.long_input,excluded.long_output,excluded.long_cache_read,excluded.long_cache_write,excluded.fast_input,excluded.fast_output,excluded.fast_cache_read,excluded.fast_cache_write,excluded.source)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
+	var changed bool
 	for _, p := range prices {
-		_, err = stmt.ExecContext(ctx, p.Model, p.Input, p.Output, p.CacheRead, p.CacheWrite, p.LongInput, p.LongOutput, p.LongRead, p.LongWrite, p.FastInput, p.FastOutput, p.FastRead, p.FastWrite, p.Source, p.UpdatedAt)
+		result, err := stmt.ExecContext(ctx, p.Model, p.Input, p.Output, p.CacheRead, p.CacheWrite, p.LongInput, p.LongOutput, p.LongRead, p.LongWrite, p.FastInput, p.FastOutput, p.FastRead, p.FastWrite, p.Source, p.UpdatedAt, seed)
 		if err != nil {
+			return err
+		}
+		count, _ := result.RowsAffected()
+		changed = changed || count > 0
+	}
+	for model, rate := range credits {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO model_prices(model) VALUES(?) ON CONFLICT(model) DO NOTHING`, model); err != nil {
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `INSERT INTO codex_credit_prices(model,input,cached,output,fast) VALUES(?,?,?,?,?)
+ON CONFLICT(model) DO UPDATE SET input=excluded.input,cached=excluded.cached,output=excluded.output,
+ fast=CASE WHEN excluded.fast>0 THEN excluded.fast ELSE codex_credit_prices.fast END
+WHERE (codex_credit_prices.input,codex_credit_prices.cached,codex_credit_prices.output) IS NOT (excluded.input,excluded.cached,excluded.output)
+ OR (excluded.fast>0 AND codex_credit_prices.fast<>excluded.fast)`, model, rate.Input, rate.Cached, rate.Output, rate.Fast)
+		if err != nil {
+			return err
+		}
+		count, _ := result.RowsAffected()
+		changed = changed || count > 0
+	}
+	if changed && trackChanges {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES('price_catalog_revision','1')
+ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1`); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
 }
 
+func (s *store) pendingPriceCatalogRevision(ctx context.Context) (int64, error) {
+	var revision int64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM metadata WHERE key='price_catalog_revision'),0)
+WHERE COALESCE((SELECT CAST(value AS INTEGER) FROM metadata WHERE key='price_catalog_revision'),0) >
+ COALESCE((SELECT CAST(value AS INTEGER) FROM metadata WHERE key='priced_catalog_revision'),0)`).Scan(&revision)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return revision, err
+}
+
+const priceCatalogSelect = `SELECT p.model,p.input,p.output,p.cache_read,p.cache_write,p.long_input,p.long_output,p.long_cache_read,p.long_cache_write,
+ p.fast_input,p.fast_output,p.fast_cache_read,p.fast_cache_write,p.source,p.updated_at,
+ COALESCE(c.input,0),COALESCE(c.cached,0),COALESCE(c.output,0),COALESCE(c.fast,0)
+FROM model_prices p LEFT JOIN codex_credit_prices c ON c.model=p.model`
+
+func scanCatalogPrice(row interface{ Scan(...any) error }) (price, error) {
+	var p price
+	err := row.Scan(&p.Model, &p.Input, &p.Output, &p.CacheRead, &p.CacheWrite, &p.LongInput, &p.LongOutput, &p.LongRead, &p.LongWrite,
+		&p.FastInput, &p.FastOutput, &p.FastRead, &p.FastWrite, &p.Source, &p.UpdatedAt, &p.Codex.Input, &p.Codex.Cached, &p.Codex.Output, &p.Codex.Fast)
+	return p, err
+}
+
 func (s *store) getPrice(ctx context.Context, model string) (price, bool, error) {
 	model = normalizeModel(model)
-	var p price
-	err := s.db.QueryRowContext(ctx, `SELECT model,input,output,cache_read,cache_write,long_input,long_output,long_cache_read,long_cache_write,fast_input,fast_output,fast_cache_read,fast_cache_write,source,updated_at FROM model_prices WHERE lower(model)=? LIMIT 1`, model).Scan(
-		&p.Model, &p.Input, &p.Output, &p.CacheRead, &p.CacheWrite, &p.LongInput, &p.LongOutput, &p.LongRead, &p.LongWrite, &p.FastInput, &p.FastOutput, &p.FastRead, &p.FastWrite, &p.Source, &p.UpdatedAt)
+	p, err := scanCatalogPrice(s.db.QueryRowContext(ctx, priceCatalogSelect+` WHERE p.model=? LIMIT 1`, model))
 	if err == sql.ErrNoRows {
 		return p, false, nil
 	}
@@ -454,15 +513,15 @@ func (s *store) getPrice(ctx context.Context, model string) (price, bool, error)
 }
 
 func (s *store) listPrices(ctx context.Context) ([]price, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT model,input,output,cache_read,cache_write,long_input,long_output,long_cache_read,long_cache_write,fast_input,fast_output,fast_cache_read,fast_cache_write,source,updated_at FROM model_prices ORDER BY model`)
+	rows, err := s.db.QueryContext(ctx, priceCatalogSelect+` ORDER BY p.model`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []price
 	for rows.Next() {
-		var p price
-		if err = rows.Scan(&p.Model, &p.Input, &p.Output, &p.CacheRead, &p.CacheWrite, &p.LongInput, &p.LongOutput, &p.LongRead, &p.LongWrite, &p.FastInput, &p.FastOutput, &p.FastRead, &p.FastWrite, &p.Source, &p.UpdatedAt); err != nil {
+		p, err := scanCatalogPrice(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, p)

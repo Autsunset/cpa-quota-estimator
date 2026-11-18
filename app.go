@@ -29,23 +29,24 @@ type app struct {
 	// cleanupErr belongs to the last detached store (cfg.DataPath). Keep it
 	// until that database has been reopened and its pending accounting saved.
 	// Only lifecycle transitions access it, while holding lifecycleMu.
-	cleanupErr                  error
-	workCtx                     context.Context
-	workWG                      sync.WaitGroup
-	pricingTaskMu               sync.Mutex
-	pricingTask                 *pricingRecalcTask
-	pricingTaskHistory          map[string]pricingRecalcTask
-	pricingProgressHook         func(pricingRecalcProgress) error
-	attributionWriter           func(context.Context, *store, *weightFit, int64) (int64, error)
-	insertEventWriter           func(context.Context, event, time.Duration) error
-	usageRetryBudget            time.Duration
-	droppedUsagePending         atomic.Int64
-	dropFlushRunning            atomic.Bool
-	pricingRepricePending       bool
-	pricingRepriceIncludeCustom bool
-	pricingFitPending           bool
-	lastPricedFit               *weightFit
-	lastAutoFitRepriceAt        int64
+	cleanupErr            error
+	workCtx               context.Context
+	workWG                sync.WaitGroup
+	priceSyncMu           sync.Mutex
+	priceSyncWake         chan struct{}
+	pricingTaskMu         sync.Mutex
+	pricingTask           *pricingRecalcTask
+	pricingTaskHistory    map[string]pricingRecalcTask
+	pricingProgressHook   func(pricingRecalcProgress) error
+	attributionWriter     func(context.Context, *store, *weightFit, int64) (int64, error)
+	insertEventWriter     func(context.Context, event, time.Duration) error
+	usageRetryBudget      time.Duration
+	droppedUsagePending   atomic.Int64
+	dropFlushRunning      atomic.Bool
+	pricingRepricePending bool
+	pricingFitPending     bool
+	lastPricedFit         *weightFit
+	lastAutoFitRepriceAt  int64
 }
 
 var globalApp = &app{cfg: defaultConfig()}
@@ -155,6 +156,9 @@ func parseConfig(raw []byte) (config, error) {
 	}
 	if cfg.PriceSourceURL == "" {
 		cfg.PriceSourceURL = defaultConfig().PriceSourceURL
+	}
+	if cfg.CodexPriceSourceURL == "" {
+		cfg.CodexPriceSourceURL = defaultConfig().CodexPriceSourceURL
 	}
 	if cfg.PriceSyncIntervalMinutes < 5 {
 		cfg.PriceSyncIntervalMinutes = 1440
@@ -321,6 +325,8 @@ func (a *app) configure(raw []byte) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
 	a.workCtx = ctx
+	priceSyncWake := make(chan struct{}, 1)
+	a.priceSyncWake = priceSyncWake
 	a.mu.Unlock()
 	if settings.Migrated {
 		if _, taskErr := a.startPricingTask(s, settings, cfg); taskErr != nil {
@@ -328,11 +334,12 @@ func (a *app) configure(raw []byte) error {
 		}
 	}
 	// No fallible step may sit between Add and the goroutine taking ownership.
-	a.workWG.Add(1)
+	a.workWG.Add(2)
 	go func() {
 		defer a.workWG.Done()
 		a.background(ctx, s, cfg)
 	}()
+	go a.priceSyncWorker(ctx, s, cfg, priceSyncWake)
 	return nil
 }
 
@@ -368,12 +375,6 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 	go a.checkpointWorker(ctx, s, walCheckpointInterval)
 
 	a.refreshWeightsIfNeeded(ctx, s, cfg)
-	if _, err := syncPrices(ctx, s, cfg); err == nil {
-		a.refreshPriceCatalog(ctx, s)
-	}
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES('last_price_sync_attempt',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.FormatInt(time.Now().Unix(), 10))
-	ticker := time.NewTicker(time.Duration(cfg.PriceSyncIntervalMinutes) * time.Minute)
-	defer ticker.Stop()
 	cleanup := time.NewTicker(24 * time.Hour)
 	defer cleanup.Stop()
 	weights := time.NewTicker(time.Duration(cfg.WeightFitIntervalMinutes) * time.Minute)
@@ -384,10 +385,6 @@ func (a *app) background(ctx context.Context, s *store, cfg config) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			if _, err := syncPrices(ctx, s, cfg); err == nil {
-				a.refreshPriceCatalog(ctx, s)
-			}
 		case <-cleanup.C:
 			_ = s.cleanup(ctx, cfg.HistoryDays)
 			_ = s.rebuildAllQuotaSegments(ctx)
@@ -479,35 +476,25 @@ func (a *app) applyFittedWeights(ctx context.Context, s *store, fit *weightFit) 
 }
 
 func (a *app) refreshPriceCatalog(ctx context.Context, s *store) {
+	revision, err := s.pendingPriceCatalogRevision(ctx)
+	if err != nil {
+		return
+	}
 	catalog, err := loadPriceCatalog(ctx, s)
 	if err != nil {
 		return
 	}
-	var changed bool
-	var current config
 	a.mu.Lock()
-	if a.store == s {
-		changed = !samePriceCatalogRates(a.cfg.PriceCatalog, catalog)
-		a.cfg.PriceCatalog = catalog
-		current = a.cfg
+	defer a.mu.Unlock()
+	if a.store != s || ctx.Err() != nil {
+		return
 	}
-	a.mu.Unlock()
-	if changed {
-		a.queuePricingReprice(s, current, true)
+	a.cfg.PriceCatalog = catalog
+	if revision > 0 {
+		settings := a.cfg.pricingSettings()
+		settings.CatalogRevision = revision
+		_, _ = a.startPricingTaskLocked(s, settings)
 	}
-}
-
-func samePriceCatalogRates(left, right map[string]price) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for model, a := range left {
-		b, ok := right[model]
-		if !ok || a.Input != b.Input || a.Output != b.Output || a.CacheRead != b.CacheRead || a.CacheWrite != b.CacheWrite || a.LongInput != b.LongInput || a.LongOutput != b.LongOutput || a.LongRead != b.LongRead || a.LongWrite != b.LongWrite || a.FastInput != b.FastInput || a.FastOutput != b.FastOutput || a.FastRead != b.FastRead || a.FastWrite != b.FastWrite {
-			return false
-		}
-	}
-	return true
 }
 
 // quiesce stops accepting new work, waits for in-flight calls and detached
@@ -683,6 +670,13 @@ func (a *app) recordUsage(r usageRecord) error {
 	}
 	if err := a.insertUsageWithRetry(a.store, e, time.Duration(a.cfg.SampleIntervalMinutes)*time.Minute); err != nil {
 		return err
+	}
+	if !r.Failed && total > 0 && creditModelID.MatchString(normalizeModel(r.Model)) &&
+		(!ok || (p.Input <= 0 && p.Output <= 0 && p.Codex.Input <= 0)) {
+		select {
+		case a.priceSyncWake <- struct{}{}:
+		default:
+		}
 	}
 	claimed, err := a.store.claimCalibrationRefit(ctx, account)
 	if err != nil {

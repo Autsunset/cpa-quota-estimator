@@ -26,6 +26,8 @@ type modelPriceRow struct {
 	Model                  string                          `json:"model"`
 	Official               price                           `json:"official"`
 	OfficialListed         bool                            `json:"official_listed"`
+	Available              bool                            `json:"available"`
+	CodexCreditInput       float64                         `json:"codex_credit_input,omitempty"`
 	Observed               bool                            `json:"observed"`
 	Calculated             price                           `json:"calculated"`
 	Adjustment             modelPriceAdjustment            `json:"adjustment"`
@@ -276,6 +278,9 @@ func (c config) effectiveModelPrice(p price) (price, modelPriceAdjustment) {
 
 func (c config) officialFastMultiplier(p price) float64 {
 	if normalizePricingMode(c.PricingMode) == pricingModeCredits {
+		if fast := p.codexFastMultiplier(); fast > 0 {
+			return fast
+		}
 		return 2
 	}
 	if p.Input > 0 && p.FastInput > 0 {
@@ -319,11 +324,15 @@ func (c config) priceRow(p price) modelPriceRow {
 		official = p
 	}
 	calculated, adjustment := c.effectiveModelPrice(p)
-	listed := true
+	listed := p.Input > 0 || p.Output > 0
+	_, codexListed := p.codexCreditPrice()
 	if mode == pricingModeCredits {
-		_, listed = officialCodexCreditPrice(p.Model)
+		listed = codexListed
 	}
-	row := modelPriceRow{Model: normalizeModel(p.Model), Official: official, OfficialListed: listed, Calculated: calculated, Adjustment: adjustment, ComponentAdjustments: c.componentPriceAdjustments(p),
+	_, custom := c.CustomPrices[p.Model]
+	row := modelPriceRow{Model: normalizeModel(p.Model), Official: official, OfficialListed: listed,
+		Available: official.Input > 0 || official.Output > 0 || mode == pricingModeCustom && custom, CodexCreditInput: p.Codex.Input,
+		Calculated: calculated, Adjustment: adjustment, ComponentAdjustments: c.componentPriceAdjustments(p),
 		DifferencePercent:      (adjustment.Factor - 1) * 100,
 		UncertaintyPercent:     math.Max(math.Abs(adjustment.Factor-adjustment.Low), math.Abs(adjustment.High-adjustment.Factor)) / math.Max(adjustment.Factor, 1e-12) * 100,
 		OfficialFastMultiplier: c.officialFastMultiplier(p), FastMultiplier: c.effectiveFastMultiplier(p),

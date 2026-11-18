@@ -50,19 +50,19 @@ type usageBreakdown struct {
 }
 
 func officialCreditsForUsage(model, tier string, input, cached, written, output int64) (float64, bool) {
+	return (price{Model: normalizeModel(model)}).officialCreditsForUsage(tier, input, cached, written, output)
+}
+
+func (base price) officialCreditsForUsage(tier string, input, cached, written, output int64) (float64, bool) {
 	tier = strings.ToLower(strings.TrimSpace(tier))
-	p, ok := officialCodexCreditPrice(model)
+	p, ok := base.codexCreditPrice()
 	if !ok {
 		return 0, false
 	}
 	multiplier := 1.0
 	if isFastTier(tier) {
-		switch normalizeModel(model) {
-		case "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5":
-			multiplier = 2
-		case "gpt-5.4":
-			multiplier = 2
-		default:
+		multiplier = base.codexFastMultiplier()
+		if multiplier <= 0 {
 			return 0, false
 		}
 	} else if tier != "" && tier != "auto" && tier != "default" && tier != "standard" {
@@ -193,7 +193,9 @@ func (s *store) usageBreakdown(ctx context.Context, account string, startAt, end
 		return result, err
 	}
 	for _, row := range byKey {
-		if credits, ok := officialCreditsForUsage(row.Model, row.ServiceTier, row.InputTokens, row.CacheReadTokens, row.CacheWriteTokens, row.OutputTokens); ok {
+		p := cfg.PriceCatalog[row.Model]
+		p.Model = row.Model
+		if credits, ok := p.officialCreditsForUsage(row.ServiceTier, row.InputTokens, row.CacheReadTokens, row.CacheWriteTokens, row.OutputTokens); ok {
 			row.OfficialCredits = &credits
 			result.OfficialCredits += credits
 		} else {

@@ -279,6 +279,10 @@ func TestQuiesceDrainsManagementExceptions(t *testing.T) {
 		started := make(chan struct{})
 		release := make(chan struct{})
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/credits" {
+				http.NotFound(w, r)
+				return
+			}
 			close(started)
 			<-release
 			fmt.Fprint(w, `{"providers":{"openai":{"models":{"gpt-review":{"cost":{"input":1,"output":2}}}}}}`)
@@ -290,6 +294,7 @@ func TestQuiesceDrainsManagementExceptions(t *testing.T) {
 		}
 		cfg := defaultConfig()
 		cfg.PriceSourceURL = server.URL
+		cfg.CodexPriceSourceURL = server.URL + "/credits"
 		a := &app{store: s, cfg: cfg}
 
 		request := make(chan managementResponse, 1)

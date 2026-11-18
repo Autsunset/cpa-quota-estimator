@@ -286,6 +286,8 @@ const messages = {
     loadFailed: '加载失败：{message}',
     syncFailed: '同步失败：{message}',
     syncSuccess: '已同步 {count} 个模型价格。',
+    syncPartial: '已同步 {count} 个模型价格；{sources} 暂无法更新，保留本地价格。',
+    priceUnavailable: '暂无报价',
     syncLoading: '正在同步价格…',
     syncReloadFailed: '价格已同步，但页面数据重新读取失败。',
     refreshLoading: '正在重新读取页面数据…',
@@ -650,6 +652,8 @@ const messages = {
     loadFailed: 'Failed to load: {message}',
     syncFailed: 'Failed to sync: {message}',
     syncSuccess: 'Synced prices for {count} models.',
+    syncPartial: 'Synced prices for {count} models. Kept local prices for unavailable sources: {sources}.',
+    priceUnavailable: 'No rate available',
     syncLoading: 'Syncing prices…',
     syncReloadFailed: 'Prices synced, but page data could not be reloaded.',
     refreshLoading: 'Reloading page data…',
@@ -2908,8 +2912,10 @@ function renderPricingSettings(config, prices) {
   }
   let anchor = $('#anchorModel');
   let selectedAnchor = pricingSettingsDirty ? anchor.value : (config.anchor_model || '');
+  let creditInputs = new Map((prices.rows || []).map(item => [item.model, item.codex_credit_input]));
   anchor.replaceChildren();
-  (prices.prices || []).filter(item => Number(item.input) > 0).forEach(item => {
+  (prices.prices || []).filter(item => Number(item.input) > 0 ||
+    (selectedPricingMode() === 'credits' && Number(creditInputs.get(item.model)) > 0)).forEach(item => {
     let option = document.createElement('option');
     option.value = item.model;
     option.textContent = item.model;
@@ -2971,9 +2977,9 @@ function renderPricePreview(data) {
   let unit = data.settings && data.settings.value_unit || pricingUnitLabel();
   let body = $('#pricePreviewRows');
   body.replaceChildren();
-  let priority = ['gpt-6-astra','gpt-6.1-sol','gpt-6-sol','gpt-6-luna','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'];
+  let priority = ['gpt-6.2-astra','gpt-6.2-sol','gpt-6-chat-thinking','gpt-6-astra','gpt-6.1-sol','gpt-6.1-terra','gpt-6-sol','gpt-6-luna','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'];
   let rows = (data.rows || []).filter(item => priority.includes(item.model)
-    || item.model === data.settings?.anchor_model || item.observed);
+    || item.model === data.settings?.anchor_model || item.observed || item.codex_credit_input > 0);
   rows = [...rows].sort((a,b) => {
     let ia=priority.indexOf(a.model), ib=priority.indexOf(b.model);
     if (ia<0) ia=1000; if (ib<0) ib=1000;
@@ -2982,6 +2988,15 @@ function renderPricePreview(data) {
   rows.forEach(item => {
     let row = document.createElement('tr');
     let model = document.createElement('td');
+    if (item.available === false) {
+      model.textContent = item.model;
+      let unavailable = document.createElement('td');
+      unavailable.colSpan = 6;
+      unavailable.textContent = tr('priceUnavailable');
+      row.append(model, unavailable);
+      body.append(row);
+      return;
+    }
     const componentAdjustments = item.component_adjustments || {};
     const calibratedCount = ['input','cache_read','output'].filter(field =>
       componentAdjustments[field]?.calibrated && !['inverse_anchor','joint','pooled'].includes(componentAdjustments[field]?.source)).length;
@@ -4245,7 +4260,10 @@ $('#sync').onclick = async () => {
     $('#toolbarStatus').textContent = tr('syncLoading');
     let result = await api('/prices/sync', {method: 'POST'});
     let reloaded = await load();
-    $('#toolbarStatus').textContent = reloaded ? tr('syncSuccess', {count: result.count}) : tr('syncReloadFailed');
+    const warnings = result.warnings || [];
+    $('#toolbarStatus').textContent = reloaded ? tr(warnings.length ? 'syncPartial' : 'syncSuccess', {
+      count: result.count, sources: warnings.join(', ')
+    }) : tr('syncReloadFailed');
   } catch (error) {
     $('#toolbarStatus').textContent = tr('syncFailed', {message: error.message});
   } finally {

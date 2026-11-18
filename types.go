@@ -13,7 +13,7 @@ const (
 	pluginName = "CPA Quota Estimator"
 )
 
-var pluginVersion = "0.22.4"
+var pluginVersion = "0.23.0"
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -89,6 +89,7 @@ type config struct {
 	DataPath                 string                      `yaml:"data_path"`
 	SampleIntervalMinutes    int                         `yaml:"sample_interval_minutes"`
 	PriceSourceURL           string                      `yaml:"price_source_url"`
+	CodexPriceSourceURL      string                      `yaml:"codex_price_source_url"`
 	PriceSyncIntervalMinutes int                         `yaml:"price_sync_interval_minutes"`
 	PricingMode              string                      `yaml:"pricing_mode"`
 	AnchorModel              string                      `yaml:"anchor_model"`
@@ -113,6 +114,7 @@ func defaultConfig() config {
 		DataPath:                 "/CLIProxyAPI/data/cpa-quota-estimator.sqlite",
 		SampleIntervalMinutes:    5,
 		PriceSourceURL:           "https://models.dev/catalog.json",
+		CodexPriceSourceURL:      codexPricingURL + ".md",
 		PriceSyncIntervalMinutes: 1440,
 		PricingMode:              pricingModeCredits,
 		AnchorModel:              "gpt-6-astra",
@@ -151,21 +153,22 @@ func (c config) fitMatchesReference(fit *weightFit) bool {
 }
 
 type price struct {
-	Model      string  `json:"model"`
-	Input      float64 `json:"input"`
-	Output     float64 `json:"output"`
-	CacheRead  float64 `json:"cache_read"`
-	CacheWrite float64 `json:"cache_write"`
-	LongInput  float64 `json:"long_input"`
-	LongOutput float64 `json:"long_output"`
-	LongRead   float64 `json:"long_cache_read"`
-	LongWrite  float64 `json:"long_cache_write"`
-	FastInput  float64 `json:"fast_input"`
-	FastOutput float64 `json:"fast_output"`
-	FastRead   float64 `json:"fast_cache_read"`
-	FastWrite  float64 `json:"fast_cache_write"`
-	Source     string  `json:"source"`
-	UpdatedAt  int64   `json:"updated_at"`
+	Model      string           `json:"model"`
+	Input      float64          `json:"input"`
+	Output     float64          `json:"output"`
+	CacheRead  float64          `json:"cache_read"`
+	CacheWrite float64          `json:"cache_write"`
+	LongInput  float64          `json:"long_input"`
+	LongOutput float64          `json:"long_output"`
+	LongRead   float64          `json:"long_cache_read"`
+	LongWrite  float64          `json:"long_cache_write"`
+	FastInput  float64          `json:"fast_input"`
+	FastOutput float64          `json:"fast_output"`
+	FastRead   float64          `json:"fast_cache_read"`
+	FastWrite  float64          `json:"fast_cache_write"`
+	Source     string           `json:"source"`
+	UpdatedAt  int64            `json:"updated_at"`
+	Codex      codexCreditRates `json:"-"`
 }
 
 type event struct {

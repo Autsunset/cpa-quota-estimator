@@ -43,9 +43,16 @@ func (a *app) pricingTaskActive() (bool, string) {
 func (a *app) startPricingTask(s *store, settings pricingSettings, _ config) (pricingRecalcTask, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.startPricingTaskLocked(s, settings)
+}
+
+func (a *app) startPricingTaskLocked(s *store, settings pricingSettings) (pricingRecalcTask, error) {
 	a.pricingTaskMu.Lock()
 	defer a.pricingTaskMu.Unlock()
 	if a.pricingTask != nil && (a.pricingTask.Status == "queued" || a.pricingTask.Status == "running" || a.pricingTask.Status == "rolling_back") {
+		if settings.CatalogRevision > 0 {
+			a.pricingRepricePending = true
+		}
 		return *a.pricingTask, fmt.Errorf("pricing recalculation already running")
 	}
 	if a.store != s {
@@ -82,14 +89,23 @@ func (a *app) runPricingTask(workCtx context.Context, s *store, settings pricing
 				_ = s.seedOnlineCycleScales(restoreCtx, previousCfg.LearnedFit)
 				done()
 			}
+			catalog := a.cfg.PriceCatalog
 			a.cfg = previousCfg
+			a.cfg.PriceCatalog = catalog
 		}
 		a.mu.Unlock()
 	}
 	var count int64
 	var err error
-	if !cfg.fitMatchesReference(cfg.LearnedFit) ||
-		cfg.LearnedFit.EligibilityVersion != weightEligibilityVersion {
+	if settings.CatalogRevision > 0 {
+		var hasUnknown bool
+		err = s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM quota_segments WHERE instr(flags_json,'"unknown_model"')>0)`).Scan(&hasUnknown)
+		if err == nil && hasUnknown {
+			err = s.rebuildAllQuotaSegments(ctx)
+		}
+	}
+	if err == nil && (settings.CatalogRevision > 0 || !cfg.fitMatchesReference(cfg.LearnedFit) ||
+		cfg.LearnedFit.EligibilityVersion != weightEligibilityVersion) {
 		update(func(task *pricingRecalcTask) { task.Progress.Stage = "fitting" })
 		var result weightBacktest
 		result, err = s.refreshWeightFitProgress(ctx, cfg.weightLearnerOptions(), func(done, total int) {
@@ -157,19 +173,14 @@ func (a *app) runPricingTask(workCtx context.Context, s *store, settings pricing
 		delete(a.pricingTaskHistory, oldest)
 	}
 	pending := a.pricingRepricePending
-	includeCustom := a.pricingRepriceIncludeCustom
 	pendingFit := a.pricingFitPending
 	a.pricingRepricePending = false
-	a.pricingRepriceIncludeCustom = false
 	a.pricingFitPending = false
 	a.pricingTaskMu.Unlock()
 	if pending {
-		a.mu.RLock()
-		currentStore, currentCfg := a.store, a.cfg
-		a.mu.RUnlock()
-		if currentStore == s {
-			a.queuePricingReprice(s, currentCfg, includeCustom)
-		}
+		a.priceSyncMu.Lock()
+		a.refreshPriceCatalog(workCtx, s)
+		a.priceSyncMu.Unlock()
 	}
 	if pendingFit {
 		a.mu.RLock()
@@ -178,17 +189,5 @@ func (a *app) runPricingTask(workCtx context.Context, s *store, settings pricing
 		if currentStore == s {
 			a.queueFitRepricing(s, currentCfg)
 		}
-	}
-}
-
-func (a *app) queuePricingReprice(s *store, cfg config, includeCustom bool) {
-	if !includeCustom && normalizePricingMode(cfg.PricingMode) == pricingModeCustom {
-		return
-	}
-	if _, err := a.startPricingTask(s, cfg.pricingSettings(), cfg); err != nil {
-		a.pricingTaskMu.Lock()
-		a.pricingRepricePending = true
-		a.pricingRepriceIncludeCustom = a.pricingRepriceIncludeCustom || includeCustom
-		a.pricingTaskMu.Unlock()
 	}
 }

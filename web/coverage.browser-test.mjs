@@ -250,6 +250,14 @@ try {
   assert(!observedReference.includes('未积累有效样本'), 'observed but unidentified is not mislabeled as no samples');
   assert.deepEqual(await evaluate("(()=>{let row=[...$('#pricePreviewRows').children].find(row=>row.firstElementChild.textContent.startsWith('gpt-6.1-sol'));return ['input','cache_read','output'].map(field=>row.querySelector('[data-price-field='+field+'] b').textContent);})()"),['50 credits','4 credits','250 credits'],'a cache adjustment leaves input and output at official rates');
   assert.equal(await evaluate("[...$('#pricePreviewRows').children].some(row=>row.firstElementChild.textContent.startsWith('gpt-5.4'))"),false,'retired model hidden from price preview');
+  const latestModelPrices = await evaluate(`(() => {
+    const rows = [...$('#pricePreviewRows').children];
+    return ['gpt-6.2-astra', 'gpt-6.2-sol', 'gpt-6-chat-thinking'].map(model => {
+      const row = rows.find(item => item.firstElementChild.textContent.startsWith(model));
+      return row.querySelector('[data-price-field=input] b')?.textContent || row.lastElementChild.textContent;
+    });
+  })()`);
+  assert.deepEqual(latestModelPrices, ['200 credits', '50 credits', '暂无报价']);
   assert(await evaluate("$('#account').getBoundingClientRect().width<=185 && $('#refresh').getBoundingClientRect().height===$('#wbSearchTrigger').getBoundingClientRect().height"),'toolbar control sizes');
   await evaluate("$('#refresh').click();true");
   await wait("$('#toolbarStatus').textContent.includes('已重新读取页面数据')",'refresh feedback');
@@ -259,6 +267,7 @@ try {
   assert.equal(await visible('guidedCalibration'),true);
   await evaluate("$('#sync').click();true");
   await wait("$('#toolbarStatus').textContent.includes('已同步 1 个模型价格')",'pricing sync feedback');
+  await wait("!document.querySelector('input[name=pricingMode][value=custom]').disabled",'catalog repricing completes');
   await screenshot('workbench-pricing-desktop');
   const pooledRendering = await evaluate(`(() => {
     renderWeightCard({available:true,segment_count:25,lag:2,fitted_at:1800000000,

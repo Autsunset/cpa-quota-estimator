@@ -1,10 +1,16 @@
 package main
 
-import "context"
+import (
+	"context"
+	"slices"
+)
 
 var allowanceModelOrder = []string{
+	"gpt-6.2-astra",
+	"gpt-6.2-sol",
 	"gpt-6-astra",
 	"gpt-6.1-sol",
+	"gpt-6.1-terra",
 	"gpt-6-sol",
 	"gpt-6-luna",
 	"gpt-5.6-sol",
@@ -22,11 +28,16 @@ func (s *store) remainingModelAllowances(ctx context.Context, remainingValue flo
 		return nil, err
 	}
 	byModel := make(map[string]price, len(prices))
+	models := slices.Clone(allowanceModelOrder)
 	for _, p := range prices {
-		byModel[normalizeModel(p.Model)] = p
+		model := normalizeModel(p.Model)
+		byModel[model] = p
+		if p.Codex.Input > 0 && !slices.Contains(allowanceModelOrder, model) {
+			models = append(models, model)
+		}
 	}
-	out := make([]modelAllowance, 0, len(allowanceModelOrder))
-	for _, model := range allowanceModelOrder {
+	out := make([]modelAllowance, 0, len(models))
+	for _, model := range models {
 		p, ok := byModel[model]
 		if !ok {
 			continue

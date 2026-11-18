@@ -60,6 +60,7 @@ func TestCoverageBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &app{cfg: defaultConfig(), store: s}
+	defer a.shutdown()
 	a.cfg.AnchorModel = legacyWeightReferenceModel
 	catalog, err := loadPriceCatalog(context.Background(), s)
 	if err != nil {
@@ -87,6 +88,10 @@ func TestCoverageBrowser(t *testing.T) {
 		if r.URL.Path == "/catalog" {
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"providers":{"openai":{"models":{"gpt-6-sol":{"cost":{"input":2,"output":10,"cache_read":0.2,"cache_write":2.5}}}}}}`)
+			return
+		}
+		if r.URL.Path == "/credits" {
+			io.WriteString(w, "## Token rates\n| GPT-6 Sol | 50 | 5 | 250 |\n")
 			return
 		}
 		if r.URL.Path == "/v0/management/auth-files" {
@@ -127,6 +132,7 @@ func TestCoverageBrowser(t *testing.T) {
 	}))
 	defer server.Close()
 	a.cfg.PriceSourceURL = server.URL + "/catalog"
+	a.cfg.CodexPriceSourceURL = server.URL + "/credits"
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, node, "web/coverage.browser-test.mjs", server.URL, chrome, artifacts)

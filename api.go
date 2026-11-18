@@ -52,12 +52,15 @@ func (a *app) handleManagement(req managementRequest) managementResponse {
 		defer done()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		count, err := syncPrices(ctx, s, cfg)
+		result, err := a.syncPriceCatalog(ctx, s, cfg)
 		if err != nil {
 			return textResponse(502, err.Error())
 		}
-		a.refreshPriceCatalog(ctx, s)
-		return jsonResponse(200, map[string]any{"ok": true, "count": count, "source": cfg.PriceSourceURL})
+		return jsonResponse(200, struct {
+			OK     bool   `json:"ok"`
+			Source string `json:"source"`
+			priceSyncResult
+		}{true, cfg.PriceSourceURL, result})
 	}
 	if strings.HasSuffix(req.Path, "/coverage-settings") && strings.EqualFold(req.Method, "POST") {
 		a.mu.Lock()
@@ -763,5 +766,6 @@ func pricingSettingsResponse(cfg config) map[string]any {
 		"custom_long_context":    cfg.CustomLongContext,
 		"custom_long_threshold":  cfg.CustomLongThreshold,
 		"price_source_url":       cfg.PriceSourceURL,
+		"codex_price_source_url": cfg.CodexPriceSourceURL,
 	}
 }
